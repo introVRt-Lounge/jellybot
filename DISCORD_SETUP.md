@@ -1,0 +1,82 @@
+# Discord setup for Jellybot
+
+## Application
+
+- Developer Portal: https://discord.com/developers/applications
+- Application name: JellyBot
+- Application ID: value of `DISCORD_CLIENT_ID` in `.env`
+
+## OAuth2 scopes
+
+Required:
+
+- `bot`
+- `applications.commands`
+
+## Bot permissions
+
+Minimum permissions for `/clip`:
+
+| Permission | Needed for |
+| --- | --- |
+| Send Messages | post clip summary text |
+| Attach Files | upload rendered MP4 |
+| Embed Links | optional rich previews |
+| Use Slash Commands | slash command surface |
+
+Integer bitfield in this project: `139586750528`
+
+Generated invite URL template:
+
+```text
+https://discord.com/oauth2/authorize?client_id=DISCORD_CLIENT_ID&permissions=139586750528&scope=bot%20applications.commands
+```
+
+Do not grant Administrator unless you explicitly want it.
+
+## Privileged intents
+
+Keep all privileged intents **disabled** unless a future feature needs them.
+
+| Intent | Status |
+| --- | --- |
+| Presence Intent | Off |
+| Server Members Intent | Off |
+| Message Content Intent | Off |
+
+Runtime uses only `GatewayIntentBits.Guilds`.
+
+## Command registration
+
+- Development: set `DISCORD_GUILD_ID` and run `bun run register-commands` for instant guild sync
+- Production: omit `DISCORD_GUILD_ID` to register globally after validation
+
+Registration is a separate one-shot step. The running bot does not re-register commands on startup.
+
+```bash
+bun run register-commands
+# or
+docker compose --profile register run --rm jellybot-register-commands
+```
+
+## Verification checklist
+
+1. Bot invite opens with `applications.commands` scope
+2. `/clip` appears in the target guild or globally after sync propagation
+3. Pick `kind` first, then autocomplete on `media` returns Jellyfin matches
+4. Ephemeral validation errors appear for bad timestamps or missing `start`
+5. Successful clip uploads an MP4 attachment to the channel
+6. `GET /healthz` returns `200` with `"discord":"connected"` once the container is healthy
+
+## Known limits
+
+- Discord autocomplete must respond within 3 seconds
+- Autocomplete choice names and values are capped at 100 characters
+- Discord upload size depends on server boost tier; default bot cap is 24 MB
+- Jellyfin access follows the configured Jellyfin user (`fam` by default), not admin API keys
+
+## Token hygiene
+
+- Store `DISCORD_TOKEN` only in `.env` or deployment secrets
+- Never log the token
+- Rotate immediately if the token leaks
