@@ -10,6 +10,8 @@ bun install
 bun run ci
 ```
 
+`bun install` runs `prepare` and installs the Husky pre-commit hook. The hook runs `bun run secrets:staged`, which uses local `gitleaks` when present or the official Docker image `zricethezav/gitleaks:v8.30.1`.
+
 For container parity:
 
 ```bash
@@ -36,12 +38,14 @@ make register-commands
 ## Security And Secrets
 
 - Never commit `.env`, `.env~`, tokens, Jellyfin passwords, or generated clips.
+- Keep the Husky gitleaks hook enabled. If it flags a secret, rotate the secret instead of bypassing the hook.
 - Use the `fam` Jellyfin user or another least-privilege user, not a Jellyfin admin API key.
 - Do not log Discord tokens, Jellyfin credentials, or clip source URLs with tokens.
 
 ## PR Checklist
 
 - [ ] `bun run ci` passes
+- [ ] `bun run secrets:staged` passes
 - [ ] `make test` passes
 - [ ] Command docs updated for slash-command changes
 - [ ] Docker image starts and `/healthz` is healthy for runtime changes
