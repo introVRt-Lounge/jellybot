@@ -8,11 +8,11 @@ Visibility: private.
 
 Enable or verify these in GitHub after the repo exists:
 
-- Dependabot alerts: enabled
-- Dependabot security updates: enabled
-- Secret scanning: enable if available for the account/private repo plan
-- Secret push protection: enable if available
-- Branch protection: require status check `ci` if available for private repos
+- Dependabot alerts: enabled with `gh api --method PUT repos/heavygee/jellybot/vulnerability-alerts`
+- Dependabot security updates: enabled with `gh api --method PUT repos/heavygee/jellybot/automated-security-fixes`
+- Secret scanning: unavailable on this private repo plan (`422 Secret scanning is not available`)
+- Secret push protection: unavailable on this private repo plan
+- Branch protection: unavailable on this private repo plan (`403 Upgrade to GitHub Pro or make this repository public`)
 
 Free private repos may not support every branch protection or advanced security control. The in-repo CI still provides:
 
