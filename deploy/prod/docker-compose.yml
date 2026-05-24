@@ -1,6 +1,6 @@
 services:
   jellybot:
-    image: ${JELLYBOT_IMAGE:-ghcr.io/example/jellybot:latest}
+    image: ${JELLYBOT_IMAGE:-ghcr.io/introvrt-lounge/jellybot:latest}
     container_name: jellybot
     restart: unless-stopped
     env_file: .env

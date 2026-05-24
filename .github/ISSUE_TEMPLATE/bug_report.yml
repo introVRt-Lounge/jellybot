@@ -1,0 +1,86 @@
+name: Bug report
+description: Something broke in the bot, Docker runtime, or CLI tooling
+title: "[bug]: "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. **Do not paste Discord tokens, Jellyfin passwords, or `.env` contents.**
+        For security issues, use [SECURITY.md](https://github.com/introVRt-Lounge/jellybot/blob/main/SECURITY.md) instead.
+
+  - type: input
+    id: version
+    attributes:
+      label: Jellybot version or image tag
+      description: `APP_VERSION`, GHCR tag (`main`, `latest`, `sha-…`), or git SHA
+      placeholder: "latest or sha-b066fe2"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: runtime
+    attributes:
+      label: Runtime
+      options:
+        - Docker (GHCR image)
+        - Docker (local build)
+        - Bun on host
+        - other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: command
+    attributes:
+      label: Affected surface
+      options:
+        - /clip
+        - /quote
+        - autocomplete
+        - subtitle indexer
+        - health / startup
+        - other
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Run make dev-refresh
+        2. Invoke /clip …
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Redact tokens and media URLs with access keys
+      render: shell
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: I searched existing issues
+          required: true
+        - label: I did not include secrets in this report
+          required: true

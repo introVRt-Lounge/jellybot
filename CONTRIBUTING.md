@@ -2,6 +2,8 @@
 
 Pull requests welcome. Use normal PR flow; keep `main` green before merge.
 
+This project follows the [Code of Conduct](CODE_OF_CONDUCT.md). By participating, you agree to uphold it.
+
 ## Local Setup
 
 ```bash

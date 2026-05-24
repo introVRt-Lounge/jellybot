@@ -1,0 +1,27 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  github-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          body: |
+            Docker image: `ghcr.io/introvrt-lounge/jellybot:latest` (also tagged with this semver).
+
+            ```bash
+            docker pull ghcr.io/introvrt-lounge/jellybot:latest
+            docker compose -f deploy/prod/docker-compose.yml up -d --force-recreate
+            ```

@@ -5,8 +5,11 @@
 Discord slash command bot that searches your local Jellyfin library and posts video clips back to the channel.
 
 [![CI](https://github.com/introVRt-Lounge/jellybot/actions/workflows/ci.yml/badge.svg)](https://github.com/introVRt-Lounge/jellybot/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/github/license/introVRt-Lounge/jellybot)](LICENSE)
+[![Docs](https://img.shields.io/badge/docs-GitHub%20Pages-blue)](https://introvrt-lounge.github.io/jellybot/)
+[![GHCR](https://img.shields.io/badge/container-ghcr.io%2Fintrovrt--lounge%2Fjellybot-2496ED?logo=docker&logoColor=white)](https://github.com/introVRt-Lounge/jellybot/pkgs/container/jellybot)
 
-Links: [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md) · [Repository settings](REPO_SETTINGS.md) · [Discord setup](DISCORD_SETUP.md)
+Links: [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md) · [Support](SUPPORT.md) · [Docs](https://introvrt-lounge.github.io/jellybot/) · [Discord setup](DISCORD_SETUP.md)
 
 ## What it does
 
@@ -100,14 +103,23 @@ The runtime container:
 - stores ephemeral clip files on the `jellybot-clips` volume (or a host bind mount via `docker-compose.override.yml`)
 - stores the subtitle index SQLite database on the `jellybot-data` volume at `/var/lib/jellybot/data/subtitles.db`
 
-Production promotion uses an image-only compose file at [deploy/prod/docker-compose.yml](deploy/prod/docker-compose.yml):
+### Production image (live GHCR)
+
+CI publishes the runtime image to **GitHub Container Registry** under the **introVRt-Lounge** org:
+
+| | |
+|---|---|
+| **Package page** | https://github.com/introVRt-Lounge/jellybot/pkgs/container/jellybot |
+| **Pull URL** | `ghcr.io/introvrt-lounge/jellybot:latest` |
+| **Also tagged** | `:main`, `:sha-<commit>` on each build; semver tags on `v*` releases |
 
 ```bash
-docker pull ghcr.io/<owner>/jellybot:latest
+docker pull ghcr.io/introvrt-lounge/jellybot:latest
+export JELLYBOT_IMAGE=ghcr.io/introvrt-lounge/jellybot:latest
 docker compose -f deploy/prod/docker-compose.yml up -d --force-recreate
 ```
 
-Set `JELLYBOT_IMAGE` in `.env` or the shell when pulling from your registry.
+Or set `JELLYBOT_IMAGE=ghcr.io/introvrt-lounge/jellybot:latest` in `.env` next to [deploy/prod/docker-compose.yml](deploy/prod/docker-compose.yml).
 
 ## Jellyfin access model
 
@@ -126,3 +138,7 @@ Discord validates later required options while autocomplete is open. That is why
 ```
 
 Timestamp formats: `90`, `90s`, `1:30`, `01:02:03`.
+
+## License
+
+MIT - see [LICENSE](LICENSE).

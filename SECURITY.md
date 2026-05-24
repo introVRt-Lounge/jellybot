@@ -4,7 +4,9 @@ Jellybot is a Discord bot that can access the configured Jellyfin user's media l
 
 ## Reporting
 
-Report vulnerabilities privately to the repository maintainer. Do not open public issues with exploit details, tokens, or media URLs.
+Report vulnerabilities privately to **security@introvrtlounge.com** or via [GitHub private vulnerability reporting](https://github.com/introVRt-Lounge/jellybot/security/advisories/new).
+
+Do not open public issues or Discord messages with exploit details, tokens, or media URLs.
 
 ## Secret Handling
 
@@ -13,10 +15,13 @@ Report vulnerabilities privately to the repository maintainer. Do not open publi
 - Authenticate as a least-privilege Jellyfin user via `JELLYFIN_USERNAME`, not an admin API key.
 - Clip stream URLs include access tokens; do not log them.
 - Local commits are guarded by Husky + gitleaks (`bun run secrets:staged`).
+- CI runs gitleaks (`secret-scan`) and Semgrep OWASP SAST on every PR and `main` push.
 
 ## Production Scope
 
-The supported production runtime is the Docker container in this repository or an image pulled from your registry using `deploy/prod/docker-compose.yml`.
+The supported production runtime is the Docker container in this repository or the published GHCR image:
+
+`ghcr.io/introvrt-lounge/jellybot:latest`
 
 ## Rotation
 

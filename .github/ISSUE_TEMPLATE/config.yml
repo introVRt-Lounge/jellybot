@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security report (private)
+    url: https://github.com/introVRt-Lounge/jellybot/blob/main/SECURITY.md
+    about: Do not file public issues for vulnerabilities
+  - name: Discord setup guide
+    url: https://github.com/introVRt-Lounge/jellybot/blob/main/DISCORD_SETUP.md
+    about: Bot permissions, scopes, and verification checklist
+  - name: introVRt Lounge
+    url: https://www.introvrtlounge.com/
+    about: Community home
