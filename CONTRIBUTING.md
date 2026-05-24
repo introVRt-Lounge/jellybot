@@ -2,6 +2,8 @@
 
 Pull requests welcome. Use normal PR flow; keep `main` green before merge.
 
+**No ticket, no workee:** open a GitHub Issue for every feature or bug before implementation (use the issue templates). PRs should include `Fixes #N`.
+
 This project follows the [Code of Conduct](CODE_OF_CONDUCT.md). By participating, you agree to uphold it.
 
 ## Local Setup

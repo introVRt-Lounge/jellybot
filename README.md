@@ -63,7 +63,7 @@ Optional:
 - `SUBTITLE_DEFAULT_CLIP_SECONDS` (default `15`)
 - `SUBTITLE_QUOTE_PADDING_SECONDS` (default `2`)
 - `SUBTITLE_INDEX_CONCURRENCY` (default `4`)
-- `SUBTITLE_INDEX_ON_STARTUP` (`off` or `incremental`)
+- `SUBTITLE_INDEX_ON_STARTUP` (`incremental` by default; set `off` to disable background indexing on boot)
 - `CLIP_AUTOCOMPLETE_MAX_CONCURRENT` (default `3`)
 
 ## Run locally
@@ -94,14 +94,18 @@ Before `/quote` works, build the subtitle index once:
 make index-subtitles
 ```
 
-That walks Jellyfin items with subtitles and stores cue text in SQLite FTS. Re-run `make index-subtitles-incremental` after new subtitle files appear in the library.
+That walks Jellyfin items with subtitles and stores cue text in SQLite FTS. Re-run `make index-subtitles-incremental` after new subtitle files appear in the library. With default config, the bot also runs an **incremental** index in the background on every startup until caught up.
+
+The subtitle index is a **multi-GB derived cache** (not throwaway state). Store it on a **host bind mount** (`JELLYBOT_DATA_HOST_DIR`, default `./data`) so `docker_comprehensive` Borg picks it up. See [docs/architecture.md](docs/architecture.md#subtitle-index).
+
+**Docs / marketing site:** https://jellybot.introvrtlounge.com (GitHub Pages + custom domain; built from `docs/` on each push to `main`).
 
 The runtime container:
 
 - reads Jellyfin URL and credentials from `.env`
 - exposes `GET /healthz` on port `8080`
 - stores ephemeral clip files on the `jellybot-clips` volume (or a host bind mount via `docker-compose.override.yml`)
-- stores the subtitle index SQLite database on the `jellybot-data` volume at `/var/lib/jellybot/data/subtitles.db`
+- stores the subtitle index SQLite database on a host bind mount (`JELLYBOT_DATA_HOST_DIR`, default `./data`) at `/var/lib/jellybot/data/subtitles.db`
 
 ### Production image (live GHCR)
 
