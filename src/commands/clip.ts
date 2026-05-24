@@ -5,7 +5,7 @@ import {
   SlashCommandBuilder,
 } from "discord.js";
 import { AutocompleteSessionGuard, isAbortError, isUnknownInteractionError } from "../autocomplete-guard.ts";
-import { searchAutocompleteChoices } from "../autocomplete.ts";
+import { searchClipMediaAutocompleteChoices } from "../clip-autocomplete.ts";
 import type { AppConfig } from "../config.ts";
 import { formatDiscordUploadLimit, maxClipMbForDiscordUpload } from "../discord-upload.ts";
 import type { JellyfinClient, MediaKind } from "../jellyfin.ts";
@@ -107,7 +107,7 @@ export async function handleClipAutocomplete(
     const { isCurrent, signal } = clipMediaAutocompleteGuard.beginCancellable(
       CLIP_MEDIA_AUTOCOMPLETE_KEY(interaction),
     );
-    const choices = await searchAutocompleteChoices(jellyfin, query, kind, signal);
+    const choices = await searchClipMediaAutocompleteChoices(jellyfin, query, kind, signal);
     console.info(
       JSON.stringify({
         event: "clip.autocomplete",

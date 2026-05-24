@@ -1,3 +1,4 @@
+import { isClipAutocompleteBusyValue } from "../clip-autocomplete.ts";
 import { isJellyfinItemId, type MediaKind } from "../jellyfin.ts";
 import { parseTimestamp } from "../time.ts";
 
@@ -32,6 +33,13 @@ export function planClipRequest(input: ClipRequestInput): ClipRequestResult {
 
   if (!input.itemId?.trim()) {
     return { ok: false, message: "`media` is required. Pick a title from autocomplete." };
+  }
+
+  if (isClipAutocompleteBusyValue(input.itemId)) {
+    return {
+      ok: false,
+      message: "Media search was busy when you picked that. Click `media` and type again to refresh results.",
+    };
   }
 
   if (!isJellyfinItemId(input.itemId)) {
