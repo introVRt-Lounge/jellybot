@@ -140,7 +140,7 @@ export async function handleClipAutocomplete(
 export async function handleClipCommand(
   interaction: ChatInputCommandInteraction,
   jellyfin: JellyfinClient,
-  config: Pick<AppConfig, "maxClipMb" | "maxClipSeconds">,
+  config: Pick<AppConfig, "clipTempDir" | "maxClipMb" | "maxClipSeconds">,
 ): Promise<void> {
   const planned = planClipRequest({
     kind: interaction.options.getString("kind", true) as MediaKind,
@@ -205,6 +205,7 @@ export async function handleClipCommand(
     validated.item,
     planned.plan,
     interaction.id,
+    config.clipTempDir,
     jellyfin.formatItemLabel.bind(jellyfin),
   );
 

@@ -16,7 +16,8 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - ${JELLYBOT_TMP_DIR:-/mnt/drives/1tb_smb/jellybot-tmp}:/tmp/jellybot
+      - ${JELLYBOT_CLIP_DIR:-/mnt/drives/1tb_smb/jellybot-clips}:/tmp/jellybot/clips
+      - jellybot-data:/tmp/jellybot/data
     networks:
       - traefik_net
 
@@ -43,7 +44,8 @@ services:
     environment:
       JELLYFIN_URL: http://jellyfin:8096
     volumes:
-      - ${JELLYBOT_TMP_DIR:-/mnt/drives/1tb_smb/jellybot-tmp}:/tmp/jellybot
+      - ${JELLYBOT_CLIP_DIR:-/mnt/drives/1tb_smb/jellybot-clips}:/tmp/jellybot/clips
+      - jellybot-data:/tmp/jellybot/data
     networks:
       - traefik_net
     command: ["bun", "run", "src/cli/index-subtitles.ts"]
@@ -51,3 +53,6 @@ services:
 networks:
   traefik_net:
     external: true
+
+volumes:
+  jellybot-data:

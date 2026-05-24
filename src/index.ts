@@ -18,15 +18,29 @@ const healthState: HealthState = {
   subtitleIndex: null,
 };
 
-function refreshSubtitleHealth(): void {
+let subtitleHealthCache: HealthState["subtitleIndex"] = null;
+let subtitleHealthCheckedAt = 0;
+const SUBTITLE_HEALTH_TTL_MS = 60_000;
+
+function refreshSubtitleHealth(force = false): void {
+  const now = Date.now();
+  if (!force && subtitleHealthCache && now - subtitleHealthCheckedAt < SUBTITLE_HEALTH_TTL_MS) {
+    healthState.subtitleIndex = subtitleHealthCache;
+    return;
+  }
+
   try {
     const index = openSubtitleIndex(config.subtitleDbPath);
     try {
-      healthState.subtitleIndex = index.getStats();
+      subtitleHealthCache = index.getStats();
+      subtitleHealthCheckedAt = now;
+      healthState.subtitleIndex = subtitleHealthCache;
     } finally {
       index.close();
     }
   } catch {
+    subtitleHealthCache = null;
+    subtitleHealthCheckedAt = now;
     healthState.subtitleIndex = null;
   }
 }
