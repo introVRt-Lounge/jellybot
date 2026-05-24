@@ -45,7 +45,9 @@ export type SubtitleIndexStats = {
   lastIndexedAt: string | null;
 };
 
-const SCHEMA = `
+const FTS_TOKENIZER = "unicode61 remove_diacritics 2";
+
+const BASE_SCHEMA = `
 CREATE TABLE IF NOT EXISTS media_items (
   item_id TEXT PRIMARY KEY,
   item_type TEXT NOT NULL,
@@ -73,14 +75,6 @@ CREATE TABLE IF NOT EXISTS subtitle_cues (
   FOREIGN KEY (item_id) REFERENCES media_items(item_id) ON DELETE CASCADE
 );
 
-CREATE VIRTUAL TABLE IF NOT EXISTS subtitle_cues_fts USING fts5(
-  text,
-  item_id UNINDEXED,
-  content='subtitle_cues',
-  content_rowid='id',
-  tokenize='trigram'
-);
-
 CREATE TABLE IF NOT EXISTS index_runs (
   id INTEGER PRIMARY KEY,
   started_at TEXT NOT NULL,
@@ -93,7 +87,22 @@ CREATE TABLE IF NOT EXISTS index_runs (
   status TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS index_meta (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_subtitle_cues_item_id ON subtitle_cues(item_id);
+`;
+
+const CREATE_FTS_UNICODE61 = `
+CREATE VIRTUAL TABLE subtitle_cues_fts USING fts5(
+  text,
+  item_id UNINDEXED,
+  content='subtitle_cues',
+  content_rowid='id',
+  tokenize='${FTS_TOKENIZER}'
+);
 `;
 
 const FTS_TRIGGERS = `
@@ -120,7 +129,8 @@ export class SubtitleIndex {
     this.db = new Database(dbPath, { create: true });
     this.db.exec("PRAGMA journal_mode = WAL;");
     this.db.exec("PRAGMA foreign_keys = ON;");
-    this.db.exec(SCHEMA);
+    this.db.exec(BASE_SCHEMA);
+    ensureUnicode61Fts(this.db);
     this.db.exec(FTS_TRIGGERS);
   }
 
@@ -290,7 +300,61 @@ export function prepareFtsQuery(query: string): string {
     .filter((token) => token.length >= 2);
 
   if (tokens.length === 0) return "";
-  return tokens.map((token) => `"${token.replace(/"/g, "")}"`).join(" ");
+
+  return tokens
+    .map((token, index) => {
+      const escaped = token.replace(/"/g, '""');
+      const prefix = index === tokens.length - 1 ? "*" : "";
+      return `"${escaped}"${prefix}`;
+    })
+    .join(" AND ");
+}
+
+function ensureUnicode61Fts(db: Database): void {
+  const existing = db
+    .query("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'subtitle_cues_fts'")
+    .get() as { sql: string } | null;
+
+  if (!existing) {
+    db.exec(CREATE_FTS_UNICODE61);
+    setIndexMeta(db, "fts_tokenizer", FTS_TOKENIZER);
+    return;
+  }
+
+  if (existing.sql.includes("trigram")) {
+    migrateTrigramFtsToUnicode61(db);
+    return;
+  }
+
+  if (!existing.sql.includes("unicode61")) {
+    migrateTrigramFtsToUnicode61(db);
+  }
+}
+
+function migrateTrigramFtsToUnicode61(db: Database): void {
+  db.exec(`
+    DROP TRIGGER IF EXISTS subtitle_cues_ai;
+    DROP TRIGGER IF EXISTS subtitle_cues_ad;
+    DROP TRIGGER IF EXISTS subtitle_cues_au;
+    DROP TABLE IF EXISTS subtitle_cues_fts;
+  `);
+  db.exec(CREATE_FTS_UNICODE61);
+  db.exec("INSERT INTO subtitle_cues_fts(subtitle_cues_fts) VALUES ('rebuild')");
+  setIndexMeta(db, "fts_tokenizer", FTS_TOKENIZER);
+  console.info(
+    JSON.stringify({
+      event: "subtitle_index.fts_migrated",
+      from: "trigram",
+      to: FTS_TOKENIZER,
+    }),
+  );
+}
+
+function setIndexMeta(db: Database, key: string, value: string): void {
+  db.run("INSERT INTO index_meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", [
+    key,
+    value,
+  ]);
 }
 
 export function openSubtitleIndex(dbPath: string): SubtitleIndex {

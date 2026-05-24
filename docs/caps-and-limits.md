@@ -94,12 +94,16 @@ If you already run **Bazarr** (or similar) to pull English subs into files on di
 
 ### Subtitle index scale
 
-| Library scale (approx.) | SQLite size (approx.) |
-|-------------------------|-------------------------|
-| ~3,500 indexed items | ~1 GB |
-| ~10,000 indexed items | **2–3 GB** |
+Measured on operator host (2026-05-24, **trigram** FTS - legacy):
 
-Full rebuild can take **hours**. Treat `subtitles.db` as **backup-worthy state**, not disposable cache. See [Architecture - Subtitle index](architecture.md#subtitle-index).
+| | |
+|--|--|
+| ~5,100 indexed items (~49% of subtitled library) | **2.43 GiB** DB, **157 MiB** raw cue text |
+| Full subtitled library (~10k items, trigram) | projected **~4.9 GiB** |
+
+**Why the DB dwarfs the text:** FTS5 **`trigram`** indexed every 3-character substring (~71% of disk in `subtitle_cues_fts_data`). The prose is only ~300–320 MiB at full scale - novel-sized, not LoC-sized.
+
+**From vNext:** indexer migrates to **`unicode61`** word tokenizer (AND + prefix on last token for `/quote` autocomplete). FTS rebuilds in place on bot startup - no Jellyfin re-fetch. Expect materially smaller DB; remeasure after migration ([#27](https://github.com/introVRt-Lounge/jellybot/issues/27)).
 
 ---
 
