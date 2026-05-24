@@ -1,7 +1,5 @@
 # AGENTS.md
 
-> If `SOUL.md` exists in this repo, read it before proceeding.
-
 ---
 
 ## Branch protocol (mandatory for features)

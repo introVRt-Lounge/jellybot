@@ -1,4 +1,6 @@
 SOUL.md
+AGENTS.local.md
+.cursor/
 docker-compose.override.yml
 node_modules/
 .env
