@@ -1,12 +1,16 @@
+x-jellybot-runtime: &jellybot-runtime
+  image: jellybot:runtime
+  build:
+    context: .
+    target: runtime
+    args:
+      APP_VERSION: ${APP_VERSION:-dev}
+      GIT_SHA: ${GIT_SHA:-local}
+
 services:
   jellybot:
+    <<: *jellybot-runtime
     profiles: [app]
-    build:
-      context: .
-      target: runtime
-      args:
-        APP_VERSION: ${APP_VERSION:-dev}
-        GIT_SHA: ${GIT_SHA:-local}
     container_name: jellybot
     restart: unless-stopped
     env_file: .env
@@ -25,17 +29,13 @@ services:
     profiles: [test]
 
   jellybot-register-commands:
-    build:
-      context: .
-      target: runtime
+    <<: *jellybot-runtime
     profiles: [register]
     env_file: .env
     command: ["bun", "run", "src/register-commands.ts"]
 
   jellybot-index-subtitles:
-    build:
-      context: .
-      target: runtime
+    <<: *jellybot-runtime
     profiles: [index]
     env_file: .env
     volumes:
