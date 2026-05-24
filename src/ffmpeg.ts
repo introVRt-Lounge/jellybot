@@ -2,16 +2,50 @@ import { spawn } from "node:child_process";
 import { dirname } from "node:path";
 import { mkdir, rm, stat } from "node:fs/promises";
 
+const DEFAULT_MAX_HEIGHT = 480;
+const DEFAULT_VIDEO_CODEC = "libx264";
+const DEFAULT_VIDEO_PRESET = "veryfast";
+const DEFAULT_VIDEO_CRF = "30";
+
 export type ClipOptions = {
   inputUrl: string;
   startSeconds: number;
   durationSeconds: number;
   outputPath: string;
   maxHeight?: number;
+  videoCodec?: string;
 };
+
+function buildVideoEncodeArgs(videoCodec: string, maxHeight: number): string[] {
+  const args = [
+    "-c:v",
+    videoCodec,
+    "-preset",
+    DEFAULT_VIDEO_PRESET,
+    "-crf",
+    DEFAULT_VIDEO_CRF,
+    "-vf",
+    `scale=-2:${maxHeight}:force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2`,
+    "-pix_fmt",
+    "yuv420p",
+  ];
+
+  if (videoCodec === "libx264") {
+    args.push("-profile:v", "main", "-level", "4.0");
+  }
+
+  if (videoCodec === "libx265") {
+    args.push("-tag:v", "hvc1");
+  }
+
+  return args;
+}
 
 export async function createClip(options: ClipOptions): Promise<void> {
   await mkdir(dirname(options.outputPath), { recursive: true });
+
+  const videoCodec = options.videoCodec ?? DEFAULT_VIDEO_CODEC;
+  const maxHeight = options.maxHeight ?? DEFAULT_MAX_HEIGHT;
 
   const args = [
     "-hide_banner",
@@ -27,14 +61,7 @@ export async function createClip(options: ClipOptions): Promise<void> {
     "0:v:0?",
     "-map",
     "0:a:0?",
-    "-c:v",
-    "libx264",
-    "-preset",
-    "veryfast",
-    "-crf",
-    "28",
-    "-vf",
-    `scale=-2:${options.maxHeight ?? 720}:force_original_aspect_ratio=decrease`,
+    ...buildVideoEncodeArgs(videoCodec, maxHeight),
     "-c:a",
     "aac",
     "-b:a",

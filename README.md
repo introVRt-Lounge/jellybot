@@ -9,6 +9,7 @@ Links: [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md) · [Repository
 ## What it does
 
 - `/clip` with a required `kind` choice: **Movie** or **TV episode**
+- `/quote` searches indexed subtitles and clips the matching scene
 - Jellyfin media autocomplete scoped to that kind
 - `start` plus either `end` or `duration`
 - ffmpeg extracts the segment from Jellyfin and uploads the MP4 to Discord
@@ -41,10 +42,17 @@ Optional:
 
 - `JELLYFIN_URL` (default `http://127.0.0.1:8096`)
 - `DISCORD_GUILD_ID` - instant guild command sync during development
-- `MAX_CLIP_SECONDS` (default `120`)
-- `MAX_CLIP_MB` (default `24`)
+- Clips render as **480p H.264** with AAC audio. Discord's inline player does not reliably decode HEVC/x265 (audio plays, video freezes).
+- `MAX_CLIP_SECONDS` (default `180`)
+- `MAX_CLIP_MB` (default `9`, capped by Discord's per-server `attachment_size_limit`; bots default to 10 MB)
 - `HEALTH_PORT` (default `8080`)
 - `APP_VERSION` - shown on `/healthz`
+- `SUBTITLE_DB_PATH` (default `/tmp/jellybot/subtitles.db`)
+- `SUBTITLE_LANGUAGES` (default `eng,en`)
+- `SUBTITLE_DEFAULT_CLIP_SECONDS` (default `15`)
+- `SUBTITLE_QUOTE_PADDING_SECONDS` (default `2`)
+- `SUBTITLE_INDEX_CONCURRENCY` (default `4`)
+- `SUBTITLE_INDEX_ON_STARTUP` (`off` or `incremental`)
 
 ## Run locally
 
@@ -62,17 +70,26 @@ Standard bot compose contract:
 ```bash
 make test
 make register-commands
+make index-subtitles
 make dev-refresh
 make health
 make logs
 ```
+
+Before `/quote` works, build the subtitle index once:
+
+```bash
+make index-subtitles
+```
+
+That walks Jellyfin items with subtitles (~76% of the library after Bazarr) and stores cue text in SQLite FTS. Re-run `make index-subtitles-incremental` after Bazarr adds new `.srt` files.
 
 The runtime container:
 
 - joins `traefik_net`
 - talks to Jellyfin at `http://jellyfin:8096`
 - exposes `GET /healthz` on port `8080`
-- stores clip temp files in the `jellybot-tmp` volume
+- stores clip temp files and the subtitle index in the `jellybot-tmp` volume
 
 Production promotion uses an image-only compose file at [deploy/prod/docker-compose.yml](deploy/prod/docker-compose.yml):
 
@@ -103,6 +120,7 @@ Specialist skills materialized from `~/coding/skills` live in `.agents/skills/`:
 ```text
 /clip kind:Movie media:The Matrix start:1:23:45 duration:30
 /clip kind:TV episode media:Breaking Bad start:90 end:2:30
+/quote match:love finds its way duration:15
 ```
 
 Timestamp formats: `90`, `90s`, `1:30`, `01:02:03`.

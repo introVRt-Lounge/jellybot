@@ -34,6 +34,20 @@ services:
     env_file: .env
     command: ["bun", "run", "src/register-commands.ts"]
 
+  jellybot-index-subtitles:
+    build:
+      context: .
+      target: runtime
+    profiles: [index]
+    env_file: .env
+    environment:
+      JELLYFIN_URL: http://jellyfin:8096
+    volumes:
+      - jellybot-tmp:/tmp/jellybot
+    networks:
+      - traefik_net
+    command: ["bun", "run", "src/cli/index-subtitles.ts"]
+
 networks:
   traefik_net:
     external: true

@@ -6,6 +6,7 @@ import {
 } from "discord.js";
 import { searchAutocompleteChoices } from "../autocomplete.ts";
 import type { AppConfig } from "../config.ts";
+import { formatDiscordUploadLimit, maxClipMbForDiscordUpload } from "../discord-upload.ts";
 import type { JellyfinClient, MediaKind } from "../jellyfin.ts";
 import {
   buildClipArtifact,
@@ -15,6 +16,11 @@ import {
 import { planClipRequest } from "../services/clip-request.ts";
 import { cleanup } from "../ffmpeg.ts";
 
+export const KIND_AUTOCOMPLETE_CHOICES = [
+  { name: "Movie", value: "movie" },
+  { name: "TV episode", value: "tv" },
+] as const;
+
 export const clipCommand = new SlashCommandBuilder()
   .setName("clip")
   .setDescription("Clip a scene from Jellyfin and post it in this channel.")
@@ -23,16 +29,13 @@ export const clipCommand = new SlashCommandBuilder()
       .setName("kind")
       .setDescription("Movie or TV episode")
       .setRequired(true)
-      .addChoices(
-        { name: "Movie", value: "movie" },
-        { name: "TV episode", value: "tv" },
-      ),
+      .setAutocomplete(true),
   )
   .addStringOption((option) =>
     option
       .setName("media")
       .setDescription("Search your Jellyfin library")
-      .setRequired(true)
+      .setRequired(false)
       .setAutocomplete(true),
   )
   .addStringOption((option) =>
@@ -59,13 +62,32 @@ export async function handleClipAutocomplete(
   jellyfin: JellyfinClient,
 ): Promise<void> {
   const focused = interaction.options.getFocused(true);
+
+  if (focused.name === "kind") {
+    const query = focused.value.trim().toLowerCase();
+    const choices = KIND_AUTOCOMPLETE_CHOICES.filter((choice) => {
+      if (!query) return true;
+      return choice.name.toLowerCase().includes(query) || choice.value.includes(query);
+    });
+    console.info(
+      JSON.stringify({
+        event: "clip.autocomplete",
+        field: "kind",
+        query,
+        resultCount: choices.length,
+      }),
+    );
+    await interaction.respond([...choices]);
+    return;
+  }
+
   if (focused.name !== "media") {
     await interaction.respond([]);
     return;
   }
 
   const kind = interaction.options.getString("kind") as MediaKind | null;
-  if (!kind) {
+  if (!kind || (kind !== "movie" && kind !== "tv")) {
     await interaction.respond([]);
     return;
   }
@@ -78,9 +100,25 @@ export async function handleClipAutocomplete(
 
   try {
     const choices = await searchAutocompleteChoices(jellyfin, query, kind);
+    console.info(
+      JSON.stringify({
+        event: "clip.autocomplete",
+        field: "media",
+        kind,
+        query,
+        resultCount: choices.length,
+      }),
+    );
     await interaction.respond(choices);
   } catch (error) {
-    console.error("Autocomplete search failed:", error);
+    console.error(
+      JSON.stringify({
+        event: "clip.autocomplete_failed",
+        kind,
+        query,
+        error: error instanceof Error ? error.message : "unknown error",
+      }),
+    );
     if (!interaction.responded) {
       await interaction.respond([]);
     }
@@ -102,6 +140,18 @@ export async function handleClipCommand(
   });
 
   if (!planned.ok) {
+    console.warn(
+      JSON.stringify({
+        event: "clip.rejected",
+        command: "clip",
+        userId: interaction.user.id,
+        guildId: interaction.guildId,
+        channelId: interaction.channelId,
+        reason: planned.message,
+        kind: interaction.options.getString("kind"),
+        media: interaction.options.getString("media"),
+      }),
+    );
     await interaction.reply({ content: planned.message, ephemeral: true });
     return;
   }
@@ -121,9 +171,20 @@ export async function handleClipCommand(
 
   await interaction.deferReply();
 
+  const maxClipMb = maxClipMbForDiscordUpload(interaction.attachmentSizeLimit, config.maxClipMb);
+
   const item = await jellyfin.getItem(planned.plan.itemId);
   const validated = validateClipItem(item, planned.plan);
   if (!validated.ok) {
+    console.warn(
+      JSON.stringify({
+        event: "clip.rejected",
+        command: "clip",
+        userId: interaction.user.id,
+        itemId: planned.plan.itemId,
+        reason: validated.message,
+      }),
+    );
     await interaction.editReply(validated.message);
     return;
   }
@@ -140,10 +201,19 @@ export async function handleClipCommand(
     item: validated.item,
     plan: planned.plan,
     outputPath: artifact.outputPath,
-    maxClipMb: config.maxClipMb,
+    maxClipMb,
   });
 
   if (!rendered.ok) {
+    console.error(
+      JSON.stringify({
+        event: "clip.failed",
+        command: "clip",
+        userId: interaction.user.id,
+        itemId: planned.plan.itemId,
+        reason: rendered.message,
+      }),
+    );
     await interaction.editReply(rendered.message);
     return;
   }
@@ -157,6 +227,16 @@ export async function handleClipCommand(
       content: [`**${artifact.label}**`, artifact.summaryLine, `Requested by ${interaction.user}`].join("\n"),
       files: [attachment],
     });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "unknown error";
+    if (message.includes("entity too large") || message.includes("413")) {
+      await interaction.editReply(
+        `Clip rendered but Discord rejected the upload for this server (limit ${formatDiscordUploadLimit(interaction.attachmentSizeLimit)}). Try a shorter clip.`,
+      );
+      return;
+    }
+
+    throw error;
   } finally {
     await cleanup(artifact.outputPath);
   }

@@ -13,13 +13,23 @@ describe("clip command contract", () => {
     expect(names).toEqual(["kind", "media", "start", "end", "duration"]);
   });
 
-  test("keeps start optional for autocomplete compatibility", () => {
-    const start = json.options?.find((option) => option.name === "start");
-    expect(start?.required).toBe(false);
+  test("uses autocomplete instead of static choices for discord validation compatibility", () => {
+    const kind = json.options?.find((option) => option.name === "kind");
+    expect(kind?.autocomplete).toBe(true);
+    expect(kind?.choices).toBeUndefined();
   });
 
-  test("enables autocomplete only on media", () => {
+  test("keeps start and media optional for autocomplete compatibility", () => {
+    const start = json.options?.find((option) => option.name === "start");
     const media = json.options?.find((option) => option.name === "media");
+    expect(start?.required).toBe(false);
+    expect(media?.required).toBe(false);
+  });
+
+  test("enables autocomplete on kind and media", () => {
+    const media = json.options?.find((option) => option.name === "media");
+    const kind = json.options?.find((option) => option.name === "kind");
     expect(media?.autocomplete).toBe(true);
+    expect(kind?.autocomplete).toBe(true);
   });
 });
