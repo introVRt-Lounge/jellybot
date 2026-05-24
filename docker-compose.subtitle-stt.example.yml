@@ -1,0 +1,47 @@
+# Optional Whisper-class STT sidecar for Jellybot subtitle long-tail ([#25]).
+#
+# Use when you do NOT already have local-speech-agent or another OpenAI-compatible
+# POST /v1/audio/transcriptions endpoint.
+#
+# Quick start:
+#   cp docker-compose.subtitle-stt.example.yml docker-compose.subtitle-stt.yml
+#   docker compose -f docker-compose.yml -f docker-compose.subtitle-stt.example.yml up -d speaches
+#
+# Then (once Jellybot indexer supports it):
+#   WHISPER_STT_URL=http://speaches:8000/v1/audio/transcriptions
+#   WHISPER_STT_MODEL=Systran/faster-whisper-large-v3
+#
+# GPU host recommended. For CPU-only, use a smaller model and expect very slow indexing.
+#
+# If you already run local-speech-agent on the host, skip this file and point Jellybot at:
+#   http://host.docker.internal:18008/v1/audio/transcriptions  (gateway, preferred)
+#   http://host.docker.internal:18001/v1/audio/transcriptions  (speaches direct)
+
+services:
+  speaches:
+    image: ghcr.io/speaches-ai/speaches:latest-cuda
+    container_name: jellybot-speaches
+    restart: unless-stopped
+    environment:
+      TZ: ${TZ:-Europe/London}
+    ports:
+      - "${JELLYBOT_SPEACHES_PORT:-18091}:8000"
+    volumes:
+      - speaches-models:/app/data
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    gpus: all
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/').read()\""]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+
+volumes:
+  speaches-models:

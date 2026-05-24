@@ -24,9 +24,9 @@ extra:
 
 nav:
   - Home: index.md
+  - Caps and limits: caps-and-limits.md
   - Architecture: architecture.md
   - Commands: commands.md
-  - Limits: limits.md
 
 markdown_extensions:
   - md_in_html
