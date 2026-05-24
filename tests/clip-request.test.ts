@@ -1,9 +1,22 @@
 import { describe, expect, test } from "bun:test";
+import { CLIP_AUTOCOMPLETE_BUSY_VALUE } from "../src/clip-autocomplete.ts";
 import { planClipRequest } from "../src/services/clip-request.ts";
 
 const ITEM_ID = "7d9e1a459fbb14ffa2411f68329d16d3";
 
 describe("planClipRequest", () => {
+  test("rejects the autocomplete busy sentinel", () => {
+    const result = planClipRequest({
+      kind: "movie",
+      itemId: CLIP_AUTOCOMPLETE_BUSY_VALUE,
+      startRaw: "1:00",
+      durationRaw: "10",
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.message).toContain("busy");
+  });
+
   test("rejects free-typed media text", () => {
     const result = planClipRequest({
       kind: "movie",
