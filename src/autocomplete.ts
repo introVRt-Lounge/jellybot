@@ -63,15 +63,30 @@ export function uniqueChoiceName(name: string, seenNames: Set<string>): string {
   return name;
 }
 
-export async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+export async function withTimeout<T>(promise: Promise<T>, ms: number, signal?: AbortSignal): Promise<T> {
+  if (signal?.aborted) {
+    throw signal.reason ?? new DOMException("The operation was aborted.", "AbortError");
+  }
+
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
 
   const timeout = new Promise<never>((_, reject) => {
     timeoutId = setTimeout(() => reject(new Error("Autocomplete timed out")), ms);
   });
 
+  const abort = new Promise<never>((_, reject) => {
+    if (!signal) return;
+    signal.addEventListener(
+      "abort",
+      () => {
+        reject(signal.reason ?? new DOMException("The operation was aborted.", "AbortError"));
+      },
+      { once: true },
+    );
+  });
+
   try {
-    return await Promise.race([promise, timeout]);
+    return await Promise.race([promise, timeout, ...(signal ? [abort] : [])]);
   } finally {
     if (timeoutId) clearTimeout(timeoutId);
   }
@@ -81,8 +96,9 @@ export async function searchAutocompleteChoices(
   jellyfin: JellyfinClient,
   query: string,
   kind: MediaKind,
+  signal?: AbortSignal,
 ): Promise<ApplicationCommandOptionChoiceData[]> {
-  const results = await withTimeout(jellyfin.search(query, kind, MAX_CHOICES), 2500);
+  const results = await withTimeout(jellyfin.search(query, kind, MAX_CHOICES, { signal }), 2500, signal);
   return toAutocompleteChoices(results, kind, jellyfin.formatItemLabel.bind(jellyfin));
 }
 

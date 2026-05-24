@@ -101,6 +101,11 @@ const TV_EPISODES_PER_SERIES = 25;
 export type EpisodeListOptions = {
   limit: number;
   query?: string;
+  signal?: AbortSignal;
+};
+
+export type JellyfinRequestOptions = {
+  signal?: AbortSignal;
 };
 
 export function isJellyfinItemId(value: string): boolean {
@@ -111,6 +116,7 @@ export type TvSearchExpandOptions = {
   maxSeriesToExpand: number;
   episodesPerSeries: number;
   totalLimit: number;
+  signal?: AbortSignal;
 };
 
 export async function resolveTvSearchResults(
@@ -128,12 +134,14 @@ export async function resolveTvSearchResults(
   const seen = new Set<string>();
 
   for (const show of series.slice(0, options.maxSeriesToExpand)) {
+    throwIfAborted(options.signal);
     const remaining = options.totalLimit - expanded.length;
     if (remaining <= 0) break;
 
     const showEpisodes = await listEpisodesForSeries(show.id, {
       limit: Math.min(options.episodesPerSeries, remaining),
       query,
+      signal: options.signal,
     });
 
     for (const episode of showEpisodes) {
@@ -150,6 +158,11 @@ export async function resolveTvSearchResults(
   }
 
   return expanded;
+}
+
+function throwIfAborted(signal?: AbortSignal): void {
+  if (!signal?.aborted) return;
+  throw signal.reason ?? new DOMException("The operation was aborted.", "AbortError");
 }
 
 export class JellyfinClient {
@@ -224,20 +237,28 @@ export class JellyfinClient {
     return response;
   }
 
-  async search(query: string, kind: MediaKind, limit = 25): Promise<JellyfinItem[]> {
+  async search(
+    query: string,
+    kind: MediaKind,
+    limit = 25,
+    options: JellyfinRequestOptions = {},
+  ): Promise<JellyfinItem[]> {
+    throwIfAborted(options.signal);
     if (kind === "movie") {
       return this.searchItems({
         query,
         includeItemTypes: "Movie",
         parentId: process.env.JELLYFIN_MOVIES_LIBRARY_ID ?? DEFAULT_MOVIES_LIBRARY_ID,
         limit,
+        signal: options.signal,
       });
     }
 
-    return this.searchTv(query, limit);
+    return this.searchTv(query, limit, options.signal);
   }
 
-  private async searchTv(query: string, limit: number): Promise<JellyfinItem[]> {
+  private async searchTv(query: string, limit: number, signal?: AbortSignal): Promise<JellyfinItem[]> {
+    throwIfAborted(signal);
     const parentId = process.env.JELLYFIN_TV_LIBRARY_ID ?? DEFAULT_TV_LIBRARY_ID;
     const parsed = parseTvMediaQuery(query);
     const seriesQuery = parsed.seriesText.length >= 2 ? parsed.seriesText : query;
@@ -248,12 +269,14 @@ export class JellyfinClient {
         includeItemTypes: "Episode",
         parentId,
         limit,
+        signal,
       }),
       this.searchItems({
         query: seriesQuery,
         includeItemTypes: "Series",
         parentId,
         limit: TV_SERIES_EXPAND_LIMIT,
+        signal,
       }),
     ]);
 
@@ -261,11 +284,12 @@ export class JellyfinClient {
       episodes,
       series,
       query,
-      (seriesId, options) => this.listEpisodesForSeries(seriesId, options),
+      (seriesId, episodeOptions) => this.listEpisodesForSeries(seriesId, episodeOptions),
       {
         maxSeriesToExpand: TV_SERIES_EXPAND_LIMIT,
         episodesPerSeries: TV_EPISODES_PER_SERIES,
         totalLimit: limit,
+        signal,
       },
     );
   }
@@ -275,7 +299,9 @@ export class JellyfinClient {
     includeItemTypes: string;
     parentId: string;
     limit: number;
+    signal?: AbortSignal;
   }): Promise<JellyfinItem[]> {
+    throwIfAborted(params.signal);
     const { userId } = this.requireAuth();
     const searchParams = new URLSearchParams({
       UserId: userId,
@@ -287,7 +313,9 @@ export class JellyfinClient {
       Fields: ITEM_FIELDS,
     });
 
-    const response = await this.fetchAuthed(`${this.baseUrl}/Items?${searchParams}`);
+    const response = await this.fetchAuthed(`${this.baseUrl}/Items?${searchParams}`, {
+      signal: params.signal,
+    });
 
     if (!response.ok) {
       throw new Error(`Jellyfin search failed (${response.status}).`);
@@ -298,6 +326,7 @@ export class JellyfinClient {
   }
 
   private async listEpisodesForSeries(seriesId: string, options: EpisodeListOptions): Promise<JellyfinItem[]> {
+    throwIfAborted(options.signal);
     const parsed = parseTvMediaQuery(options.query ?? "");
     const { userId } = this.requireAuth();
     const searchParams = new URLSearchParams({
@@ -325,17 +354,18 @@ export class JellyfinClient {
       searchParams.set("SearchTerm", searchTerm);
     }
 
-    let items = await this.fetchEpisodeItems(searchParams);
+    let items = await this.fetchEpisodeItems(searchParams, options.signal);
     if (items.length === 0 && searchTerm.length >= 2 && !hasIndexHint) {
       searchParams.delete("SearchTerm");
-      items = await this.fetchEpisodeItems(searchParams);
+      items = await this.fetchEpisodeItems(searchParams, options.signal);
     }
 
     return items;
   }
 
-  private async fetchEpisodeItems(searchParams: URLSearchParams): Promise<JellyfinItem[]> {
-    const response = await this.fetchAuthed(`${this.baseUrl}/Items?${searchParams}`);
+  private async fetchEpisodeItems(searchParams: URLSearchParams, signal?: AbortSignal): Promise<JellyfinItem[]> {
+    throwIfAborted(signal);
+    const response = await this.fetchAuthed(`${this.baseUrl}/Items?${searchParams}`, { signal });
 
     if (!response.ok) {
       throw new Error(`Jellyfin episode lookup failed (${response.status}).`);

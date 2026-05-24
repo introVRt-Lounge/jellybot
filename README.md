@@ -92,7 +92,7 @@ The runtime container:
 - talks to Jellyfin at `http://jellyfin:8096`
 - exposes `GET /healthz` on port `8080`
 - ephemeral clip files bind-mount to `JELLYBOT_CLIP_HOST_DIR` (default `/mnt/drives/1tb_smb/jellybot-clips`)
-- subtitle index lives in the local `jellybot-data` Docker volume (SQLite does not belong on SMB)
+- **subtitle index (SQLite) stays on the main drive** via the local `jellybot-data` Docker volume (`/var/lib/docker/volumes/jellybot_jellybot-data/_data` on the host). Do not put it on SMB.
 
 Production promotion uses an image-only compose file at [deploy/prod/docker-compose.yml](deploy/prod/docker-compose.yml):
 
