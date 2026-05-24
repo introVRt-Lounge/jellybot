@@ -1,0 +1,47 @@
+name: Feature request
+description: Suggest an improvement to Jellybot
+title: "[feat]: "
+labels: ["enhancement", "triage"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or use case
+      description: What pain are you solving? Who benefits?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Command behavior, UX, or config you have in mind
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Scope
+      options:
+        - Discord slash commands
+        - Jellyfin integration
+        - Subtitle / quote search
+        - Docker / deployment
+        - Docs only
+        - other
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: volunteer
+    attributes:
+      label: Contribution
+      options:
+        - label: I am willing to open a PR for this
+        - label: I can help test a PR
