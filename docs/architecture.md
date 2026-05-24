@@ -19,14 +19,18 @@
 
 ## Subtitle index
 
-The FTS database is **derived** from Jellyfin VTT streams (rebuildable via `make index-subtitles`) but **expensive** to regenerate: a full library pass can take hours and produces a multi-GB SQLite file as coverage grows.
+The FTS database is **derived** from Jellyfin VTT streams (rebuildable via `make index-subtitles`) but **expensive** to regenerate: a full library pass can take hours.
 
-| Scale (approx.) | Size |
-|-----------------|------|
-| ~3,500 items indexed (~34% of subtitled library) | ~1 GB |
-| Full subtitled library (~10k items) | likely **2–3 GB** |
+### Size (measured + projected)
 
-Treat it as **state worth backing up**, not ephemeral bot state. Clips under `/var/lib/jellybot/clips` remain ephemeral.
+| Scale | Raw cue text | DB file (legacy trigram) |
+|-------|--------------|---------------------------|
+| ~5,100 items (~49%) | **157 MiB** | **2.43 GiB** |
+| ~10,409 items (full Jellyfin-subtitled pool) | **~319 MiB** (projected) | **~4.9 GiB** (projected, trigram) |
+
+Disk is dominated by the **FTS5 inverted index**, not subtitle prose. Legacy schema used `tokenize='trigram'` (~71% of bytes in `subtitle_cues_fts_data`). New deployments migrate to **`unicode61`** word search (smaller index; see [#27](https://github.com/introVRt-Lounge/jellybot/issues/27)). Migration rebuilds FTS from existing `subtitle_cues` rows on startup.
+
+Treat `subtitles.db` as **state worth backing up**, not ephemeral bot state. Clips under `/var/lib/jellybot/clips` remain ephemeral.
 
 ### Backup (operator)
 
