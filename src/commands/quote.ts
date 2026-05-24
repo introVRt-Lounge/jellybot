@@ -5,6 +5,8 @@ import {
   SlashCommandBuilder,
 } from "discord.js";
 import type { AppConfig } from "../config.ts";
+import { withTimeout } from "../autocomplete.ts";
+import { AutocompleteSessionGuard, isUnknownInteractionError } from "../autocomplete-guard.ts";
 import { formatDiscordUploadLimit, maxClipMbForDiscordUpload } from "../discord-upload.ts";
 import type { JellyfinClient } from "../jellyfin.ts";
 import {
@@ -16,9 +18,11 @@ import { planQuoteClip } from "../services/quote-request.ts";
 import { parseQuoteMatchToken } from "../subtitles/match-token.ts";
 import { openSubtitleIndex } from "../subtitles/index-db.ts";
 import { quoteSearchChoices } from "../subtitles/quote-autocomplete.ts";
-import { enrichQuoteSearchResults } from "../subtitles/enrich-quote-results.ts";
 import { cleanup } from "../ffmpeg.ts";
 import { formatTimestamp } from "../time.ts";
+
+const quoteMatchAutocompleteGuard = new AutocompleteSessionGuard();
+const QUOTE_AUTOCOMPLETE_TIMEOUT_MS = 2500;
 
 export const quoteCommand = new SlashCommandBuilder()
   .setName("quote")
@@ -45,7 +49,7 @@ export const quoteCommand = new SlashCommandBuilder()
 
 export async function handleQuoteAutocomplete(
   interaction: AutocompleteInteraction,
-  jellyfin: JellyfinClient,
+  _jellyfin: JellyfinClient,
   config: Pick<AppConfig, "subtitleDbPath">,
 ): Promise<void> {
   const focused = interaction.options.getFocused(true);
@@ -61,16 +65,27 @@ export async function handleQuoteAutocomplete(
   }
 
   try {
+    const isCurrent = quoteMatchAutocompleteGuard.begin(
+      `${interaction.user.id}:${interaction.guildId ?? "dm"}:quote:match`,
+    );
     const index = openSubtitleIndex(config.subtitleDbPath);
     try {
-      const results = index.searchQuotes(query, 25);
-      const enriched = await enrichQuoteSearchResults(jellyfin, results);
-      const choices = quoteSearchChoices(enriched);
+      const results = await withTimeout(
+        Promise.resolve(index.searchQuotes(query, 25)),
+        QUOTE_AUTOCOMPLETE_TIMEOUT_MS,
+      );
+      const choices = quoteSearchChoices(results);
+      if (!isCurrent() || interaction.responded) {
+        return;
+      }
       await interaction.respond(choices);
     } finally {
       index.close();
     }
   } catch (error) {
+    if (isUnknownInteractionError(error)) {
+      return;
+    }
     console.error(
       JSON.stringify({
         event: "quote.autocomplete_failed",

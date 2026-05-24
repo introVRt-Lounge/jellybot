@@ -4,6 +4,7 @@ import {
   ChatInputCommandInteraction,
   SlashCommandBuilder,
 } from "discord.js";
+import { AutocompleteSessionGuard, isUnknownInteractionError } from "../autocomplete-guard.ts";
 import { searchAutocompleteChoices } from "../autocomplete.ts";
 import type { AppConfig } from "../config.ts";
 import { formatDiscordUploadLimit, maxClipMbForDiscordUpload } from "../discord-upload.ts";
@@ -20,6 +21,8 @@ export const KIND_AUTOCOMPLETE_CHOICES = [
   { name: "Movie", value: "movie" },
   { name: "TV episode", value: "tv" },
 ] as const;
+
+const clipMediaAutocompleteGuard = new AutocompleteSessionGuard();
 
 export const clipCommand = new SlashCommandBuilder()
   .setName("clip")
@@ -99,6 +102,9 @@ export async function handleClipAutocomplete(
   }
 
   try {
+    const isCurrent = clipMediaAutocompleteGuard.begin(
+      `${interaction.user.id}:${interaction.guildId ?? "dm"}:clip:media`,
+    );
     const choices = await searchAutocompleteChoices(jellyfin, query, kind);
     console.info(
       JSON.stringify({
@@ -109,8 +115,14 @@ export async function handleClipAutocomplete(
         resultCount: choices.length,
       }),
     );
+    if (!isCurrent() || interaction.responded) {
+      return;
+    }
     await interaction.respond(choices);
   } catch (error) {
+    if (isUnknownInteractionError(error)) {
+      return;
+    }
     console.error(
       JSON.stringify({
         event: "clip.autocomplete_failed",

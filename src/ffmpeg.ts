@@ -6,6 +6,23 @@ const DEFAULT_MAX_HEIGHT = 480;
 const DEFAULT_VIDEO_CODEC = "libx264";
 const DEFAULT_VIDEO_PRESET = "veryfast";
 const DEFAULT_VIDEO_CRF = "30";
+const DEFAULT_AUDIO_CODEC = "aac";
+const DEFAULT_AUDIO_CHANNELS = "2";
+const DEFAULT_AUDIO_SAMPLE_RATE = "48000";
+const DEFAULT_AUDIO_BITRATE = "192k";
+
+export function buildAudioEncodeArgs(): string[] {
+  return [
+    "-c:a",
+    DEFAULT_AUDIO_CODEC,
+    "-ac",
+    DEFAULT_AUDIO_CHANNELS,
+    "-ar",
+    DEFAULT_AUDIO_SAMPLE_RATE,
+    "-b:a",
+    DEFAULT_AUDIO_BITRATE,
+  ];
+}
 
 export type ClipOptions = {
   inputUrl: string;
@@ -62,10 +79,7 @@ export async function createClip(options: ClipOptions): Promise<void> {
     "-map",
     "0:a:0?",
     ...buildVideoEncodeArgs(videoCodec, maxHeight),
-    "-c:a",
-    "aac",
-    "-b:a",
-    "128k",
+    ...buildAudioEncodeArgs(),
     "-movflags",
     "+faststart",
     "-y",

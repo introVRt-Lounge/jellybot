@@ -89,7 +89,7 @@ The runtime container:
 - joins `traefik_net`
 - talks to Jellyfin at `http://jellyfin:8096`
 - exposes `GET /healthz` on port `8080`
-- stores clip temp files and the subtitle index in the `jellybot-tmp` volume
+- stores clip temp files and the subtitle index under `JELLYBOT_TMP_DIR` (default `/mnt/drives/1tb_smb/jellybot-tmp`, mounted at `/tmp/jellybot` in the container)
 
 Production promotion uses an image-only compose file at [deploy/prod/docker-compose.yml](deploy/prod/docker-compose.yml):
 
