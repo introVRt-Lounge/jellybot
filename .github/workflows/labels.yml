@@ -17,5 +17,5 @@ jobs:
     steps:
       - uses: EndBug/label-sync@v2
         with:
-          labels-file: .github/labels.yml
+          config-file: .github/labels.yml
           delete-other-labels: false
