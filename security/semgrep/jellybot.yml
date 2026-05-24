@@ -1,0 +1,14 @@
+rules:
+  - id: jellybot-no-token-url-logging
+    message: Do not log URLs that may contain Jellyfin or Discord access tokens.
+    severity: ERROR
+    languages: [typescript, javascript]
+    pattern-regex: 'console\.(log|info|error)\([^)]*(streamUrl|api_key|AccessToken|DISCORD_TOKEN|JELLYFIN_PASSWORD)'
+
+  - id: jellybot-no-admin-api-key-env
+    message: Use Jellyfin user auth, not admin-level Jellyfin API keys.
+    severity: ERROR
+    languages: [typescript, javascript]
+    pattern-either:
+      - pattern: process.env.JELLYFIN_API_KEY
+      - pattern: requireEnv($ENV, "JELLYFIN_API_KEY")

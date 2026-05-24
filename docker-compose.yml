@@ -1,0 +1,48 @@
+services:
+  jellybot:
+    profiles: [app]
+    build:
+      context: .
+      target: runtime
+      args:
+        APP_VERSION: ${APP_VERSION:-dev}
+        GIT_SHA: ${GIT_SHA:-local}
+    container_name: jellybot
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      HEALTH_PORT: 8080
+    ports:
+      - "${HEALTH_PORT:-8080}:8080"
+    volumes:
+      - jellybot-clips:/var/lib/jellybot/clips
+      - jellybot-data:/var/lib/jellybot/data
+
+  jellybot-tests:
+    build:
+      context: .
+      target: test
+    profiles: [test]
+
+  jellybot-register-commands:
+    build:
+      context: .
+      target: runtime
+    profiles: [register]
+    env_file: .env
+    command: ["bun", "run", "src/register-commands.ts"]
+
+  jellybot-index-subtitles:
+    build:
+      context: .
+      target: runtime
+    profiles: [index]
+    env_file: .env
+    volumes:
+      - jellybot-clips:/var/lib/jellybot/clips
+      - jellybot-data:/var/lib/jellybot/data
+    command: ["bun", "run", "src/cli/index-subtitles.ts"]
+
+volumes:
+  jellybot-data:
+  jellybot-clips:

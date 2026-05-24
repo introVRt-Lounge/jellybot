@@ -1,0 +1,13 @@
+SOUL.md
+docker-compose.override.yml
+node_modules/
+.env
+.env.*
+.env~
+!.env.example
+/tmp/
+*.mp4
+.agents/
+.claude/
+.skills/
+site/

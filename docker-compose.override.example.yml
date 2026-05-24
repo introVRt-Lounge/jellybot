@@ -1,0 +1,14 @@
+# Optional local overrides (copy to docker-compose.override.yml).
+# Compose merges this automatically; the file is gitignored.
+
+services:
+  jellybot:
+    volumes:
+      # Replace named clip volume with a host bind mount:
+      # - /path/on/host/clips:/var/lib/jellybot/clips
+      - jellybot-data:/var/lib/jellybot/data
+    # Reach Jellyfin on the host from inside the container (Linux example):
+    # extra_hosts:
+    #   - "host.docker.internal:host-gateway"
+    # environment:
+    #   JELLYFIN_URL: http://host.docker.internal:8096

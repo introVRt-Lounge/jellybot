@@ -1,0 +1,11 @@
+node_modules
+.git
+.env
+.env.*
+!.env.example
+tmp
+*.mp4
+README.md
+.skills
+.claude
+.agents

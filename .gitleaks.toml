@@ -1,0 +1,13 @@
+title = "jellybot gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Allowed non-secret examples"
+paths = [
+  '''\.env\.example$''',
+  '''README\.md$''',
+  '''DISCORD_SETUP\.md$''',
+  '''docs/COMMANDS\.md$''',
+]
