@@ -96,7 +96,7 @@ make index-subtitles
 
 That walks Jellyfin items with subtitles and stores cue text in SQLite FTS. Re-run `make index-subtitles-incremental` after new subtitle files appear in the library. With default config, the bot also runs an **incremental** index in the background on every startup until caught up.
 
-The subtitle index is a **multi-GB derived cache** (not throwaway state). Store it on a **host bind mount** (`JELLYBOT_DATA_HOST_DIR`, default `./data`) so `docker_comprehensive` Borg picks it up. See [docs/architecture.md](docs/architecture.md#subtitle-index).
+The subtitle index is a **multi-GB derived cache** (not throwaway state). Store it on a **host bind mount** (`JELLYBOT_DATA_HOST_DIR`, default `./data`) so `docker_comprehensive` Borg picks it up. See [docs/architecture.md](docs/architecture.md#subtitle-index) and [docs/caps-and-limits.md](docs/caps-and-limits.md) for coverage tiers (Jellyfin subs, OpenSubtitles, Whisper long-tail).
 
 **Docs / marketing site:** https://jellybot.introvrtlounge.com (GitHub Pages + custom domain; built from `docs/` on each push to `main`).
 

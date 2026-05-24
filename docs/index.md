@@ -42,5 +42,5 @@ Package page: [ghcr.io/introvrt-lounge/jellybot](https://github.com/introVRt-Lou
 
 - [Commands](commands.md) - `/clip` and `/quote`
 - [Architecture](architecture.md) - stack, data paths, backup
-- [Limits](limits.md) - Discord upload and clip constraints
+- [Caps and limits](caps-and-limits.md) - what it can and cannot do, Discord limits, optional OpenSubtitles / Whisper
 - [GitHub repository](https://github.com/introVRt-Lounge/jellybot) - source, issues, contributing
