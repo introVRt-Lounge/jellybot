@@ -42,7 +42,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     subtitleDefaultClipSeconds: Number(env.SUBTITLE_DEFAULT_CLIP_SECONDS ?? 15),
     subtitleQuotePaddingSeconds: Number(env.SUBTITLE_QUOTE_PADDING_SECONDS ?? 2),
     subtitleIndexConcurrency: Number(env.SUBTITLE_INDEX_CONCURRENCY ?? 4),
-    subtitleIndexOnStartup: env.SUBTITLE_INDEX_ON_STARTUP?.trim() === "incremental" ? "incremental" : "off",
+    subtitleIndexOnStartup:
+      env.SUBTITLE_INDEX_ON_STARTUP?.trim().toLowerCase() === "off" ? "off" : "incremental",
   };
 }
 

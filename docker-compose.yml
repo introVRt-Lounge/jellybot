@@ -20,7 +20,7 @@ services:
       - "${HEALTH_PORT:-8080}:8080"
     volumes:
       - jellybot-clips:/var/lib/jellybot/clips
-      - jellybot-data:/var/lib/jellybot/data
+      - ${JELLYBOT_DATA_HOST_DIR:-./data}:/var/lib/jellybot/data
 
   jellybot-tests:
     build:
@@ -40,9 +40,8 @@ services:
     env_file: .env
     volumes:
       - jellybot-clips:/var/lib/jellybot/clips
-      - jellybot-data:/var/lib/jellybot/data
+      - ${JELLYBOT_DATA_HOST_DIR:-./data}:/var/lib/jellybot/data
     command: ["bun", "run", "src/cli/index-subtitles.ts"]
 
 volumes:
-  jellybot-data:
   jellybot-clips:

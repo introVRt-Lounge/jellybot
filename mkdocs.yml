@@ -1,14 +1,26 @@
 site_name: Jellybot
-site_url: https://introvrt-lounge.github.io/jellybot/
+site_url: https://jellybot.introvrtlounge.com/
 repo_url: https://github.com/introVRt-Lounge/jellybot
 repo_name: introVRt-Lounge/jellybot
 
 theme:
   name: material
+  logo: assets/jellybot_icon_1024.png
+  favicon: assets/jellybot_icon_1024.png
   palette:
     - scheme: slate
       primary: deep purple
       accent: amber
+
+extra_css:
+  - stylesheets/extra.css
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/introVRt-Lounge/jellybot
+    - icon: fontawesome/brands/docker
+      link: https://github.com/introVRt-Lounge/jellybot/pkgs/container/jellybot
 
 nav:
   - Home: index.md

@@ -4,9 +4,10 @@
 services:
   jellybot:
     volumes:
-      # Replace named clip volume with a host bind mount:
+      # Clips: ephemeral; SMB bind mount is fine locally.
       # - /path/on/host/clips:/var/lib/jellybot/clips
-      - jellybot-data:/var/lib/jellybot/data
+      # Subtitle index DB: bind mount (backed up via docker_comprehensive Borg job).
+      - ${JELLYBOT_DATA_HOST_DIR:-./data}:/var/lib/jellybot/data
     # Reach Jellyfin on the host from inside the container (Linux example):
     # extra_hosts:
     #   - "host.docker.internal:host-gateway"
