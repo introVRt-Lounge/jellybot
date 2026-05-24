@@ -104,7 +104,7 @@ export async function handleQuoteCommand(
   jellyfin: JellyfinClient,
   config: Pick<
     AppConfig,
-    "subtitleDbPath" | "maxClipMb" | "maxClipSeconds" | "subtitleDefaultClipSeconds" | "subtitleQuotePaddingSeconds"
+    "clipTempDir" | "subtitleDbPath" | "maxClipMb" | "maxClipSeconds" | "subtitleDefaultClipSeconds" | "subtitleQuotePaddingSeconds"
   >,
 ): Promise<void> {
   const matchRaw = interaction.options.getString("match", true);
@@ -172,6 +172,7 @@ export async function handleQuoteCommand(
     validated.item,
     planned.plan,
     interaction.id,
+    config.clipTempDir,
     jellyfin.formatItemLabel.bind(jellyfin),
   );
 

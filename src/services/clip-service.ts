@@ -48,10 +48,11 @@ export function buildClipArtifact(
   item: JellyfinItem,
   plan: ClipPlan,
   interactionId: string,
+  clipTempDir: string,
   formatLabel: (item: JellyfinItem, kind?: MediaKind) => string,
 ): ClipArtifact {
   const safeName = displayTitle(item).replace(/[^\w.-]+/g, "_").slice(0, 40);
-  const outputPath = `/tmp/jellybot/${interactionId}-${safeName}.mp4`;
+  const outputPath = `${clipTempDir}/${interactionId}-${safeName}.mp4`;
 
   return {
     outputPath,

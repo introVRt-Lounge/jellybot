@@ -47,7 +47,9 @@ Optional:
 - `MAX_CLIP_MB` (default `9`, capped by Discord's per-server `attachment_size_limit`; bots default to 10 MB)
 - `HEALTH_PORT` (default `8080`)
 - `APP_VERSION` - shown on `/healthz`
-- `SUBTITLE_DB_PATH` (default `/tmp/jellybot/subtitles.db`)
+- `SUBTITLE_DB_PATH` (default `/tmp/jellybot/data/subtitles.db`, local Docker volume)
+- `JELLYBOT_CLIP_DIR` (container path for ephemeral clips, default `/tmp/jellybot/clips`)
+- Host clip storage defaults to `/mnt/drives/1tb_smb/jellybot-clips` via Compose bind mount
 - `SUBTITLE_LANGUAGES` (default `eng,en`)
 - `SUBTITLE_DEFAULT_CLIP_SECONDS` (default `15`)
 - `SUBTITLE_QUOTE_PADDING_SECONDS` (default `2`)
@@ -89,7 +91,8 @@ The runtime container:
 - joins `traefik_net`
 - talks to Jellyfin at `http://jellyfin:8096`
 - exposes `GET /healthz` on port `8080`
-- stores clip temp files and the subtitle index under `JELLYBOT_TMP_DIR` (default `/mnt/drives/1tb_smb/jellybot-tmp`, mounted at `/tmp/jellybot` in the container)
+- ephemeral clip files bind-mount to `JELLYBOT_CLIP_HOST_DIR` (default `/mnt/drives/1tb_smb/jellybot-clips`)
+- subtitle index lives in the local `jellybot-data` Docker volume (SQLite does not belong on SMB)
 
 Production promotion uses an image-only compose file at [deploy/prod/docker-compose.yml](deploy/prod/docker-compose.yml):
 

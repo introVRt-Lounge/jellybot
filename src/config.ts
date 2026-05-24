@@ -10,6 +10,7 @@ export type AppConfig = {
   maxClipMb: number;
   healthPort: number;
   appVersion: string;
+  clipTempDir: string;
   subtitleDbPath: string;
   subtitleLanguages: string;
   subtitleDefaultClipSeconds: number;
@@ -31,7 +32,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     maxClipMb: Number(env.MAX_CLIP_MB ?? 9),
     healthPort: Number(env.HEALTH_PORT ?? 8080),
     appVersion: env.APP_VERSION?.trim() || "dev",
-    subtitleDbPath: env.SUBTITLE_DB_PATH?.trim() || "/tmp/jellybot/subtitles.db",
+    clipTempDir: env.JELLYBOT_CLIP_DIR?.trim() || "/tmp/jellybot/clips",
+    subtitleDbPath: env.SUBTITLE_DB_PATH?.trim() || "/tmp/jellybot/data/subtitles.db",
     subtitleLanguages: env.SUBTITLE_LANGUAGES?.trim() || "eng,en",
     subtitleDefaultClipSeconds: Number(env.SUBTITLE_DEFAULT_CLIP_SECONDS ?? 15),
     subtitleQuotePaddingSeconds: Number(env.SUBTITLE_QUOTE_PADDING_SECONDS ?? 2),
