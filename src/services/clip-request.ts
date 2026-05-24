@@ -1,4 +1,4 @@
-import type { MediaKind } from "../jellyfin.ts";
+import { isJellyfinItemId, type MediaKind } from "../jellyfin.ts";
 import { parseTimestamp } from "../time.ts";
 
 export type ClipRequestInput = {
@@ -23,12 +23,23 @@ export type ClipRequestResult =
   | { ok: true; plan: ClipPlan }
   | { ok: false; message: string };
 
-const DEFAULT_MAX_CLIP_SECONDS = 120;
+const DEFAULT_MAX_CLIP_SECONDS = 180;
 const DEFAULT_MIN_CLIP_SECONDS = 1;
 
 export function planClipRequest(input: ClipRequestInput): ClipRequestResult {
   const maxClipSeconds = input.maxClipSeconds ?? DEFAULT_MAX_CLIP_SECONDS;
   const minClipSeconds = input.minClipSeconds ?? DEFAULT_MIN_CLIP_SECONDS;
+
+  if (!input.itemId?.trim()) {
+    return { ok: false, message: "`media` is required. Pick a title from autocomplete." };
+  }
+
+  if (!isJellyfinItemId(input.itemId)) {
+    return {
+      ok: false,
+      message: "Pick a title from the autocomplete list. Free-typed text in `media` is not supported.",
+    };
+  }
 
   if (!input.startRaw?.trim()) {
     return { ok: false, message: "`start` is required." };
@@ -67,7 +78,10 @@ export function planClipRequest(input: ClipRequestInput): ClipRequestResult {
   }
 
   if (durationSeconds > maxClipSeconds) {
-    return { ok: false, message: `Clip too long. Max length is ${maxClipSeconds} seconds.` };
+    return {
+      ok: false,
+      message: `Clip too long (${Math.round(durationSeconds)}s). Max length is ${maxClipSeconds} seconds.`,
+    };
   }
 
   return {

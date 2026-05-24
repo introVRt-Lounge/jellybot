@@ -1,5 +1,7 @@
 import type { ApplicationCommandOptionChoiceData } from "discord.js";
 import type { JellyfinClient, JellyfinItem, MediaKind } from "./jellyfin.ts";
+import { formatEpisodeLabel } from "./jellyfin.ts";
+import { displayTitleWithYear } from "./display-title.ts";
 
 const MAX_CHOICE_NAME = 100;
 const MAX_CHOICE_VALUE = 100;
@@ -7,16 +9,13 @@ const MAX_CHOICES = 25;
 
 export function compactItemLabel(item: JellyfinItem, kind: MediaKind): string {
   if (kind === "tv" && item.seriesName) {
-    const episode = item.name.length > 48 ? `${item.name.slice(0, 45)}...` : item.name;
+    const episode = formatEpisodeLabel(item);
+    const compactEpisode = episode.length > 48 ? `${episode.slice(0, 45)}...` : episode;
     const show = item.seriesName.length > 42 ? `${item.seriesName.slice(0, 39)}...` : item.seriesName;
-    return `${show} - ${episode}`;
+    return `${show} - ${compactEpisode}`;
   }
 
-  if (item.productionYear) {
-    return `${item.name} (${item.productionYear})`;
-  }
-
-  return item.name;
+  return displayTitleWithYear(item);
 }
 
 export function toAutocompleteChoices(
@@ -24,26 +23,44 @@ export function toAutocompleteChoices(
   kind: MediaKind,
   formatLabel: (item: JellyfinItem, kind?: MediaKind) => string,
 ): ApplicationCommandOptionChoiceData[] {
-  const seen = new Set<string>();
+  const seenIds = new Set<string>();
+  const seenNames = new Set<string>();
   const choices: ApplicationCommandOptionChoiceData[] = [];
 
   for (const item of items) {
-    if (seen.has(item.id)) continue;
+    if (seenIds.has(item.id)) continue;
 
     const value = item.id.slice(0, MAX_CHOICE_VALUE);
     if (!value) continue;
 
     const rawName = compactItemLabel(item, kind) || formatLabel(item, kind);
-    const name = truncate(rawName, MAX_CHOICE_NAME);
+    const name = uniqueChoiceName(truncate(rawName, MAX_CHOICE_NAME), seenNames);
     if (!name) continue;
 
-    seen.add(item.id);
+    seenIds.add(item.id);
+    seenNames.add(name);
     choices.push({ name, value });
 
     if (choices.length >= MAX_CHOICES) break;
   }
 
   return choices;
+}
+
+export function uniqueChoiceName(name: string, seenNames: Set<string>): string {
+  if (!seenNames.has(name)) {
+    return name;
+  }
+
+  for (let suffix = 2; suffix < 100; suffix += 1) {
+    const tail = ` (${suffix})`;
+    const candidate = truncate(name, MAX_CHOICE_NAME - tail.length) + tail;
+    if (!seenNames.has(candidate)) {
+      return candidate;
+    }
+  }
+
+  return name;
 }
 
 export async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {

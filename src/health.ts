@@ -1,6 +1,11 @@
 export type HealthState = {
   discordReady: boolean;
   jellyfinUser?: string;
+  subtitleIndex?: {
+    itemCount: number;
+    cueCount: number;
+    lastIndexedAt: string | null;
+  } | null;
 };
 
 export function startHealthServer(
@@ -24,6 +29,7 @@ export function startHealthServer(
         version: appVersion,
         discord: state.discordReady ? "connected" : "starting",
         jellyfinUser: state.jellyfinUser ?? null,
+        subtitleIndex: state.subtitleIndex ?? null,
       };
 
       return Response.json(body, {

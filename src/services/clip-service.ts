@@ -1,4 +1,5 @@
 import { cleanup, createClip, fileSizeMb } from "../ffmpeg.ts";
+import { displayTitle } from "../display-title.ts";
 import type { JellyfinClient, JellyfinItem, MediaKind } from "../jellyfin.ts";
 import { formatTimestamp } from "../time.ts";
 import { expectedItemType, type ClipPlan } from "./clip-request.ts";
@@ -49,7 +50,7 @@ export function buildClipArtifact(
   interactionId: string,
   formatLabel: (item: JellyfinItem, kind?: MediaKind) => string,
 ): ClipArtifact {
-  const safeName = item.name.replace(/[^\w.-]+/g, "_").slice(0, 40);
+  const safeName = displayTitle(item).replace(/[^\w.-]+/g, "_").slice(0, 40);
   const outputPath = `/tmp/jellybot/${interactionId}-${safeName}.mp4`;
 
   return {
