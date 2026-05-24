@@ -340,6 +340,7 @@ function migrateTrigramFtsToUnicode61(db: Database): void {
   `);
   db.exec(CREATE_FTS_UNICODE61);
   db.exec("INSERT INTO subtitle_cues_fts(subtitle_cues_fts) VALUES ('rebuild')");
+  db.exec("VACUUM");
   setIndexMeta(db, "fts_tokenizer", FTS_TOKENIZER);
   console.info(
     JSON.stringify({
