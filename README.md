@@ -52,6 +52,7 @@ Optional:
 bun run register-commands
 bun run start
 bun test
+bun run secrets:staged
 ```
 
 ## Docker
