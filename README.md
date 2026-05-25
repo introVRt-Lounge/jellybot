@@ -9,7 +9,7 @@ Discord slash command bot that searches your local Jellyfin library and posts vi
 [![Docs](https://img.shields.io/badge/docs-GitHub%20Pages-blue)](https://introvrt-lounge.github.io/jellybot/)
 [![GHCR](https://img.shields.io/badge/container-ghcr.io%2Fintrovrt--lounge%2Fjellybot-2496ED?logo=docker&logoColor=white)](https://github.com/introVRt-Lounge/jellybot/pkgs/container/jellybot)
 
-Links: [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md) · [Support](SUPPORT.md) · [Docs](https://introvrt-lounge.github.io/jellybot/) · [Discord setup](DISCORD_SETUP.md)
+Links: [Contributing](CONTRIBUTING.md) · [Issue → deployment](docs/ISSUE_TO_DEPLOYMENT.md) · [Security](SECURITY.md) · [Support](SUPPORT.md) · [Docs](https://introvrt-lounge.github.io/jellybot/) · [Discord setup](DISCORD_SETUP.md)
 
 ## What it does
 
@@ -120,9 +120,9 @@ CI publishes the runtime image to **GitHub Container Registry** under the **intr
 |---|---|
 | **Package page** | https://github.com/introVRt-Lounge/jellybot/pkgs/container/jellybot |
 | **Pull URL** | `ghcr.io/introvrt-lounge/jellybot:latest` |
-| **Also tagged** | `:main`, `:sha-<commit>` on each build; semver tags on `v*` releases; `:latest` moves on major/minor only |
+| **Also tagged** | `:main`, `:sha-<commit>` on each build; semver tags on `v*` releases; `:latest` on every **`main`** push (patch-only **release tags** skip image publish) |
 
-Production uses Watchtower (`watchtower-minutely`, label-enabled) to recreate the container when `:latest` digest changes. The bot announces major/minor releases to Discord **once per restart** via `on_ready` - no scheduled polling.
+Production uses Watchtower (`watchtower-minutely`, label-enabled) to recreate the container when `:latest` digest changes — no manual pull in normal ops. See **[Issue → deployment](docs/ISSUE_TO_DEPLOYMENT.md)** for the full label-gated agent, CI, auto-merge, and announce flow. The bot posts major/minor release embeds to Discord **once per restart** via `on_ready`.
 
 ```bash
 docker pull ghcr.io/introvrt-lounge/jellybot:latest

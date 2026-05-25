@@ -63,6 +63,8 @@ make register-commands
 
 ## Cursor agent automation (label-gated)
 
+Full pipeline (intake → agent → CI → auto-merge → Watchtower → Discord announce): **[docs/ISSUE_TO_DEPLOYMENT.md](docs/ISSUE_TO_DEPLOYMENT.md)**.
+
 Cursor Cloud Agents **do not** run on every new issue. They run when **`@radgey-cmd`** (issue triage) adds **`ai-triage`** or **`ai-safe`** after reviewing the ticket.
 
 Workflow: `.github/workflows/cursor-issue-triage.yml` → [cursor-issue-triage](https://github.com/marketplace/actions/cursor-issue-triage) action → Cursor Cloud Agent. Requires repo secret **`CURSOR_API_KEY`** and Cursor Dashboard GitHub integration for this repo.

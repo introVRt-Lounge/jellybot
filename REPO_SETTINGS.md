@@ -96,6 +96,8 @@ Use a bind mount, not a named Docker volume — volumes under `/var/lib/docker/v
 
 ## Cursor Cloud Agent (label-gated)
 
+See **[docs/ISSUE_TO_DEPLOYMENT.md](docs/ISSUE_TO_DEPLOYMENT.md)** for the end-to-end issue → deployment diagram and runbook.
+
 | | |
 |---|---|
 | **Trigger** | Issue label `ai-triage` applied by **`radgey-cmd`** only (`.github/workflows/cursor-issue-triage.yml`) |
