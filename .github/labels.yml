@@ -26,3 +26,24 @@
 - name: invalid
   color: e4e669
   description: Not a valid report
+- name: ai-triage
+  color: 1d76db
+  description: Cursor may inspect and attempt implementation (label-gated automation)
+- name: ai-triage-enqueued
+  color: c5def5
+  description: Cursor issue triage workflow has started for this issue
+- name: ai-safe
+  color: 0e8a16
+  description: Low-risk change; agent implementation allowed
+- name: ai-investigate-only
+  color: d4c5f9
+  description: Agent should comment findings only; no code changes
+- name: ai-no-db
+  color: bfdadc
+  description: No database migrations or schema changes
+- name: ai-no-auth
+  color: f9d0c4
+  description: No auth, secrets, or security-sensitive changes
+- name: human-needed
+  color: b60205
+  description: Do not run Cursor automation on this issue

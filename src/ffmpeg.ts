@@ -31,9 +31,24 @@ export type ClipOptions = {
   outputPath: string;
   maxHeight?: number;
   videoCodec?: string;
+  audioStreamIndex?: number;
+  subtitlePath?: string;
 };
 
-function buildVideoEncodeArgs(videoCodec: string, maxHeight: number): string[] {
+function buildVideoFilter(maxHeight: number, subtitlePath?: string): string {
+  let filter = `scale=-2:${maxHeight}:force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2`;
+  if (subtitlePath) {
+    filter = `${filter},subtitles=${escapeFfmpegFilterPath(subtitlePath)}`;
+  }
+  return filter;
+}
+
+function escapeFfmpegFilterPath(path: string): string {
+  const escaped = path.replace(/\\/g, "\\\\").replace(/:/g, "\\:").replace(/'/g, "'\\''");
+  return `'${escaped}'`;
+}
+
+function buildVideoEncodeArgs(videoCodec: string, maxHeight: number, subtitlePath?: string): string[] {
   const args = [
     "-c:v",
     videoCodec,
@@ -42,7 +57,7 @@ function buildVideoEncodeArgs(videoCodec: string, maxHeight: number): string[] {
     "-crf",
     DEFAULT_VIDEO_CRF,
     "-vf",
-    `scale=-2:${maxHeight}:force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2`,
+    buildVideoFilter(maxHeight, subtitlePath),
     "-pix_fmt",
     "yuv420p",
   ];
@@ -58,13 +73,15 @@ function buildVideoEncodeArgs(videoCodec: string, maxHeight: number): string[] {
   return args;
 }
 
-export async function createClip(options: ClipOptions): Promise<void> {
-  await mkdir(dirname(options.outputPath), { recursive: true });
-
+export function buildClipFfmpegArgs(options: ClipOptions): string[] {
   const videoCodec = options.videoCodec ?? DEFAULT_VIDEO_CODEC;
   const maxHeight = options.maxHeight ?? DEFAULT_MAX_HEIGHT;
+  const audioMap =
+    options.audioStreamIndex !== undefined
+      ? ["-map", `0:${options.audioStreamIndex}?`]
+      : ["-map", "0:a:0?"];
 
-  const args = [
+  return [
     "-hide_banner",
     "-loglevel",
     "error",
@@ -76,17 +93,19 @@ export async function createClip(options: ClipOptions): Promise<void> {
     String(options.durationSeconds),
     "-map",
     "0:v:0?",
-    "-map",
-    "0:a:0?",
-    ...buildVideoEncodeArgs(videoCodec, maxHeight),
+    ...audioMap,
+    ...buildVideoEncodeArgs(videoCodec, maxHeight, options.subtitlePath),
     ...buildAudioEncodeArgs(),
     "-movflags",
     "+faststart",
     "-y",
     options.outputPath,
   ];
+}
 
-  await runFfmpeg(args);
+export async function createClip(options: ClipOptions): Promise<void> {
+  await mkdir(dirname(options.outputPath), { recursive: true });
+  await runFfmpeg(buildClipFfmpegArgs(options));
 }
 
 async function runFfmpeg(args: string[]): Promise<void> {

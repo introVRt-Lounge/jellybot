@@ -1,0 +1,29 @@
+name: Cursor Issue Triage
+
+on:
+  issues:
+    types:
+      - labeled
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+
+jobs:
+  trigger-cursor-agent:
+    if: github.event.label.name == 'ai-triage' && github.event.sender.login == 'radgey-cmd'
+    runs-on: ubuntu-latest
+
+    concurrency:
+      group: cursor-issue-triage-${{ github.repository }}-${{ github.event.issue.number }}
+      cancel-in-progress: false
+
+    steps:
+      - name: Start Cursor Cloud Agent for labeled issue
+        uses: osbytes/cursor-issue-triage@v1
+        with:
+          triage-enqueued-label: ai-triage-enqueued
+          triage-branch-prefix: ai-triage/fix-issue
+        secrets:
+          cursor_api_key: ${{ secrets.CURSOR_API_KEY }}

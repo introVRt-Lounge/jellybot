@@ -13,6 +13,7 @@ Create a Jellyfin clip and upload it to the current channel.
 | `start` | Yes | String | Timestamp such as `90`, `1:30`, `01:02:03` |
 | `end` | One of end/duration | String | Absolute end timestamp |
 | `duration` | One of end/duration | String | Length from `start` |
+| `subtitles` | No | Boolean | When `true`, burns the preferred Jellyfin subtitle track into the clip video |
 
 `start` is optional in the Discord command schema so autocomplete on `media` works while later options are still empty. The bot rejects the command if `start` is missing.
 
@@ -20,7 +21,7 @@ Create a Jellyfin clip and upload it to the current channel.
 
 ```text
 /clip kind:Movie media:The Matrix start:1:23:45 duration:30
-/clip kind:TV episode media:Breaking Bad s05e14 start:90 end:2:30
+/clip kind:TV episode media:Breaking Bad s05e14 start:90 end:2:30 subtitles:True
 /clip kind:TV episode media:Spitting Image s03e03 start:1:00 duration:15s
 ```
 
@@ -37,6 +38,7 @@ Create a Jellyfin clip and upload it to the current channel.
 - wrong item type for selected `kind`
 - start beyond runtime
 - rendered file above `MAX_CLIP_MB`
+- subtitle burn-in requested but Jellyfin has no usable subtitle track for the clip range
 - ffmpeg/Jellyfin stream failure
 
 ### Permissions
@@ -61,6 +63,7 @@ Search indexed subtitles and clip the scene around a matched quote.
 | `match` | Yes | Autocomplete string | Type at least 3 characters, then pick a quote match |
 | `duration` | No | String | Clip length from the quote (default `15s`) |
 | `padding` | No | String | Seconds before the quote (default `2s`) |
+| `subtitles` | No | Boolean | When `true`, burns the preferred Jellyfin subtitle track into the clip video |
 
 The subtitle index must exist first. Run `make index-subtitles` on the host/container before expecting matches.
 
@@ -68,7 +71,7 @@ The subtitle index must exist first. Run `make index-subtitles` on the host/cont
 
 ```text
 /quote match:love finds its way
-/quote match:does love happen duration:20 padding:3
+/quote match:does love happen duration:20 padding:3 subtitles:True
 ```
 
 ### Failure cases

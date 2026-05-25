@@ -17,4 +17,16 @@ describe("pickSubtitleStream", () => {
   test("returns null when no subtitle streams exist", () => {
     expect(pickSubtitleStream([{ type: "Audio", index: 0 }])).toBeNull();
   });
+
+  test("matches regional English tags such as en-US", () => {
+    const picked = pickSubtitleStream(
+      [
+        { type: "Subtitle", index: 1, language: "deu", isDefault: true, isTextSubtitleStream: true },
+        { type: "Subtitle", index: 2, language: "en-US", isTextSubtitleStream: true },
+      ],
+      ["eng"],
+    );
+
+    expect(picked?.index).toBe(2);
+  });
 });

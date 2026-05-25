@@ -45,6 +45,12 @@ export const quoteCommand = new SlashCommandBuilder()
       .setName("padding")
       .setDescription("Seconds before the quote to include (default 2s)")
       .setRequired(false),
+  )
+  .addBooleanOption((option) =>
+    option
+      .setName("subtitles")
+      .setDescription("Burn subtitles into the clip video")
+      .setRequired(false),
   );
 
 export async function handleQuoteAutocomplete(
@@ -104,7 +110,7 @@ export async function handleQuoteCommand(
   jellyfin: JellyfinClient,
   config: Pick<
     AppConfig,
-    "clipTempDir" | "subtitleDbPath" | "maxClipMb" | "maxClipSeconds" | "subtitleDefaultClipSeconds" | "subtitleQuotePaddingSeconds" | "audioLanguages"
+    "clipTempDir" | "subtitleDbPath" | "maxClipMb" | "maxClipSeconds" | "subtitleDefaultClipSeconds" | "subtitleQuotePaddingSeconds" | "audioLanguages" | "subtitleLanguages"
   >,
 ): Promise<void> {
   const matchRaw = interaction.options.getString("match", true);
@@ -183,6 +189,9 @@ export async function handleQuoteCommand(
     outputPath: artifact.outputPath,
     maxClipMb,
     preferredAudioLanguages: config.audioLanguages,
+    burnInSubtitles: interaction.options.getBoolean("subtitles") ?? false,
+    preferredSubtitleLanguages: config.subtitleLanguages,
+    tempId: interaction.id,
   });
 
   if (!rendered.ok) {
@@ -235,6 +244,7 @@ export async function handleQuoteCommand(
       durationSeconds: planned.plan.durationSeconds,
       audioStreamIndex: rendered.audioStreamIndex,
       audioLanguage: rendered.audioLanguage,
+      subtitlesBurnedIn: rendered.subtitlesBurnedIn,
     }),
   );
 }

@@ -1,8 +1,10 @@
+import { dirname } from "node:path";
 import { pickAudioStream, parsePreferredLanguages as parseAudioLanguages } from "../audio-track-select.ts";
 import { cleanup, createClip, fileSizeMb } from "../ffmpeg.ts";
 import { displayTitle } from "../display-title.ts";
 import type { JellyfinClient, JellyfinItem, MediaKind } from "../jellyfin.ts";
 import { formatTimestamp } from "../time.ts";
+import { prepareClipSubtitleFile } from "../subtitles/burn-in.ts";
 import { expectedItemType, type ClipPlan } from "./clip-request.ts";
 
 export type ClipValidationResult =
@@ -70,7 +72,15 @@ export async function renderClip(params: {
   outputPath: string;
   maxClipMb: number;
   preferredAudioLanguages: string;
-}): Promise<{ ok: true; audioStreamIndex?: number; audioLanguage?: string } | { ok: false; message: string }> {
+  burnInSubtitles?: boolean;
+  preferredSubtitleLanguages?: string;
+  tempId: string;
+}): Promise<
+  | { ok: true; audioStreamIndex?: number; audioLanguage?: string; subtitlesBurnedIn: boolean }
+  | { ok: false; message: string }
+> {
+  let subtitlePath: string | undefined;
+
   try {
     const withMedia = await params.jellyfin.getItemWithMedia(params.item.id);
     if (!withMedia) {
@@ -80,6 +90,24 @@ export async function renderClip(params: {
     const preferred = parseAudioLanguages(params.preferredAudioLanguages);
     const audio = pickAudioStream(withMedia.mediaSource.streams, preferred);
 
+    if (params.burnInSubtitles) {
+      subtitlePath = `${dirname(params.outputPath)}/${params.tempId}-subs.srt`;
+      const prepared = await prepareClipSubtitleFile({
+        jellyfin: params.jellyfin,
+        itemId: params.item.id,
+        mediaSourceId: withMedia.mediaSource.id,
+        streams: withMedia.mediaSource.streams,
+        preferredLanguages: params.preferredSubtitleLanguages ?? params.preferredAudioLanguages,
+        clipStartSeconds: params.plan.startSeconds,
+        clipEndSeconds: params.plan.endSeconds,
+        outputPath: subtitlePath,
+      });
+
+      if (!prepared.ok) {
+        return prepared;
+      }
+    }
+
     await createClip({
       inputUrl: params.jellyfin.streamUrl(params.item.id, {
         mediaSourceId: withMedia.mediaSource.id,
@@ -88,6 +116,8 @@ export async function renderClip(params: {
       startSeconds: params.plan.startSeconds,
       durationSeconds: params.plan.durationSeconds,
       outputPath: params.outputPath,
+      audioStreamIndex: audio?.index,
+      subtitlePath,
     });
 
     const sizeMb = await fileSizeMb(params.outputPath);
@@ -103,6 +133,7 @@ export async function renderClip(params: {
       ok: true,
       audioStreamIndex: audio?.index,
       audioLanguage: audio?.language,
+      subtitlesBurnedIn: Boolean(subtitlePath),
     };
   } catch (error) {
     await cleanup(params.outputPath);
@@ -110,5 +141,9 @@ export async function renderClip(params: {
       ok: false,
       message: `Failed to create clip: ${error instanceof Error ? error.message : "unknown error"}`,
     };
+  } finally {
+    if (subtitlePath) {
+      await cleanup(subtitlePath);
+    }
   }
 }

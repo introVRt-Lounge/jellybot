@@ -9,9 +9,9 @@ describe("quote command contract", () => {
     expect(json.name).toBe("quote");
   });
 
-  test("declares match, duration, padding options", () => {
+  test("declares match, duration, padding, subtitles options", () => {
     const names = json.options?.map((option) => option.name);
-    expect(names).toEqual(["match", "duration", "padding"]);
+    expect(names).toEqual(["match", "duration", "padding", "subtitles"]);
   });
 
   test("uses autocomplete on match", () => {

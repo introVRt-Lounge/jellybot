@@ -60,3 +60,39 @@ make register-commands
 - [ ] Command docs updated for slash-command changes
 - [ ] Docker image starts and `/healthz` is healthy for runtime changes
 - [ ] No secrets in the diff
+
+## Cursor agent automation (label-gated)
+
+Cursor Cloud Agents **do not** run on every new issue. They run only when **`@radgey-cmd`** (issue triage) adds the **`ai-triage`** label after reviewing the ticket.
+
+Workflow: `.github/workflows/cursor-issue-triage.yml` (uses [cursor-issue-triage](https://github.com/marketplace/actions/cursor-issue-triage) and repo secret `CURSOR_API_KEY`). The workflow ignores `ai-triage` if applied by anyone other than `radgey-cmd`.
+
+**Operator setup (once per repo):**
+
+1. Cursor Dashboard → Cloud / Agents / Integrations → connect GitHub with access to this repo (API key alone is not enough for clone/PR).
+2. GitHub repo → Settings → Secrets → Actions → `CURSOR_API_KEY`.
+
+Optional guard labels (add manually; not all are enforced by automation yet):
+
+| Label | Meaning |
+| --- | --- |
+| `ai-triage` | Cursor may inspect and attempt |
+| `ai-safe` | Low-risk implementation allowed |
+| `ai-investigate-only` | Comment with findings only; no code |
+| `ai-no-db` | No migrations or schema changes |
+| `ai-no-auth` | No auth/security changes |
+| `human-needed` | Do not use agent automation |
+
+### Cursor agent rules
+
+When implementing GitHub issues (human or Cloud Agent):
+
+1. Read the full issue body and comments before editing code.
+2. If acceptance criteria are missing or ambiguous, do not implement. Comment with the missing information.
+3. Prefer the smallest safe change.
+4. Do not refactor unrelated code.
+5. Do not change public APIs unless the issue explicitly asks for it.
+6. Do not modify authentication, billing, secrets, deployment config, or database migrations unless the issue explicitly asks for it.
+7. Run the relevant tests, linter, and type checker.
+8. Open a PR with linked issue, summary, files changed, tests run, and risks or assumptions.
+9. If tests cannot run, say exactly why.
