@@ -6,6 +6,7 @@ export type HealthState = {
     cueCount: number;
     lastIndexedAt: string | null;
   } | null;
+  releaseTag?: string | null;
 };
 
 export function startHealthServer(
@@ -26,7 +27,9 @@ export function startHealthServer(
       const body = {
         status: state.discordReady ? "ok" : "starting",
         service: "jellybot",
-        version: appVersion,
+        version: state.releaseTag ?? appVersion,
+        appVersion,
+        releaseTag: state.releaseTag ?? null,
         discord: state.discordReady ? "connected" : "starting",
         jellyfinUser: state.jellyfinUser ?? null,
         subtitleIndex: state.subtitleIndex ?? null,

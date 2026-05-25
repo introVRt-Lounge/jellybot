@@ -31,8 +31,8 @@ See [docs/COMMANDS.md](docs/COMMANDS.md) for the command contract and [DISCORD_S
 ## Setup
 
 ```bash
-git clone https://github.com/introVRt-Lounge/jellybot.git
-cd jellybot
+git clone https://github.com/introVRt-Lounge/jellybot.git ~/coding/jellybot-dev
+cd ~/coding/jellybot-dev
 cp .env.example .env
 bun install
 ```
@@ -65,6 +65,11 @@ Optional:
 - `SUBTITLE_INDEX_CONCURRENCY` (default `4`)
 - `SUBTITLE_INDEX_ON_STARTUP` (`incremental` by default; set `off` to disable background indexing on boot)
 - `CLIP_AUTOCOMPLETE_MAX_CONCURRENT` (default `3`)
+- `GITHUB_TOKEN` + `NOTIFICATION_CHANNEL_ID` - production release announce on bot restart (see [docs/architecture.md](docs/architecture.md#production-release-announce))
+- `RELEASE_REPO` (default `introVRt-Lounge/jellybot`)
+- `OPENAI_API_KEY` - optional LLM summary of release notes
+- `RELEASE_ANNOUNCE_GRACE_MS` (default `60000`)
+- `BOT_STATE_DB_PATH` (default `/var/lib/jellybot/data/bot-state.db`)
 
 ## Run locally
 
@@ -115,7 +120,9 @@ CI publishes the runtime image to **GitHub Container Registry** under the **intr
 |---|---|
 | **Package page** | https://github.com/introVRt-Lounge/jellybot/pkgs/container/jellybot |
 | **Pull URL** | `ghcr.io/introvrt-lounge/jellybot:latest` |
-| **Also tagged** | `:main`, `:sha-<commit>` on each build; semver tags on `v*` releases |
+| **Also tagged** | `:main`, `:sha-<commit>` on each build; semver tags on `v*` releases; `:latest` moves on major/minor only |
+
+Production uses Watchtower (`watchtower-minutely`, label-enabled) to recreate the container when `:latest` digest changes. The bot announces major/minor releases to Discord **once per restart** via `on_ready` - no scheduled polling.
 
 ```bash
 docker pull ghcr.io/introvrt-lounge/jellybot:latest

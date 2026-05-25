@@ -16,6 +16,22 @@
 |------|---------|
 | `/var/lib/jellybot/clips` | Ephemeral rendered MP4s (deleted after upload) |
 | `/var/lib/jellybot/data/subtitles.db` | Subtitle FTS index (derived cache; see below) |
+| `/var/lib/jellybot/data/bot-state.db` | Release announce dedupe (`last_announced_release`) |
+
+## Production release announce
+
+On **every bot restart** (including Watchtower image upgrades), `ClientReady` runs a **one-shot** release check:
+
+1. `GET /repos/{owner}/{repo}/releases/latest` with `GITHUB_TOKEN`
+2. Compare `tag_name` to `last_announced_release` in `bot-state.db`
+3. **Patch** (`vX.Y.Z` where `Z > 0`): update DB silently, no Discord post
+4. **Major/minor**: optional 60s grace, re-fetch, summarize notes (OpenAI when configured), embed to `NOTIFICATION_CHANNEL_ID`
+
+There is **no** scheduled/hourly poll. Repeat restarts on the same release are no-ops via DB dedupe.
+
+Required prod env: `GITHUB_TOKEN`, `NOTIFICATION_CHANNEL_ID` (introVRt Lounge default `#botspam`: `1164501234271653918`).
+
+Release pipeline: conventional commits → release-please → GitHub Release → CI pushes GHCR (`:latest` on major/minor only) → Watchtower recreates container → announce on boot.
 
 ## Subtitle index
 
@@ -52,6 +68,6 @@ Avoid Compose **named volumes** for this DB; they sit under `/var/lib/docker/vol
 ## Deploy shapes
 
 - **Dev:** `docker compose --profile app` from the repo checkout
-- **Prod:** `deploy/prod/docker-compose.yml` with `JELLYBOT_IMAGE=ghcr.io/introvrt-lounge/jellybot:latest`
+- **Prod:** `deploy/prod/docker-compose.yml` with `JELLYBOT_IMAGE=ghcr.io/introvrt-lounge/jellybot:latest` and Watchtower labels
 
-CI publishes the runtime image to GHCR on every push to `main`.
+CI publishes the runtime image to GHCR on every push to `main`. **Patch** semver tags do not move `:latest`; **major/minor** tags do, which triggers Watchtower and the on-boot release announce.

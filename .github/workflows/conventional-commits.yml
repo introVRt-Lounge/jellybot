@@ -1,0 +1,42 @@
+name: Conventional Commits
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  validate-commits:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Validate current commit (push only)
+        if: github.event_name == 'push' && !startsWith(github.event.head_commit.message, 'Merge pull request')
+        run: |
+          COMMIT_MSG=$(git log -1 --pretty=%B)
+          echo "Validating commit: $COMMIT_MSG"
+          if ! echo "$COMMIT_MSG" | grep -qE "^(build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test)(\(.+\))?: .{1,}"; then
+            echo "Commit message does not follow conventional commit format: $COMMIT_MSG"
+            exit 1
+          fi
+
+      - name: Validate PR commits (PR only)
+        if: github.event_name == 'pull_request'
+        run: |
+          COMMITS=$(git log --oneline "${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}")
+          if [ -z "$COMMITS" ]; then
+            exit 0
+          fi
+          while IFS= read -r commit_line; do
+            if [ -n "$commit_line" ]; then
+              COMMIT_MSG=$(echo "$commit_line" | cut -d' ' -f2-)
+              if ! echo "$COMMIT_MSG" | grep -qE "^(build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test)(\(.+\))?: .{1,}"; then
+                echo "Commit message does not follow conventional commit format: $COMMIT_MSG"
+                exit 1
+              fi
+            fi
+          done <<< "$COMMITS"

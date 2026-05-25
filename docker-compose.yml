@@ -11,7 +11,7 @@ services:
   jellybot:
     <<: *jellybot-runtime
     profiles: [app]
-    container_name: jellybot
+    container_name: jellybot-dev
     restart: unless-stopped
     env_file: .env
     environment:

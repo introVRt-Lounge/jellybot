@@ -23,7 +23,7 @@ up:
 	docker compose --profile app up -d --build
 
 logs:
-	docker logs -f jellybot
+	docker logs -f jellybot-dev
 
 health:
 	curl -fsS http://127.0.0.1:8080/healthz | jq .

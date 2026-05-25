@@ -48,19 +48,30 @@ Default: branch → PR → green **`ci`** → squash merge.
 
 ## Deployment
 
+| Tree | Purpose |
+|------|---------|
+| `~/coding/jellybot-dev` | Local git checkout — build, test, `make dev-refresh` (container `jellybot-dev`) |
+| `~/docker/jellybot` | Production — GHCR image, Watchtower, container **`jellybot`** |
+
+See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for the full dev/prod contract.
+
 Development:
 
 ```bash
+cd ~/coding/jellybot-dev
 make dev-refresh
 make health
 ```
 
-Production:
+Production (operator host):
 
 ```bash
-docker pull ghcr.io/introvrt-lounge/jellybot:latest
-docker compose -f deploy/prod/docker-compose.yml up -d --force-recreate
+cd ~/docker/jellybot
+docker compose pull && docker compose up -d --force-recreate
+curl -fsS http://127.0.0.1:8080/healthz | jq .
 ```
+
+Template compose: [deploy/prod/docker-compose.yml](deploy/prod/docker-compose.yml) and [deploy/prod/docker-compose.host.example.yml](deploy/prod/docker-compose.host.example.yml).
 
 ## Labels
 

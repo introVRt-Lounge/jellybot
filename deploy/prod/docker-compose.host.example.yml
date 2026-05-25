@@ -1,0 +1,26 @@
+# Host-specific production compose (copy to ~/docker/jellybot/docker-compose.yml)
+# Generic template: deploy/prod/docker-compose.yml
+
+services:
+  jellybot:
+    image: ghcr.io/introvrt-lounge/jellybot:latest
+    container_name: jellybot
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      HEALTH_PORT: 8080
+      JELLYFIN_URL: http://jellyfin:8096
+    ports:
+      - "${HEALTH_PORT:-8080}:8080"
+    volumes:
+      - ${JELLYBOT_CLIP_HOST_DIR:-./clips}:/var/lib/jellybot/clips
+      - ./data:/var/lib/jellybot/data
+    labels:
+      - com.centurylinklabs.watchtower.enable=true
+      - com.centurylinklabs.watchtower.scope=minutely
+    networks:
+      - traefik_net
+
+networks:
+  traefik_net:
+    external: true

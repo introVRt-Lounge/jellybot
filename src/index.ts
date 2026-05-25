@@ -8,6 +8,8 @@ import { JellyfinClient } from "./jellyfin.ts";
 import { indexSubtitles } from "./subtitles/indexer.ts";
 import { openSubtitleIndex } from "./subtitles/index-db.ts";
 import { parsePreferredLanguages } from "./subtitles/track-select.ts";
+import { createReleaseAnnouncerFromConfig } from "./release/release-announcer.ts";
+import { looksLikeReleaseTag } from "./release/semver.ts";
 
 const config = loadConfig();
 const jellyfin = new JellyfinClient(
@@ -22,6 +24,7 @@ const healthState: HealthState = {
   discordReady: false,
   jellyfinUser: undefined,
   subtitleIndex: null,
+  releaseTag: looksLikeReleaseTag(config.appVersion) ? config.appVersion : null,
 };
 
 let subtitleHealthCache: HealthState["subtitleIndex"] = null;
@@ -61,9 +64,26 @@ const client = new Client({
   intents: [GatewayIntentBits.Guilds],
 });
 
-client.once(Events.ClientReady, (readyClient) => {
+client.once(Events.ClientReady, async (readyClient) => {
   healthState.discordReady = true;
   console.info(`Logged in as ${readyClient.user.tag}`);
+
+  const announcer = createReleaseAnnouncerFromConfig(config);
+  if (announcer) {
+    try {
+      const tag = await announcer.checkAndAnnounceNewRelease(client);
+      if (tag && looksLikeReleaseTag(tag)) {
+        healthState.releaseTag = tag;
+      }
+    } catch (error) {
+      console.error(
+        JSON.stringify({
+          event: "release_announcer.failed",
+          error: error instanceof Error ? error.message : "unknown error",
+        }),
+      );
+    }
+  }
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {

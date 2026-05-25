@@ -46,6 +46,12 @@ make register-commands
 - Use a least-privilege Jellyfin user via `JELLYFIN_USERNAME`, not a Jellyfin admin API key.
 - Do not log Discord tokens, Jellyfin credentials, or clip source URLs with tokens.
 
+## Commits And Releases
+
+- Use conventional commit prefixes when possible (`feat:`, `fix:`, `docs:`, `build:`) for release-please compatibility.
+- Merged conventional commits on `main` create semver GitHub Releases via `.github/workflows/release-please.yml`.
+- Patch releases update GitHub but do **not** move `:latest` or trigger Discord announce noise; major/minor releases do both after Watchtower recreates prod.
+
 ## PR Checklist
 
 - [ ] `bun run ci` passes

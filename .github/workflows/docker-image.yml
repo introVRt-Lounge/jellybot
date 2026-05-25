@@ -14,11 +14,55 @@ jobs:
 
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Evaluate whether tag is major/minor release
+        id: release_scope
+        shell: bash
+        run: |
+          if [[ "${{ github.ref_type }}" != "tag" ]]; then
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          CURRENT_TAG="${GITHUB_REF_NAME#v}"
+          if [[ ! "$CURRENT_TAG" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          current_major="${BASH_REMATCH[1]}"
+          current_minor="${BASH_REMATCH[2]}"
+          current_patch="${BASH_REMATCH[3]}"
+          prev_tag="$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | sed -n '2p' || true)"
+          if [[ -z "$prev_tag" ]]; then
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          prev_tag="${prev_tag#v}"
+          if [[ ! "$prev_tag" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          prev_major="${BASH_REMATCH[1]}"
+          prev_minor="${BASH_REMATCH[2]}"
+          prev_patch="${BASH_REMATCH[3]}"
+
+          if [[ "$current_major" -eq "$prev_major" && "$current_minor" -eq "$prev_minor" && "$current_patch" -gt "$prev_patch" ]]; then
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "publish=true" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
+        if: steps.release_scope.outputs.publish == 'true'
         uses: docker/setup-buildx-action@v3
 
       - name: Login to GHCR
+        if: steps.release_scope.outputs.publish == 'true'
         uses: docker/login-action@v4
         with:
           registry: ghcr.io
@@ -26,6 +70,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Extract metadata
+        if: steps.release_scope.outputs.publish == 'true'
         id: meta
         uses: docker/metadata-action@v6
         with:
@@ -34,9 +79,10 @@ jobs:
             type=ref,event=branch
             type=sha,prefix=sha-
             type=semver,pattern={{version}}
-            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v') }}
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' || (github.ref_type == 'tag' && startsWith(github.ref_name, 'v')) }}
 
       - name: Build and push runtime image
+        if: steps.release_scope.outputs.publish == 'true'
         uses: docker/build-push-action@v7
         with:
           context: .
@@ -47,3 +93,7 @@ jobs:
           build-args: |
             APP_VERSION=${{ github.ref_name }}
             GIT_SHA=${{ github.sha }}
+
+      - name: Skip patch tag image publish
+        if: steps.release_scope.outputs.publish != 'true'
+        run: echo "Skipping image publish for patch tag ${GITHUB_REF_NAME}; only major/minor release tags move :latest for Watchtower."
