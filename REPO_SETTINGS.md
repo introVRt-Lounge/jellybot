@@ -42,11 +42,25 @@ Local fallback: Husky pre-commit runs `bun run secrets:staged`.
 
 ## Merge policy
 
-Default: branch → PR → green **`ci`** → squash merge.
+Default: branch → PR → green **`ci`** → squash merge → **Ship main** (release tag + GHCR `:latest`).
 
 `delete_branch_on_merge` and squash merge are enabled.
 
-**Cursor agent PRs:** when the linked issue has **`ai-safe`**, head branch is `ai-triage/*`, the PR body includes `Fixes #N` / `Closes #N`, and required check **`ci`** passes, `.github/workflows/cursor-ai-automerge.yml` marks draft PRs ready and enables squash **auto-merge**. Issues with **`human-needed`** are excluded. PRs from **`ai-triage`** (without `ai-safe`) still need manual merge.
+**Cursor agent PRs:** when the linked issue has **`ai-safe`**, head branch is `ai-triage/*`, the PR body includes `Fixes #N` / `Closes #N`, and required check **`ci`** passes, `.github/workflows/cursor-ai-automerge.yml` marks draft PRs ready and enables squash **auto-merge**. **Ship main** runs when the PR closes (merged) — this is required because `GITHUB_TOKEN` merges do not fire `push` events.
+
+## Ship pipeline (clockwork)
+
+| Step | Workflow / component |
+| --- | --- |
+| PR merged to `main` | `.github/workflows/ship-main.yml` (`pull_request: closed` + `push`) |
+| Semver GitHub Release | `scripts/create-release-if-needed.sh` (`feat:` → minor, `fix:` → patch) |
+| GHCR `:latest` | Ship main Docker build |
+| Prod recreate | Watchtower minutely (`com.centurylinklabs.watchtower.scope=minutely`) |
+| Discord announce | Bot `on_ready` on major/minor releases |
+
+See [docs/ISSUE_TO_DEPLOYMENT.md](docs/ISSUE_TO_DEPLOYMENT.md).
+
+**Org note:** `introVRt-Lounge` disables Actions **workflow write** permissions at org level; release-please PR mode is off. Optional repo secret **`RELEASE_BOT_TOKEN`** (PAT with `contents` + `pull_requests`) if `GITHUB_TOKEN` release creation is ever blocked.
 
 ## Deployment
 

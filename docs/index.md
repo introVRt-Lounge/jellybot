@@ -40,6 +40,7 @@ Package page: [ghcr.io/introvrt-lounge/jellybot](https://github.com/introVRt-Lou
 
 ## Learn more
 
+- [Issue to deployment](ISSUE_TO_DEPLOYMENT.md) - GitHub issue → Cursor agent → CI → Watchtower prod
 - [Commands](commands.md) - `/clip` and `/quote`
 - [Architecture](architecture.md) - stack, data paths, backup
 - [Caps and limits](caps-and-limits.md) - what it can and cannot do, Discord limits, optional OpenSubtitles / Whisper

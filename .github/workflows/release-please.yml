@@ -1,8 +1,11 @@
 name: Release Please
 
+# Disabled for automatic runs: org policy blocks workflow PR creation.
+# Semver releases are cut by scripts/create-release-if-needed.sh in ship-main.yml.
+# Re-enable this workflow if workflow permissions are set to Read and write + allow PR creation.
+
 on:
-  push:
-    branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -12,6 +15,11 @@ jobs:
   release-please:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
       - uses: googleapis/release-please-action@v4
         with:
           release-type: node
+          token: ${{ secrets.RELEASE_BOT_TOKEN || secrets.GITHUB_TOKEN }}

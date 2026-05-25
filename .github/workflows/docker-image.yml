@@ -1,9 +1,10 @@
 name: Docker Image
 
+# Main-branch builds run via ship-main.yml (GITHUB_TOKEN merges do not emit push).
 on:
   push:
-    branches: [main]
     tags: ["v[0-9]+.[0-9]+.*"]
+  workflow_dispatch:
 
 jobs:
   build-and-push:
