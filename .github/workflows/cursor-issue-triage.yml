@@ -8,22 +8,98 @@ on:
 permissions:
   contents: read
   issues: write
-  pull-requests: read
 
 jobs:
   trigger-cursor-agent:
-    if: github.event.label.name == 'ai-triage' && github.event.sender.login == 'radgey-cmd'
+    if: |
+      github.event_name == 'issues' &&
+      github.event.action == 'labeled' &&
+      contains(fromJSON('["ai-triage","ai-safe"]'), github.event.label.name) &&
+      github.event.sender.login == 'radgey-cmd'
     runs-on: ubuntu-latest
 
     concurrency:
       group: cursor-issue-triage-${{ github.repository }}-${{ github.event.issue.number }}
       cancel-in-progress: false
 
+    env:
+      CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+      GH_TOKEN: ${{ github.token }}
+      ISSUE_NUMBER: ${{ github.event.issue.number }}
+      REPOSITORY: ${{ github.repository }}
+      BRANCH_NAME: ai-triage/fix-issue-${{ github.event.issue.number }}
+      ENQUEUED_LABEL: ai-triage-enqueued
+
     steps:
-      - name: Start Cursor Cloud Agent for labeled issue
-        uses: osbytes/cursor-issue-triage@v1
-        with:
-          triage-enqueued-label: ai-triage-enqueued
-          triage-branch-prefix: ai-triage/fix-issue
-        secrets:
-          cursor_api_key: ${{ secrets.CURSOR_API_KEY }}
+      - name: Skip if already enqueued
+        id: guard
+        run: |
+          set -euo pipefail
+          labels="$(gh issue view "${ISSUE_NUMBER}" --repo "${REPOSITORY}" --json labels -q '.labels[].name')"
+          if echo "${labels}" | grep -Fxq "${ENQUEUED_LABEL}"; then
+            echo "skip=true" >> "${GITHUB_OUTPUT}"
+            echo "Issue already has ${ENQUEUED_LABEL}."
+          else
+            echo "skip=false" >> "${GITHUB_OUTPUT}"
+          fi
+
+      - name: Start Cursor Cloud Agent
+        if: steps.guard.outputs.skip != 'true'
+        run: |
+          set -euo pipefail
+          : "${CURSOR_API_KEY:?CURSOR_API_KEY secret is not set}"
+
+          issue_json="$(gh api "/repos/${REPOSITORY}/issues/${ISSUE_NUMBER}")"
+          title="$(echo "${issue_json}" | jq -r '.title')"
+          body="$(echo "${issue_json}" | jq -r '.body // "(no body provided)"')"
+          url="$(echo "${issue_json}" | jq -r '.html_url')"
+          labels="$(echo "${issue_json}" | jq -r '[.labels[].name] | join(", ")')"
+
+          prompt="$(jq -nr \
+            --arg num "${ISSUE_NUMBER}" \
+            --arg repo "${REPOSITORY}" \
+            --arg title "${title}" \
+            --arg body "${body}" \
+            --arg url "${url}" \
+            --arg labels "${labels}" \
+            '[
+              "# GitHub Issue #\($num)",
+              "",
+              "**Repository:** \($repo)",
+              "**URL:** \($url)",
+              "**Labels:** \($labels)",
+              "",
+              "## Title",
+              $title,
+              "",
+              "## Description",
+              $body,
+              "",
+              "---",
+              "",
+              "Implement the fix on branch ai-triage/fix-issue-\($num). Follow CONTRIBUTING.md. Open a PR whose description includes: Closes #\($num)"
+            ] | join("\n")')"
+
+          request_body="$(jq -n \
+            --arg text "${prompt}" \
+            --arg repo "https://github.com/${REPOSITORY}" \
+            --arg branch "${BRANCH_NAME}" \
+            '{prompt:{text:$text},source:{repository:$repo},target:{autoCreatePr:true,branchName:$branch}}')"
+
+          auth_header="Authorization: Basic $(printf '%s' "${CURSOR_API_KEY}:" | base64 -w0)"
+
+          response="$(curl -fsS -X POST "https://api.cursor.com/v0/agents" \
+            -H "${auth_header}" \
+            -H "Content-Type: application/json" \
+            --data "${request_body}")"
+
+          echo "${response}" | jq '.'
+          agent_id="$(echo "${response}" | jq -r '.id // empty')"
+          if [ -z "${agent_id}" ]; then
+            echo "Cursor API did not return an agent id."
+            exit 1
+          fi
+
+      - name: Mark issue enqueued
+        if: steps.guard.outputs.skip != 'true'
+        run: gh issue edit "${ISSUE_NUMBER}" --repo "${REPOSITORY}" --add-label "${ENQUEUED_LABEL}"

@@ -1,49 +1,50 @@
 # Synced to GitHub via .github/workflows/labels.yml (EndBug/label-sync)
+# Colors must be quoted strings or YAML parses hex like 008672 as numbers.
 - name: bug
-  color: d73a4a
+  color: "d73a4a"
   description: Something is not working
 - name: enhancement
-  color: a2eeef
+  color: "a2eeef"
   description: New feature or improvement
 - name: documentation
-  color: 0075ca
+  color: "0075ca"
   description: Docs only
 - name: triage
-  color: fbca04
+  color: "fbca04"
   description: Needs maintainer review
 - name: good first issue
-  color: 7057ff
+  color: "7057ff"
   description: Good for newcomers
 - name: help wanted
-  color: 008672
+  color: "008672"
   description: Extra attention needed
 - name: wontfix
-  color: ffffff
+  color: "ffffff"
   description: Will not be addressed
 - name: duplicate
-  color: cfd3d7
+  color: "cfd3d7"
   description: Duplicate of another issue
 - name: invalid
-  color: e4e669
+  color: "e4e669"
   description: Not a valid report
 - name: ai-triage
-  color: 1d76db
+  color: "1d76db"
   description: Cursor may inspect and attempt implementation (label-gated automation)
 - name: ai-triage-enqueued
-  color: c5def5
+  color: "c5def5"
   description: Cursor issue triage workflow has started for this issue
 - name: ai-safe
-  color: 0e8a16
+  color: "0e8a16"
   description: Low-risk change; agent implementation allowed
 - name: ai-investigate-only
-  color: d4c5f9
+  color: "d4c5f9"
   description: Agent should comment findings only; no code changes
 - name: ai-no-db
-  color: bfdadc
+  color: "bfdadc"
   description: No database migrations or schema changes
 - name: ai-no-auth
-  color: f9d0c4
+  color: "f9d0c4"
   description: No auth, secrets, or security-sensitive changes
 - name: human-needed
-  color: b60205
+  color: "b60205"
   description: Do not run Cursor automation on this issue

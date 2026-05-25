@@ -104,11 +104,12 @@ Husky runs `bun run secrets:staged` (gitleaks) on commit. If gitleaks is not ins
 
 ## Cursor Cloud Agents (GitHub)
 
-Label-gated automation only — **not** on every new issue. **`@radgey-cmd`** is triage: they review issues and add `ai-triage` when Cursor should attempt work. The workflow only runs when `radgey-cmd` applies that label.
+Label-gated automation only — **not** on every new issue. **`@radgey-cmd`** is triage: they review issues and add **`ai-triage`** or **`ai-safe`** when Cursor should attempt work. The GitHub Action (not Cursor Dashboard PR automations) runs when `radgey-cmd` applies either label.
 
 | Label | Effect |
 | --- | --- |
-| `ai-triage` | Triggers `.github/workflows/cursor-issue-triage.yml` when applied by `radgey-cmd` |
+| `ai-triage` | GitHub Action starts Cursor (assess scope, implement if reasonable) |
+| `ai-safe` | GitHub Action starts Cursor (low-risk: implement, test, PR); eligible PRs **auto-merge** when **`ci`** is green (`.github/workflows/cursor-ai-automerge.yml`) |
 | `human-needed` | Do not use agent automation |
 
-Cloud Agents must follow the **Cursor agent rules** in `CONTRIBUTING.md`. Prefer `ai-safe`, `ai-no-db`, and `ai-no-auth` labels to narrow scope.
+Requires **`CURSOR_API_KEY`** repo secret + Cursor GitHub integration. See `CONTRIBUTING.md`.

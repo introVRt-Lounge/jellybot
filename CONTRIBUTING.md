@@ -63,9 +63,13 @@ make register-commands
 
 ## Cursor agent automation (label-gated)
 
-Cursor Cloud Agents **do not** run on every new issue. They run only when **`@radgey-cmd`** (issue triage) adds the **`ai-triage`** label after reviewing the ticket.
+Cursor Cloud Agents **do not** run on every new issue. They run when **`@radgey-cmd`** (issue triage) adds **`ai-triage`** or **`ai-safe`** after reviewing the ticket.
 
-Workflow: `.github/workflows/cursor-issue-triage.yml` (uses [cursor-issue-triage](https://github.com/marketplace/actions/cursor-issue-triage) and repo secret `CURSOR_API_KEY`). The workflow ignores `ai-triage` if applied by anyone other than `radgey-cmd`.
+Workflow: `.github/workflows/cursor-issue-triage.yml` → [cursor-issue-triage](https://github.com/marketplace/actions/cursor-issue-triage) action → Cursor Cloud Agent. Requires repo secret **`CURSOR_API_KEY`** and Cursor Dashboard GitHub integration for this repo.
+
+**Do not** rely on Cursor Dashboard Automations with **PR → label changed** triggers for issues — GitHub issue label events are not supported there. Use this GitHub Action path instead.
+
+The workflow ignores labels applied by anyone other than `radgey-cmd`.
 
 **Operator setup (once per repo):**
 
@@ -77,7 +81,7 @@ Optional guard labels (add manually; not all are enforced by automation yet):
 | Label | Meaning |
 | --- | --- |
 | `ai-triage` | Cursor may inspect and attempt |
-| `ai-safe` | Low-risk implementation allowed |
+| `ai-safe` | Low-risk implementation allowed; agent PRs from `ai-triage/*` auto-merge when **`ci`** is green (see `.github/workflows/cursor-ai-automerge.yml`) |
 | `ai-investigate-only` | Comment with findings only; no code |
 | `ai-no-db` | No migrations or schema changes |
 | `ai-no-auth` | No auth/security changes |
