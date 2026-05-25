@@ -35,7 +35,8 @@ jobs:
         id: guard
         run: |
           set -euo pipefail
-          if gh issue view "${ISSUE_NUMBER}" --repo "${REPOSITORY}" --json labels --jq --arg enq "${ENQUEUED_LABEL}" '[.labels[].name] | any(. == $enq)'; then
+          labels="$(gh issue view "${ISSUE_NUMBER}" --repo "${REPOSITORY}" --json labels -q '.labels[].name')"
+          if echo "${labels}" | grep -Fxq "${ENQUEUED_LABEL}"; then
             echo "skip=true" >> "${GITHUB_OUTPUT}"
             echo "Issue already has ${ENQUEUED_LABEL}."
           else
