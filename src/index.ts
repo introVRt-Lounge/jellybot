@@ -16,6 +16,7 @@ import { openSubtitleIndex } from "./subtitles/index-db.ts";
 import { parsePreferredLanguages } from "./subtitles/track-select.ts";
 import { createReleaseAnnouncerFromConfig } from "./release/release-announcer.ts";
 import { looksLikeReleaseTag } from "./release/semver.ts";
+import { isBenignAutocompleteError } from "./autocomplete-guard.ts";
 
 const config = loadConfig();
 const jellyfin = new JellyfinClient(
@@ -110,7 +111,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
       try {
         await handleQuoteAutocomplete(interaction, jellyfin, config);
       } catch (error) {
-        console.error("Quote autocomplete error:", error);
+        if (!isBenignAutocompleteError(error)) {
+          console.error("Quote autocomplete error:", error);
+        }
         if (!interaction.responded) {
           await interaction.respond([]).catch(() => undefined);
         }

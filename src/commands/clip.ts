@@ -3,7 +3,7 @@ import {
   ChatInputCommandInteraction,
   SlashCommandBuilder,
 } from "discord.js";
-import { AutocompleteSessionGuard, isAbortError, isUnknownInteractionError } from "../autocomplete-guard.ts";
+import { AutocompleteSessionGuard, isBenignAutocompleteError } from "../autocomplete-guard.ts";
 import { searchClipMediaAutocompleteChoices } from "../clip-autocomplete.ts";
 import { beginEphemeralClipPreview, deliverClipPreview } from "../clip-preview/pipeline.ts";
 import type { AppConfig } from "../config.ts";
@@ -122,7 +122,7 @@ export async function handleClipAutocomplete(
     }
     await interaction.respond(choices);
   } catch (error) {
-    if (isUnknownInteractionError(error) || isAbortError(error)) {
+    if (isBenignAutocompleteError(error)) {
       return;
     }
     console.error(
@@ -134,7 +134,7 @@ export async function handleClipAutocomplete(
       }),
     );
     if (!interaction.responded) {
-      await interaction.respond([]);
+      await interaction.respond([]).catch(() => undefined);
     }
   }
 }

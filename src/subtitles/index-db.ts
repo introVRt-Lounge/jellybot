@@ -122,11 +122,19 @@ CREATE TRIGGER IF NOT EXISTS subtitle_cues_au AFTER UPDATE ON subtitle_cues BEGI
 END;
 `;
 
+export type SubtitleIndexOpenOptions = {
+  readonly?: boolean;
+};
+
 export class SubtitleIndex {
   private readonly db: Database;
 
-  constructor(dbPath: string) {
-    this.db = new Database(dbPath, { create: true });
+  constructor(dbPath: string, options: SubtitleIndexOpenOptions = {}) {
+    this.db = new Database(dbPath, options.readonly ? { readonly: true } : { create: true });
+    if (options.readonly) {
+      return;
+    }
+
     this.db.exec("PRAGMA journal_mode = WAL;");
     this.db.exec("PRAGMA foreign_keys = ON;");
     this.db.exec(BASE_SCHEMA);
@@ -358,7 +366,9 @@ function setIndexMeta(db: Database, key: string, value: string): void {
   ]);
 }
 
-export function openSubtitleIndex(dbPath: string): SubtitleIndex {
-  mkdirSync(dirname(dbPath), { recursive: true });
-  return new SubtitleIndex(dbPath);
+export function openSubtitleIndex(dbPath: string, options: SubtitleIndexOpenOptions = {}): SubtitleIndex {
+  if (!options.readonly) {
+    mkdirSync(dirname(dbPath), { recursive: true });
+  }
+  return new SubtitleIndex(dbPath, options);
 }

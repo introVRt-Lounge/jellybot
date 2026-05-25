@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { AutocompleteSessionGuard, isAbortError } from "../src/autocomplete-guard.ts";
+import {
+  AutocompleteSessionGuard,
+  isAbortError,
+  isBenignAutocompleteError,
+  isInteractionAcknowledgedError,
+} from "../src/autocomplete-guard.ts";
 import { resolveTvSearchResults } from "../src/jellyfin.ts";
 
 describe("AutocompleteSessionGuard", () => {
@@ -18,6 +23,15 @@ describe("AutocompleteSessionGuard", () => {
 describe("isAbortError", () => {
   test("detects abort errors", () => {
     expect(isAbortError(new DOMException("Aborted", "AbortError"))).toBe(true);
+  });
+});
+
+describe("isInteractionAcknowledgedError", () => {
+  test("detects duplicate autocomplete acknowledgement", () => {
+    const error = new Error("Interaction has already been acknowledged.") as Error & { code: number };
+    error.code = 40060;
+    expect(isInteractionAcknowledgedError(error)).toBe(true);
+    expect(isBenignAutocompleteError(error)).toBe(true);
   });
 });
 
