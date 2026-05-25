@@ -24,6 +24,7 @@ extra:
 
 nav:
   - Home: index.md
+  - Issue to deployment: ISSUE_TO_DEPLOYMENT.md
   - Development: DEVELOPMENT.md
   - Caps and limits: caps-and-limits.md
   - Architecture: architecture.md
@@ -32,5 +33,10 @@ nav:
 markdown_extensions:
   - md_in_html
   - admonition
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
   - toc:
       permalink: true
