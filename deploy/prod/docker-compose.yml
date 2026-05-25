@@ -11,6 +11,9 @@ services:
     volumes:
       - jellybot-clips:/var/lib/jellybot/clips
       - ${JELLYBOT_DATA_HOST_DIR:-./data}:/var/lib/jellybot/data
+    labels:
+      - com.centurylinklabs.watchtower.enable=true
+      - com.centurylinklabs.watchtower.scope=minutely
 
 volumes:
   jellybot-clips:

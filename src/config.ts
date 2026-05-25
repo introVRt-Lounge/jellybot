@@ -20,6 +20,13 @@ export type AppConfig = {
   subtitleQuotePaddingSeconds: number;
   subtitleIndexConcurrency: number;
   subtitleIndexOnStartup: "off" | "incremental";
+  githubToken?: string;
+  notificationChannelId?: string;
+  openaiApiKey?: string;
+  releaseRepoOwner: string;
+  releaseRepoName: string;
+  releaseAnnounceGraceMs: number;
+  botStateDbPath: string;
 };
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
@@ -46,6 +53,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     subtitleIndexConcurrency: Number(env.SUBTITLE_INDEX_CONCURRENCY ?? 4),
     subtitleIndexOnStartup:
       env.SUBTITLE_INDEX_ON_STARTUP?.trim().toLowerCase() === "off" ? "off" : "incremental",
+    githubToken: env.GITHUB_TOKEN?.trim() || undefined,
+    notificationChannelId: env.NOTIFICATION_CHANNEL_ID?.trim() || undefined,
+    openaiApiKey: env.OPENAI_API_KEY?.trim() || undefined,
+    ...parseReleaseRepo(env),
+    releaseAnnounceGraceMs: Number(env.RELEASE_ANNOUNCE_GRACE_MS ?? 60_000),
+    botStateDbPath: env.BOT_STATE_DB_PATH?.trim() || "/var/lib/jellybot/data/bot-state.db",
   };
 }
 
@@ -66,4 +79,19 @@ function parseGuildIds(env: NodeJS.ProcessEnv): string[] {
     }
   }
   return [...values];
+}
+
+function parseReleaseRepo(env: NodeJS.ProcessEnv): { releaseRepoOwner: string; releaseRepoName: string } {
+  const combined = env.RELEASE_REPO?.trim();
+  if (combined?.includes("/")) {
+    const [owner, name] = combined.split("/", 2);
+    if (owner && name) {
+      return { releaseRepoOwner: owner, releaseRepoName: name };
+    }
+  }
+
+  return {
+    releaseRepoOwner: env.RELEASE_REPO_OWNER?.trim() || "introVRt-Lounge",
+    releaseRepoName: env.RELEASE_REPO_NAME?.trim() || "jellybot",
+  };
 }
