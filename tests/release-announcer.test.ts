@@ -11,14 +11,16 @@ function tempDbPath(): string {
 }
 
 function makeAnnouncer(dbPath: string): ReleaseAnnouncer {
-  return new ReleaseAnnouncer({
+  const announcer = new ReleaseAnnouncer({
     githubToken: "test-token",
     repoOwner: "introVRt-Lounge",
     repoName: "jellybot",
-    notificationChannelId: "1164501234271653918",
+    notificationChannelId: "1159798255295660103",
     gracePeriodMs: 0,
     botStateDbPath: dbPath,
   });
+  announcer.getFeatureCredits = mock(async () => null);
+  return announcer;
 }
 
 const tempDirs: string[] = [];
@@ -72,7 +74,7 @@ describe("ReleaseAnnouncer", () => {
     const channel = { isTextBased: () => true, send } as unknown as TextChannel;
     const client = {
       channels: {
-        cache: new Map([["1164501234271653918", channel]]),
+        cache: new Map([["1159798255295660103", channel]]),
         fetch: mock(async () => channel),
       },
     } as unknown as Client;
@@ -95,18 +97,22 @@ describe("ReleaseAnnouncer", () => {
       published_at: "2026-01-01T00:00:00Z",
     }));
     announcer.summarizeReleaseNotes = mock(async (notes: string) => notes);
+    announcer.getFeatureCredits = mock(async () => "- clip preview — HeavyGee (@heavygee)");
 
     const send = mock(async () => undefined);
     const channel = { isTextBased: () => true, send } as unknown as TextChannel;
     const client = {
       channels: {
-        cache: new Map([["1164501234271653918", channel]]),
+        cache: new Map([["1159798255295660103", channel]]),
         fetch: mock(async () => channel),
       },
     } as unknown as Client;
 
     await announcer.checkAndAnnounceNewRelease(client);
     expect(send).toHaveBeenCalledTimes(1);
+    const payload = send.mock.calls[0]?.[0] as { embeds: Array<{ data: { fields?: Array<{ name: string }> } }> };
+    const fieldNames = payload.embeds[0]?.data.fields?.map((field) => field.name) ?? [];
+    expect(fieldNames).toContain("Feature credits");
   });
 
   test("missing channel does not persist announcement", async () => {
@@ -136,7 +142,7 @@ describe("ReleaseAnnouncer", () => {
     const channel = { isTextBased: () => true, send } as unknown as TextChannel;
     const retryClient = {
       channels: {
-        cache: new Map([["1164501234271653918", channel]]),
+        cache: new Map([["1159798255295660103", channel]]),
         fetch: mock(async () => channel),
       },
     } as unknown as Client;
