@@ -472,13 +472,17 @@ export class JellyfinClient {
     throw lastError ?? new Error("Subtitle fetch returned empty content.");
   }
 
-  streamUrl(itemId: string): string {
+  streamUrl(itemId: string, options?: { mediaSourceId?: string; audioStreamIndex?: number }): string {
     const { accessToken } = this.requireAuth();
     const params = new URLSearchParams({
       static: "true",
-      MediaSourceId: itemId,
+      MediaSourceId: options?.mediaSourceId ?? itemId,
       api_key: accessToken,
     });
+
+    if (options?.audioStreamIndex !== undefined) {
+      params.set("AudioStreamIndex", String(options.audioStreamIndex));
+    }
 
     return `${this.baseUrl}/Videos/${itemId}/stream?${params}`;
   }

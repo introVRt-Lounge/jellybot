@@ -15,6 +15,7 @@ export type AppConfig = {
   clipTempDir: string;
   subtitleDbPath: string;
   subtitleLanguages: string;
+  audioLanguages: string;
   subtitleDefaultClipSeconds: number;
   subtitleQuotePaddingSeconds: number;
   subtitleIndexConcurrency: number;
@@ -39,6 +40,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     clipTempDir: env.JELLYBOT_CLIP_DIR?.trim() || "/var/lib/jellybot/clips",
     subtitleDbPath: env.SUBTITLE_DB_PATH?.trim() || "/var/lib/jellybot/data/subtitles.db",
     subtitleLanguages: env.SUBTITLE_LANGUAGES?.trim() || "eng,en",
+    audioLanguages: env.AUDIO_LANGUAGES?.trim() || env.SUBTITLE_LANGUAGES?.trim() || "eng,en",
     subtitleDefaultClipSeconds: Number(env.SUBTITLE_DEFAULT_CLIP_SECONDS ?? 15),
     subtitleQuotePaddingSeconds: Number(env.SUBTITLE_QUOTE_PADDING_SECONDS ?? 2),
     subtitleIndexConcurrency: Number(env.SUBTITLE_INDEX_CONCURRENCY ?? 4),

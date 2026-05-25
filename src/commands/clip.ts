@@ -142,7 +142,7 @@ export async function handleClipAutocomplete(
 export async function handleClipCommand(
   interaction: ChatInputCommandInteraction,
   jellyfin: JellyfinClient,
-  config: Pick<AppConfig, "clipTempDir" | "maxClipMb" | "maxClipSeconds">,
+  config: Pick<AppConfig, "clipTempDir" | "maxClipMb" | "maxClipSeconds" | "audioLanguages">,
 ): Promise<void> {
   const planned = planClipRequest({
     kind: interaction.options.getString("kind", true) as MediaKind,
@@ -217,6 +217,7 @@ export async function handleClipCommand(
     plan: planned.plan,
     outputPath: artifact.outputPath,
     maxClipMb,
+    preferredAudioLanguages: config.audioLanguages,
   });
 
   if (!rendered.ok) {
@@ -263,6 +264,8 @@ export async function handleClipCommand(
       userId: interaction.user.id,
       itemId: planned.plan.itemId,
       durationSeconds: planned.plan.durationSeconds,
+      audioStreamIndex: rendered.ok ? rendered.audioStreamIndex : undefined,
+      audioLanguage: rendered.ok ? rendered.audioLanguage : undefined,
     }),
   );
 }

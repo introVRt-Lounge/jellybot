@@ -104,7 +104,7 @@ export async function handleQuoteCommand(
   jellyfin: JellyfinClient,
   config: Pick<
     AppConfig,
-    "clipTempDir" | "subtitleDbPath" | "maxClipMb" | "maxClipSeconds" | "subtitleDefaultClipSeconds" | "subtitleQuotePaddingSeconds"
+    "clipTempDir" | "subtitleDbPath" | "maxClipMb" | "maxClipSeconds" | "subtitleDefaultClipSeconds" | "subtitleQuotePaddingSeconds" | "audioLanguages"
   >,
 ): Promise<void> {
   const matchRaw = interaction.options.getString("match", true);
@@ -182,6 +182,7 @@ export async function handleQuoteCommand(
     plan: planned.plan,
     outputPath: artifact.outputPath,
     maxClipMb,
+    preferredAudioLanguages: config.audioLanguages,
   });
 
   if (!rendered.ok) {
@@ -232,6 +233,8 @@ export async function handleQuoteCommand(
       userId: interaction.user.id,
       itemId: planned.plan.itemId,
       durationSeconds: planned.plan.durationSeconds,
+      audioStreamIndex: rendered.audioStreamIndex,
+      audioLanguage: rendered.audioLanguage,
     }),
   );
 }
