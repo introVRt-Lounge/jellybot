@@ -71,3 +71,33 @@ One line per update:
 - Commands: `docs/COMMANDS.md`
 - Tests: `bun run ci` or `make test` (Docker parity)
 - Register slash commands: `make register-commands` (builds register image first)
+
+## Cursor Cloud specific instructions
+
+### Runtime
+
+Bun 1.3+ is required. The update script installs it if missing and runs `bun install`. ffmpeg is pre-installed on the VM.
+
+### Lint / typecheck / test
+
+```bash
+bun run typecheck   # tsc --noEmit
+bun test            # bun's built-in test runner (71 tests across 21 files)
+bun run ci          # typecheck + test in one shot
+```
+
+All tests are self-contained with mocks - no external services needed.
+
+### Running the bot locally
+
+The bot requires live Discord and Jellyfin credentials (see `.env.example`). Without them, `bun run start` will crash at Jellyfin authentication - this is expected. The health server (`GET /healthz` on port 8080) starts before external auth, so you can verify the Bun + health layer independently.
+
+Key env vars for a live run: `DISCORD_TOKEN`, `DISCORD_CLIENT_ID`, `JELLYFIN_USERNAME`, `JELLYFIN_PASSWORD`, `JELLYFIN_MOVIES_LIBRARY_ID`, `JELLYFIN_TV_LIBRARY_ID`.
+
+### Docker parity
+
+`make test` runs the test suite inside the Docker `test` target for CI parity. Docker is not installed by default on Cloud Agent VMs - install it if needed (see system instructions for Docker-in-Docker setup).
+
+### Pre-commit hook
+
+Husky runs `bun run secrets:staged` (gitleaks) on commit. If gitleaks is not installed locally, the script falls back to the `zricethezav/gitleaks:v8.30.1` Docker image. In Cloud Agent VMs without Docker, the hook may fail - this is non-blocking for development but worth noting.
