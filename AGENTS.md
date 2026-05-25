@@ -109,7 +109,7 @@ Label-gated automation only — **not** on every new issue. **`@radgey-cmd`** is
 | Label | Effect |
 | --- | --- |
 | `ai-triage` | GitHub Action starts Cursor (assess scope, implement if reasonable) |
-| `ai-safe` | GitHub Action starts Cursor (low-risk: implement, test, PR) |
+| `ai-safe` | GitHub Action starts Cursor (low-risk: implement, test, PR); eligible PRs **auto-merge** when **`ci`** is green (`.github/workflows/cursor-ai-automerge.yml`) |
 | `human-needed` | Do not use agent automation |
 
 Requires **`CURSOR_API_KEY`** repo secret + Cursor GitHub integration. See `CONTRIBUTING.md`.
