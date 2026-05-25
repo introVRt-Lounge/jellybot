@@ -46,6 +46,8 @@ Default: branch → PR → green **`ci`** → squash merge.
 
 `delete_branch_on_merge` and squash merge are enabled.
 
+**Cursor agent PRs:** when the linked issue has **`ai-safe`**, head branch is `ai-triage/*`, the PR body includes `Fixes #N` / `Closes #N`, and required check **`ci`** passes, `.github/workflows/cursor-ai-automerge.yml` marks draft PRs ready and enables squash **auto-merge**. Issues with **`human-needed`** are excluded. PRs from **`ai-triage`** (without `ai-safe`) still need manual merge.
+
 ## Deployment
 
 | Tree | Purpose |
@@ -101,8 +103,9 @@ Use a bind mount, not a named Docker volume — volumes under `/var/lib/docker/v
 | **Repo secret** | `CURSOR_API_KEY` — Settings → Secrets → Actions |
 | **Cursor dashboard** | Connect GitHub integration with access to this repo (required for clone/PR; API key alone is insufficient) |
 | **Enqueue marker** | Label `ai-triage-enqueued` applied by the action |
+| **Auto-merge** | `.github/workflows/cursor-ai-automerge.yml` — `ai-safe` issue + `ai-triage/*` branch + green **`ci`** |
 
-Do **not** trigger on every `issues.opened` event. File via the **Agent task** template; **`@radgey-cmd`** adds `ai-triage` when ready.
+Do **not** trigger on every `issues.opened` event. File via the **Agent task** template; **`@radgey-cmd`** adds `ai-triage` or `ai-safe` when ready.
 
 ## Docs site (marketing URL)
 

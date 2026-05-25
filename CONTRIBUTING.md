@@ -81,7 +81,7 @@ Optional guard labels (add manually; not all are enforced by automation yet):
 | Label | Meaning |
 | --- | --- |
 | `ai-triage` | Cursor may inspect and attempt |
-| `ai-safe` | Low-risk implementation allowed |
+| `ai-safe` | Low-risk implementation allowed; agent PRs from `ai-triage/*` auto-merge when **`ci`** is green (see `.github/workflows/cursor-ai-automerge.yml`) |
 | `ai-investigate-only` | Comment with findings only; no code |
 | `ai-no-db` | No migrations or schema changes |
 | `ai-no-auth` | No auth/security changes |
