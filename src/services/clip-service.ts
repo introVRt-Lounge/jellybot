@@ -1,3 +1,4 @@
+import { pickAudioStream, parsePreferredLanguages as parseAudioLanguages } from "../audio-track-select.ts";
 import { cleanup, createClip, fileSizeMb } from "../ffmpeg.ts";
 import { displayTitle } from "../display-title.ts";
 import type { JellyfinClient, JellyfinItem, MediaKind } from "../jellyfin.ts";
@@ -68,10 +69,22 @@ export async function renderClip(params: {
   plan: ClipPlan;
   outputPath: string;
   maxClipMb: number;
-}): Promise<{ ok: true } | { ok: false; message: string }> {
+  preferredAudioLanguages: string;
+}): Promise<{ ok: true; audioStreamIndex?: number; audioLanguage?: string } | { ok: false; message: string }> {
   try {
+    const withMedia = await params.jellyfin.getItemWithMedia(params.item.id);
+    if (!withMedia) {
+      return { ok: false, message: "That Jellyfin item no longer exists." };
+    }
+
+    const preferred = parseAudioLanguages(params.preferredAudioLanguages);
+    const audio = pickAudioStream(withMedia.mediaSource.streams, preferred);
+
     await createClip({
-      inputUrl: params.jellyfin.streamUrl(params.item.id),
+      inputUrl: params.jellyfin.streamUrl(params.item.id, {
+        mediaSourceId: withMedia.mediaSource.id,
+        audioStreamIndex: audio?.index,
+      }),
       startSeconds: params.plan.startSeconds,
       durationSeconds: params.plan.durationSeconds,
       outputPath: params.outputPath,
@@ -86,7 +99,11 @@ export async function renderClip(params: {
       };
     }
 
-    return { ok: true };
+    return {
+      ok: true,
+      audioStreamIndex: audio?.index,
+      audioLanguage: audio?.language,
+    };
   } catch (error) {
     await cleanup(params.outputPath);
     return {
