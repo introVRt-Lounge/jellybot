@@ -13,6 +13,8 @@ permissions:
 jobs:
   trigger-cursor-agent:
     if: |
+      github.event_name == 'issues' &&
+      github.event.action == 'labeled' &&
       contains(fromJSON('["ai-triage","ai-safe"]'), github.event.label.name) &&
       github.event.sender.login == 'radgey-cmd'
     runs-on: ubuntu-latest
