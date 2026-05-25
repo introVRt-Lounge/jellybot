@@ -100,12 +100,12 @@ Key env vars for a live run: `DISCORD_TOKEN`, `DISCORD_CLIENT_ID`, `JELLYFIN_USE
 
 ### Cloud agent limitations
 
-The Jellyfin media library is on the operator's machine, not accessible from Cloud Agent VMs. This means:
+The Jellyfin API is reachable (auth works), but the actual media files are on the operator's machine. ffmpeg will fail when trying to stream video content for clipping. This means:
 
-- `bun run start` can authenticate to Discord and Jellyfin, but `/clip` and `/quote` commands will fail at ffmpeg (no media stream access).
-- `make index-subtitles` will not work (needs to stream media files from Jellyfin).
-- End-to-end testing of clip/quote functionality requires the operator's local environment.
-- Cloud agents should validate changes via `bun run ci` (all tests mock external dependencies) and verify the bot starts cleanly (`bun run start` + `/healthz`).
+- `bun run start` authenticates to Discord and Jellyfin, but `/clip` and `/quote` commands will fail when ffmpeg tries to access media streams.
+- `make index-subtitles` will fail (needs to stream media from Jellyfin).
+- The ffmpeg clipping pipeline itself is tested via `tests/ffmpeg-clip.test.ts`, which generates a local test video and clips it - no Jellyfin needed.
+- Cloud agents should validate changes via `bun run ci` and verify the bot starts cleanly (`bun run start` + `/healthz`).
 
 ### Pre-commit hook
 
