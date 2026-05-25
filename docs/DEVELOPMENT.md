@@ -53,7 +53,7 @@ Compose uses:
 1. Conventional commit merged to `main`
 2. CI builds and pushes GHCR (`:main`, `:sha-*`; `:latest` on major/minor release tags)
 3. Watchtower (minutely scope) recreates `jellybot` when `:latest` digest changes
-4. Bot **`ClientReady`** one-shot checks GitHub Releases and announces major/minor to `#botspam`
+4. Bot **`ClientReady`** one-shot checks GitHub Releases and announces major/minor to the configured announcements channel (`NOTIFICATION_CHANNEL_ID`)
 
 Patch releases update GitHub but do **not** move `:latest` — silent until the next major/minor Watchtower cycle.
 

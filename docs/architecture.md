@@ -29,7 +29,7 @@ On **every bot restart** (including Watchtower image upgrades), `ClientReady` ru
 
 There is **no** scheduled/hourly poll. Repeat restarts on the same release are no-ops via DB dedupe.
 
-Required prod env: `GITHUB_TOKEN`, `NOTIFICATION_CHANNEL_ID` (introVRt Lounge default `#botspam`: `1164501234271653918`).
+Required prod env: `GITHUB_TOKEN`, `NOTIFICATION_CHANNEL_ID` (introVRt Lounge announcements: `1159798255295660103`). Major/minor embeds include **Feature credits** from GitHub `feat` commits/PR authors in the release range.
 
 Release pipeline: conventional commits → release-please → GitHub Release → CI pushes GHCR (`:latest` on major/minor only) → Watchtower recreates container → announce on boot.
 
