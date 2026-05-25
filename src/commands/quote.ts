@@ -1,5 +1,4 @@
 import {
-  AttachmentBuilder,
   AutocompleteInteraction,
   ChatInputCommandInteraction,
   SlashCommandBuilder,
@@ -7,18 +6,12 @@ import {
 import type { AppConfig } from "../config.ts";
 import { withTimeout } from "../autocomplete.ts";
 import { AutocompleteSessionGuard, isUnknownInteractionError } from "../autocomplete-guard.ts";
-import { formatDiscordUploadLimit, maxClipMbForDiscordUpload } from "../discord-upload.ts";
+import { beginEphemeralClipPreview, deliverClipPreview } from "../clip-preview/pipeline.ts";
 import type { JellyfinClient } from "../jellyfin.ts";
-import {
-  buildClipArtifact,
-  renderClip,
-  validateClipItem,
-} from "../services/clip-service.ts";
 import { planQuoteClip } from "../services/quote-request.ts";
 import { parseQuoteMatchToken } from "../subtitles/match-token.ts";
 import { openSubtitleIndex } from "../subtitles/index-db.ts";
 import { quoteSearchChoices } from "../subtitles/quote-autocomplete.ts";
-import { cleanup } from "../ffmpeg.ts";
 import { formatTimestamp } from "../time.ts";
 
 const quoteMatchAutocompleteGuard = new AutocompleteSessionGuard();
@@ -114,6 +107,10 @@ export async function handleQuoteCommand(
   >,
 ): Promise<void> {
   const matchRaw = interaction.options.getString("match", true);
+  const durationRaw = interaction.options.getString("duration");
+  const paddingRaw = interaction.options.getString("padding");
+  const burnInSubtitles = interaction.options.getBoolean("subtitles") ?? false;
+
   const token = parseQuoteMatchToken(matchRaw);
   if (!token) {
     await interaction.reply({
@@ -141,8 +138,8 @@ export async function handleQuoteCommand(
 
   const planned = planQuoteClip({
     match,
-    durationRaw: interaction.options.getString("duration"),
-    paddingRaw: interaction.options.getString("padding"),
+    durationRaw,
+    paddingRaw,
     maxClipSeconds: config.maxClipSeconds,
     defaultClipSeconds: config.subtitleDefaultClipSeconds,
     defaultPaddingSeconds: config.subtitleQuotePaddingSeconds,
@@ -164,87 +161,27 @@ export async function handleQuoteCommand(
     }),
   );
 
-  await interaction.deferReply();
+  await beginEphemeralClipPreview(interaction);
 
-  const maxClipMb = maxClipMbForDiscordUpload(interaction.attachmentSizeLimit, config.maxClipMb);
   const item = await jellyfin.getItem(planned.plan.itemId);
-  const validated = validateClipItem(item, planned.plan);
-  if (!validated.ok) {
-    await interaction.editReply(validated.message);
-    return;
-  }
+  const label = item ? jellyfin.formatItemLabel(item, planned.plan.kind) : "Quote clip";
 
-  const artifact = buildClipArtifact(
-    validated.item,
-    planned.plan,
-    interaction.id,
-    config.clipTempDir,
-    jellyfin.formatItemLabel.bind(jellyfin),
-  );
-
-  const rendered = await renderClip({
+  await deliverClipPreview({
+    interaction,
     jellyfin,
-    item: validated.item,
+    config,
+    command: "quote",
     plan: planned.plan,
-    outputPath: artifact.outputPath,
-    maxClipMb,
-    preferredAudioLanguages: config.audioLanguages,
-    burnInSubtitles: interaction.options.getBoolean("subtitles") ?? false,
-    preferredSubtitleLanguages: config.subtitleLanguages,
-    tempId: interaction.id,
+    previewLines: [
+      `**${label}**`,
+      `"${planned.plan.quoteText}" @ ${formatTimestamp(planned.plan.cueStartSeconds)}`,
+    ],
+    burnInSubtitles,
+    quoteParams: {
+      matchRaw,
+      durationRaw,
+      paddingRaw,
+      burnInSubtitles,
+    },
   });
-
-  if (!rendered.ok) {
-    console.error(
-      JSON.stringify({
-        event: "quote.failed",
-        command: "quote",
-        userId: interaction.user.id,
-        itemId: planned.plan.itemId,
-        reason: rendered.message,
-      }),
-    );
-    await interaction.editReply(rendered.message);
-    return;
-  }
-
-  try {
-    const attachment = new AttachmentBuilder(artifact.outputPath, {
-      name: artifact.attachmentName,
-    });
-
-    await interaction.editReply({
-      content: [
-        `**${artifact.label}**`,
-        `"${planned.plan.quoteText}" @ ${formatTimestamp(planned.plan.cueStartSeconds)}`,
-        `Requested by ${interaction.user}`,
-      ].join("\n"),
-      files: [attachment],
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "unknown error";
-    if (message.includes("entity too large") || message.includes("413")) {
-      await interaction.editReply(
-        `Clip rendered but Discord rejected the upload for this server (limit ${formatDiscordUploadLimit(interaction.attachmentSizeLimit)}). Try a shorter duration.`,
-      );
-      return;
-    }
-
-    throw error;
-  } finally {
-    await cleanup(artifact.outputPath);
-  }
-
-  console.info(
-    JSON.stringify({
-      event: "quote.completed",
-      command: "quote",
-      userId: interaction.user.id,
-      itemId: planned.plan.itemId,
-      durationSeconds: planned.plan.durationSeconds,
-      audioStreamIndex: rendered.audioStreamIndex,
-      audioLanguage: rendered.audioLanguage,
-      subtitlesBurnedIn: rendered.subtitlesBurnedIn,
-    }),
-  );
 }

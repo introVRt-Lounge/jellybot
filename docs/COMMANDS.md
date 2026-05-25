@@ -2,7 +2,7 @@
 
 ## `/clip`
 
-Create a Jellyfin clip and upload it to the current channel.
+Create a Jellyfin clip, preview it privately, then post it to the current channel when ready.
 
 ### Options
 
@@ -41,6 +41,18 @@ Create a Jellyfin clip and upload it to the current channel.
 - subtitle burn-in requested but Jellyfin has no usable subtitle track for the clip range
 - ffmpeg/Jellyfin stream failure
 
+### Preview and approval
+
+After rendering, the bot sends an **ephemeral** preview (only you can see it) with the MP4 attached and three buttons:
+
+| Action | Behavior |
+| --- | --- |
+| **Post** | Uploads the same rendered file to the channel with the clip summary |
+| **Cancel** | Discards the preview and deletes the temp file; nothing is posted |
+| **Try again** | Opens a modal to adjust `start` and `duration`, then re-renders a new preview |
+
+Previews expire after about 14 minutes. `MAX_CLIP_SECONDS` and `MAX_CLIP_MB` still apply during preview and re-render.
+
 ### Permissions
 
 The bot needs Send Messages and Attach Files in the target channel.
@@ -50,11 +62,12 @@ The bot needs Send Messages and Attach Files in the target channel.
 1. Run `make register-commands` or the compose register profile
 2. In Discord, pick `kind`, then type at least 2 characters in `media`
 3. Confirm autocomplete returns compact labels within 3 seconds
-4. Run one happy-path clip and one validation failure
+4. Run one happy-path clip: confirm ephemeral preview, **Post** appears in channel, **Cancel** posts nothing
+5. Run one validation failure
 
 ## `/quote`
 
-Search indexed subtitles and clip the scene around a matched quote.
+Search indexed subtitles and clip the scene around a matched quote. Uses the same ephemeral preview flow as `/clip` (**Post**, **Cancel**, **Try again** with `duration` and `padding`).
 
 ### Options
 

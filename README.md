@@ -17,7 +17,7 @@ Links: [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md) · [Support](S
 - `/quote` searches indexed subtitles and clips the matching scene
 - Jellyfin media autocomplete scoped to that kind
 - `start` plus either `end` or `duration`
-- ffmpeg extracts the segment from Jellyfin and uploads the MP4 to Discord
+- ffmpeg extracts the segment from Jellyfin; you preview the MP4 privately, then **Post** shares it to the channel
 
 See [docs/COMMANDS.md](docs/COMMANDS.md) for the command contract and [DISCORD_SETUP.md](DISCORD_SETUP.md) for portal settings, permissions, and verification.
 

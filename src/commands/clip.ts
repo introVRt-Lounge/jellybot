@@ -1,21 +1,15 @@
 import {
-  AttachmentBuilder,
   AutocompleteInteraction,
   ChatInputCommandInteraction,
   SlashCommandBuilder,
 } from "discord.js";
 import { AutocompleteSessionGuard, isAbortError, isUnknownInteractionError } from "../autocomplete-guard.ts";
 import { searchClipMediaAutocompleteChoices } from "../clip-autocomplete.ts";
+import { beginEphemeralClipPreview, deliverClipPreview } from "../clip-preview/pipeline.ts";
 import type { AppConfig } from "../config.ts";
-import { formatDiscordUploadLimit, maxClipMbForDiscordUpload } from "../discord-upload.ts";
 import type { JellyfinClient, MediaKind } from "../jellyfin.ts";
-import {
-  buildClipArtifact,
-  renderClip,
-  validateClipItem,
-} from "../services/clip-service.ts";
 import { planClipRequest } from "../services/clip-request.ts";
-import { cleanup } from "../ffmpeg.ts";
+import { formatTimestamp } from "../time.ts";
 
 export const KIND_AUTOCOMPLETE_CHOICES = [
   { name: "Movie", value: "movie" },
@@ -145,17 +139,33 @@ export async function handleClipAutocomplete(
   }
 }
 
+function formatDurationOption(seconds: number): string {
+  if (Number.isInteger(seconds) && seconds < 120) return `${seconds}s`;
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.round(seconds % 60);
+  if (mins === 0) return `${secs}s`;
+  if (secs === 0) return `${mins}:00`;
+  return `${mins}:${String(secs).padStart(2, "0")}`;
+}
+
 export async function handleClipCommand(
   interaction: ChatInputCommandInteraction,
   jellyfin: JellyfinClient,
   config: Pick<AppConfig, "clipTempDir" | "maxClipMb" | "maxClipSeconds" | "audioLanguages" | "subtitleLanguages">,
 ): Promise<void> {
+  const startRaw = interaction.options.getString("start");
+  const endRaw = interaction.options.getString("end");
+  const durationRaw = interaction.options.getString("duration");
+  const kind = interaction.options.getString("kind", true) as MediaKind;
+  const itemId = interaction.options.getString("media", true);
+  const burnInSubtitles = interaction.options.getBoolean("subtitles") ?? false;
+
   const planned = planClipRequest({
-    kind: interaction.options.getString("kind", true) as MediaKind,
-    itemId: interaction.options.getString("media", true),
-    startRaw: interaction.options.getString("start"),
-    endRaw: interaction.options.getString("end"),
-    durationRaw: interaction.options.getString("duration"),
+    kind,
+    itemId,
+    startRaw,
+    endRaw,
+    durationRaw,
     maxClipSeconds: config.maxClipSeconds,
   });
 
@@ -168,8 +178,8 @@ export async function handleClipCommand(
         guildId: interaction.guildId,
         channelId: interaction.channelId,
         reason: planned.message,
-        kind: interaction.options.getString("kind"),
-        media: interaction.options.getString("media"),
+        kind,
+        media: itemId,
       }),
     );
     await interaction.reply({ content: planned.message, ephemeral: true });
@@ -189,93 +199,29 @@ export async function handleClipCommand(
     }),
   );
 
-  await interaction.deferReply();
-
-  const maxClipMb = maxClipMbForDiscordUpload(interaction.attachmentSizeLimit, config.maxClipMb);
+  await beginEphemeralClipPreview(interaction);
 
   const item = await jellyfin.getItem(planned.plan.itemId);
-  const validated = validateClipItem(item, planned.plan);
-  if (!validated.ok) {
-    console.warn(
-      JSON.stringify({
-        event: "clip.rejected",
-        command: "clip",
-        userId: interaction.user.id,
-        itemId: planned.plan.itemId,
-        reason: validated.message,
-      }),
-    );
-    await interaction.editReply(validated.message);
-    return;
-  }
+  const label = item ? jellyfin.formatItemLabel(item, planned.plan.kind) : "Clip";
 
-  const artifact = buildClipArtifact(
-    validated.item,
-    planned.plan,
-    interaction.id,
-    config.clipTempDir,
-    jellyfin.formatItemLabel.bind(jellyfin),
-  );
-
-  const rendered = await renderClip({
+  await deliverClipPreview({
+    interaction,
     jellyfin,
-    item: validated.item,
+    config,
+    command: "clip",
     plan: planned.plan,
-    outputPath: artifact.outputPath,
-    maxClipMb,
-    preferredAudioLanguages: config.audioLanguages,
-    burnInSubtitles: interaction.options.getBoolean("subtitles") ?? false,
-    preferredSubtitleLanguages: config.subtitleLanguages,
-    tempId: interaction.id,
+    previewLines: [
+      `**${label}**`,
+      `Clip: ${formatTimestamp(planned.plan.startSeconds)} -> ${formatTimestamp(planned.plan.endSeconds)} (${Math.round(planned.plan.durationSeconds)}s)`,
+    ],
+    burnInSubtitles,
+    clipParams: {
+      kind,
+      itemId,
+      startRaw: startRaw!,
+      endRaw,
+      durationRaw: durationRaw ?? formatDurationOption(planned.plan.durationSeconds),
+      burnInSubtitles,
+    },
   });
-
-  if (!rendered.ok) {
-    console.error(
-      JSON.stringify({
-        event: "clip.failed",
-        command: "clip",
-        userId: interaction.user.id,
-        itemId: planned.plan.itemId,
-        reason: rendered.message,
-      }),
-    );
-    await interaction.editReply(rendered.message);
-    return;
-  }
-
-  try {
-    const attachment = new AttachmentBuilder(artifact.outputPath, {
-      name: artifact.attachmentName,
-    });
-
-    await interaction.editReply({
-      content: [`**${artifact.label}**`, artifact.summaryLine, `Requested by ${interaction.user}`].join("\n"),
-      files: [attachment],
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "unknown error";
-    if (message.includes("entity too large") || message.includes("413")) {
-      await interaction.editReply(
-        `Clip rendered but Discord rejected the upload for this server (limit ${formatDiscordUploadLimit(interaction.attachmentSizeLimit)}). Try a shorter clip.`,
-      );
-      return;
-    }
-
-    throw error;
-  } finally {
-    await cleanup(artifact.outputPath);
-  }
-
-  console.info(
-    JSON.stringify({
-      event: "clip.completed",
-      command: "clip",
-      userId: interaction.user.id,
-      itemId: planned.plan.itemId,
-      durationSeconds: planned.plan.durationSeconds,
-      audioStreamIndex: rendered.ok ? rendered.audioStreamIndex : undefined,
-      audioLanguage: rendered.ok ? rendered.audioLanguage : undefined,
-      subtitlesBurnedIn: rendered.ok ? rendered.subtitlesBurnedIn : undefined,
-    }),
-  );
 }

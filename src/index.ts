@@ -1,5 +1,11 @@
 import "dotenv/config";
 import { Client, Events, GatewayIntentBits } from "discord.js";
+import {
+  handleClipPreviewButton,
+  handleClipPreviewModal,
+  isClipPreviewButton,
+  isClipPreviewModal,
+} from "./clip-preview/handlers.ts";
 import { handleClipAutocomplete, handleClipCommand } from "./commands/clip.ts";
 import { handleQuoteAutocomplete, handleQuoteCommand } from "./commands/quote.ts";
 import { loadConfig } from "./config.ts";
@@ -108,6 +114,44 @@ client.on(Events.InteractionCreate, async (interaction) => {
         if (!interaction.responded) {
           await interaction.respond([]).catch(() => undefined);
         }
+      }
+    }
+    return;
+  }
+
+  if (interaction.isButton() && isClipPreviewButton(interaction)) {
+    try {
+      await handleClipPreviewButton(interaction, jellyfin, config);
+    } catch (error) {
+      console.error(
+        JSON.stringify({
+          event: "clip_preview.button_error",
+          userId: interaction.user.id,
+          customId: interaction.customId,
+          error: error instanceof Error ? error.message : "unknown error",
+        }),
+      );
+      if (!interaction.replied && !interaction.deferred) {
+        await interaction.reply({ content: "Something went wrong with that action.", ephemeral: true }).catch(() => undefined);
+      }
+    }
+    return;
+  }
+
+  if (interaction.isModalSubmit() && isClipPreviewModal(interaction)) {
+    try {
+      await handleClipPreviewModal(interaction, jellyfin, config);
+    } catch (error) {
+      console.error(
+        JSON.stringify({
+          event: "clip_preview.modal_error",
+          userId: interaction.user.id,
+          customId: interaction.customId,
+          error: error instanceof Error ? error.message : "unknown error",
+        }),
+      );
+      if (!interaction.replied && !interaction.deferred) {
+        await interaction.reply({ content: "Something went wrong while re-rendering.", ephemeral: true }).catch(() => undefined);
       }
     }
     return;
