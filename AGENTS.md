@@ -98,6 +98,15 @@ Key env vars for a live run: `DISCORD_TOKEN`, `DISCORD_CLIENT_ID`, `JELLYFIN_USE
 
 `make test` runs the test suite inside the Docker `test` target for CI parity. Docker is not installed by default on Cloud Agent VMs - install it if needed (see system instructions for Docker-in-Docker setup).
 
+### Cloud agent limitations
+
+The Jellyfin media library is on the operator's machine, not accessible from Cloud Agent VMs. This means:
+
+- `bun run start` can authenticate to Discord and Jellyfin, but `/clip` and `/quote` commands will fail at ffmpeg (no media stream access).
+- `make index-subtitles` will not work (needs to stream media files from Jellyfin).
+- End-to-end testing of clip/quote functionality requires the operator's local environment.
+- Cloud agents should validate changes via `bun run ci` (all tests mock external dependencies) and verify the bot starts cleanly (`bun run start` + `/healthz`).
+
 ### Pre-commit hook
 
 Husky runs `bun run secrets:staged` (gitleaks) on commit. If gitleaks is not installed locally, the script falls back to the `zricethezav/gitleaks:v8.30.1` Docker image. In Cloud Agent VMs without Docker, the hook may fail - this is non-blocking for development but worth noting.
