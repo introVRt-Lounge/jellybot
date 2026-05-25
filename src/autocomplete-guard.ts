@@ -27,6 +27,17 @@ export function isUnknownInteractionError(error: unknown): boolean {
   return error.message.includes("Unknown interaction");
 }
 
+export function isInteractionAcknowledgedError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  if (error.message.includes("Interaction has already been acknowledged")) return true;
+  const code = (error as { code?: number }).code;
+  return code === 40060;
+}
+
+export function isBenignAutocompleteError(error: unknown): boolean {
+  return isUnknownInteractionError(error) || isInteractionAcknowledgedError(error) || isAbortError(error);
+}
+
 export function isAbortError(error: unknown): boolean {
   if (error instanceof DOMException && error.name === "AbortError") return true;
   if (error instanceof Error && error.name === "AbortError") return true;
