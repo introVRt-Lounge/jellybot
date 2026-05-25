@@ -60,6 +60,12 @@ export const clipCommand = new SlashCommandBuilder()
       .setName("duration")
       .setDescription("Clip length from start. Use this or end, not both.")
       .setRequired(false),
+  )
+  .addBooleanOption((option) =>
+    option
+      .setName("subtitles")
+      .setDescription("Burn subtitles into the clip video")
+      .setRequired(false),
   );
 
 export async function handleClipAutocomplete(
@@ -142,7 +148,7 @@ export async function handleClipAutocomplete(
 export async function handleClipCommand(
   interaction: ChatInputCommandInteraction,
   jellyfin: JellyfinClient,
-  config: Pick<AppConfig, "clipTempDir" | "maxClipMb" | "maxClipSeconds" | "audioLanguages">,
+  config: Pick<AppConfig, "clipTempDir" | "maxClipMb" | "maxClipSeconds" | "audioLanguages" | "subtitleLanguages">,
 ): Promise<void> {
   const planned = planClipRequest({
     kind: interaction.options.getString("kind", true) as MediaKind,
@@ -218,6 +224,9 @@ export async function handleClipCommand(
     outputPath: artifact.outputPath,
     maxClipMb,
     preferredAudioLanguages: config.audioLanguages,
+    burnInSubtitles: interaction.options.getBoolean("subtitles") ?? false,
+    preferredSubtitleLanguages: config.subtitleLanguages,
+    tempId: interaction.id,
   });
 
   if (!rendered.ok) {
@@ -266,6 +275,7 @@ export async function handleClipCommand(
       durationSeconds: planned.plan.durationSeconds,
       audioStreamIndex: rendered.ok ? rendered.audioStreamIndex : undefined,
       audioLanguage: rendered.ok ? rendered.audioLanguage : undefined,
+      subtitlesBurnedIn: rendered.ok ? rendered.subtitlesBurnedIn : undefined,
     }),
   );
 }

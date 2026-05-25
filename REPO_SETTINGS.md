@@ -92,6 +92,18 @@ Use a bind mount, not a named Docker volume — volumes under `/var/lib/docker/v
 
 **Permissions:** data dir owned by uid **1001** (`jellybot`) for SQLite WAL files.
 
+## Cursor Cloud Agent (label-gated)
+
+| | |
+|---|---|
+| **Trigger** | Issue label `ai-triage` applied by **`radgey-cmd`** only (`.github/workflows/cursor-issue-triage.yml`) |
+| **Action** | [cursor-issue-triage](https://github.com/marketplace/actions/cursor-issue-triage) `@v1` |
+| **Repo secret** | `CURSOR_API_KEY` — Settings → Secrets → Actions |
+| **Cursor dashboard** | Connect GitHub integration with access to this repo (required for clone/PR; API key alone is insufficient) |
+| **Enqueue marker** | Label `ai-triage-enqueued` applied by the action |
+
+Do **not** trigger on every `issues.opened` event. File via the **Agent task** template; **`@radgey-cmd`** adds `ai-triage` when ready.
+
 ## Docs site (marketing URL)
 
 | | |

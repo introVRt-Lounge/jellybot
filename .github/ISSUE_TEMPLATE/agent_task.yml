@@ -1,0 +1,33 @@
+name: Agent task
+description: Propose work for Cursor (triage assigns ai-triage when ready)
+title: "[agent] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Do not add `ai-triage` yourself.** File the task here; **`@radgey-cmd`** reviews and applies `ai-triage` when the issue is ready for Cursor.
+        That label triggers `.github/workflows/cursor-issue-triage.yml`.
+
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: What should be changed?
+    validations:
+      required: true
+
+  - type: textarea
+    id: constraints
+    attributes:
+      label: Constraints
+      description: What must Cursor avoid changing?
+    validations:
+      required: false
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: How do we know this is done?
+    validations:
+      required: true

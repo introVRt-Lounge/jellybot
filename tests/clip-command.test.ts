@@ -8,9 +8,9 @@ describe("clip command contract", () => {
     expect(json.name).toBe("clip");
   });
 
-  test("declares kind, media, start, end, duration options", () => {
+  test("declares kind, media, start, end, duration, subtitles options", () => {
     const names = json.options?.map((option) => option.name);
-    expect(names).toEqual(["kind", "media", "start", "end", "duration"]);
+    expect(names).toEqual(["kind", "media", "start", "end", "duration", "subtitles"]);
   });
 
   test("uses autocomplete instead of static choices for discord validation compatibility", () => {

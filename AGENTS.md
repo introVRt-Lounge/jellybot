@@ -101,3 +101,14 @@ Key env vars for a live run: `DISCORD_TOKEN`, `DISCORD_CLIENT_ID`, `JELLYFIN_USE
 ### Pre-commit hook
 
 Husky runs `bun run secrets:staged` (gitleaks) on commit. If gitleaks is not installed locally, the script falls back to the `zricethezav/gitleaks:v8.30.1` Docker image. In Cloud Agent VMs without Docker, the hook may fail - this is non-blocking for development but worth noting.
+
+## Cursor Cloud Agents (GitHub)
+
+Label-gated automation only — **not** on every new issue. **`@radgey-cmd`** is triage: they review issues and add `ai-triage` when Cursor should attempt work. The workflow only runs when `radgey-cmd` applies that label.
+
+| Label | Effect |
+| --- | --- |
+| `ai-triage` | Triggers `.github/workflows/cursor-issue-triage.yml` when applied by `radgey-cmd` |
+| `human-needed` | Do not use agent automation |
+
+Cloud Agents must follow the **Cursor agent rules** in `CONTRIBUTING.md`. Prefer `ai-safe`, `ai-no-db`, and `ai-no-auth` labels to narrow scope.
