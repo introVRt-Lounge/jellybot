@@ -90,7 +90,13 @@ All tests are self-contained with mocks - no external services needed.
 
 ### Running the bot locally
 
-The bot requires live Discord and Jellyfin credentials (see `.env.example`). Without them, `bun run start` will crash at Jellyfin authentication - this is expected. The health server (`GET /healthz` on port 8080) starts before external auth, so you can verify the Bun + health layer independently.
+**Cloud Agent VMs must never connect to the Discord gateway.** Only one process may hold `DISCORD_TOKEN` at a time. A second login (local dev, `make dev-refresh`, or an agent running `bun run start`) steals autocomplete acks and breaks `/quote` and `/clip` in production with `Interaction has already been acknowledged`.
+
+On Cloud Agents: run **`bun run ci`** only. Do **not** run `bun run start`, `make dev-refresh`, or Docker compose profiles that start the bot. Do not load production `DISCORD_TOKEN` into the agent environment.
+
+For humans on the dev machine: use a **separate Discord dev application** if you need a live gateway while prod is up. Never point dev at the production bot token while `~/docker/jellybot` is running.
+
+The bot requires live Discord and Jellyfin credentials for a full gateway run (see `.env.example`). Without them, `bun run start` will crash at Jellyfin authentication - this is expected. The health server (`GET /healthz` on port 8080) starts before external auth, so you can verify the Bun + health layer independently.
 
 Key env vars for a live run: `DISCORD_TOKEN`, `DISCORD_CLIENT_ID`, `JELLYFIN_USERNAME`, `JELLYFIN_PASSWORD`, `JELLYFIN_MOVIES_LIBRARY_ID`, `JELLYFIN_TV_LIBRARY_ID`.
 

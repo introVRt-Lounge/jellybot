@@ -96,18 +96,14 @@ export async function handleQuoteAutocomplete(
   _jellyfin: JellyfinClient,
   config: Pick<AppConfig, "subtitleDbPath">,
 ): Promise<void> {
-  const pending = quoteAutocompleteInFlight.get(interaction.id);
-  if (pending) {
-    return pending;
+  let work = quoteAutocompleteInFlight.get(interaction.id);
+  if (!work) {
+    work = handleQuoteAutocompleteOnce(interaction, config).finally(() => {
+      quoteAutocompleteInFlight.delete(interaction.id);
+    });
+    quoteAutocompleteInFlight.set(interaction.id, work);
   }
-
-  const work = handleQuoteAutocompleteOnce(interaction, config);
-  quoteAutocompleteInFlight.set(interaction.id, work);
-  try {
-    await work;
-  } finally {
-    quoteAutocompleteInFlight.delete(interaction.id);
-  }
+  return work;
 }
 
 async function handleQuoteAutocompleteOnce(

@@ -39,6 +39,8 @@ Run command sync after schema changes:
 make register-commands
 ```
 
+**Guild-scoped bots:** `register-commands` registers per-guild commands and **clears all global commands**. Never leave both — Discord can deliver duplicate autocomplete interactions. The runtime also purges stale globals on startup when guild IDs are configured.
+
 ## Security And Secrets
 
 - Never commit `.env`, `.env~`, tokens, Jellyfin passwords, or generated clips.
@@ -106,6 +108,8 @@ Optional guard labels (add manually; not all are enforced by automation yet):
 | `human-needed` | Do not use agent automation |
 
 ### Cursor agent rules
+
+**One Discord gateway per token.** Cloud Agents and CI must not run `bun run start`, `make dev-refresh`, or compose services that log in with `DISCORD_TOKEN`. Use `bun run ci` / `make test` only. If prod (`~/docker/jellybot`) is live, local dev needs a separate Discord dev app - never share the production bot token.
 
 When implementing GitHub issues (human or Cloud Agent):
 

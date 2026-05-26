@@ -1,21 +1,31 @@
-import { REST, Routes } from "discord.js";
+import { REST } from "discord.js";
 import "dotenv/config";
 import { clipCommand } from "./commands/clip.ts";
 import { quoteCommand } from "./commands/quote.ts";
 import { loadConfig } from "./config.ts";
+import {
+  createRestCommandRegistry,
+  planCommandSync,
+  syncSlashCommands,
+} from "./discord/command-sync.ts";
 
 const config = loadConfig();
 const rest = new REST({ version: "10" }).setToken(config.discordToken);
 const body = [clipCommand.toJSON(), quoteCommand.toJSON()];
+const plan = planCommandSync(config.discordGuildIds);
+const registry = createRestCommandRegistry(rest, config.discordClientId);
 
-const guildIds = config.discordGuildIds;
+const result = await syncSlashCommands(registry, body, plan);
 
-if (guildIds.length > 0) {
-  for (const guildId of guildIds) {
-    await rest.put(Routes.applicationGuildCommands(config.discordClientId, guildId), { body });
+if (plan.mode === "guild") {
+  for (const guildId of result.guildIds) {
     console.info(`Registered guild commands for ${guildId}`);
   }
+  if (result.globalsCleared > 0) {
+    console.info(`Cleared ${result.globalsCleared} stale global command(s)`);
+  } else {
+    console.info("Global commands already empty (guild-scoped registration)");
+  }
 } else {
-  await rest.put(Routes.applicationCommands(config.discordClientId), { body });
   console.info("Registered global commands");
 }

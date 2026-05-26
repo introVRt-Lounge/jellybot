@@ -42,16 +42,26 @@ Runtime uses only `GatewayIntentBits.Guilds`.
 
 ## Command registration
 
-- Development: set `DISCORD_GUILD_ID` and run `bun run register-commands` for instant guild sync
-- Production: omit `DISCORD_GUILD_ID` to register globally after validation
+Jellybot uses **guild-scoped** slash commands when `DISCORD_GUILD_ID` or `DISCORD_GUILD_IDS` is set (recommended for dev and prod). Guild sync is instant; global propagation can take up to an hour.
 
-Registration is a separate one-shot step. The running bot does not re-register commands on startup.
+### Guild vs global (critical)
+
+| Mode | When | Global commands |
+| --- | --- | --- |
+| **Guild** | `DISCORD_GUILD_ID(S)` set | Must be **empty**. Stale globals cause duplicate autocomplete and `Interaction has already been acknowledged`. |
+| **Global** | No guild IDs configured | Registered via `Routes.applicationCommands` only |
+
+Registration is a separate one-shot step (`make register-commands`). The running bot also **self-heals on startup**: if guild-scoped and stale globals exist, it clears them automatically.
 
 ```bash
 bun run register-commands
 # or
+make register-commands
+# or
 docker compose --profile register run --rm jellybot-register-commands
 ```
+
+After any slash command schema change, run `make register-commands` before expecting new options in Discord.
 
 ## Verification checklist
 
