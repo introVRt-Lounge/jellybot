@@ -24,6 +24,11 @@ export function buildAudioEncodeArgs(): string[] {
   ];
 }
 
+export type ProbedStream = {
+  index: number;
+  codec_type: string;
+};
+
 export type ClipOptions = {
   inputUrl: string;
   startSeconds: number;
@@ -31,9 +36,29 @@ export type ClipOptions = {
   outputPath: string;
   maxHeight?: number;
   videoCodec?: string;
+  /** Jellyfin MediaStream index; used with ffprobe to pick the correct ffmpeg -map. */
   audioStreamIndex?: number;
+  /** Resolved ffmpeg stream map (e.g. `0:3?` or `0:a:0?`). Overrides audioStreamIndex when set. */
+  audioMapSpec?: string;
   subtitlePath?: string;
 };
+
+/** Pick ffmpeg audio map: container index when present, else first audio (remuxed Jellyfin stream). */
+export function resolveAudioMapSpec(
+  streams: ProbedStream[],
+  jellyfinAudioStreamIndex?: number,
+): string {
+  if (jellyfinAudioStreamIndex !== undefined) {
+    const atIndex = streams.find(
+      (stream) => stream.index === jellyfinAudioStreamIndex && stream.codec_type === "audio",
+    );
+    if (atIndex) {
+      return `0:${jellyfinAudioStreamIndex}?`;
+    }
+  }
+
+  return "0:a:0?";
+}
 
 function buildVideoFilter(maxHeight: number, subtitlePath?: string): string {
   let filter = `scale=-2:${maxHeight}:force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2`;
@@ -76,10 +101,10 @@ function buildVideoEncodeArgs(videoCodec: string, maxHeight: number, subtitlePat
 export function buildClipFfmpegArgs(options: ClipOptions): string[] {
   const videoCodec = options.videoCodec ?? DEFAULT_VIDEO_CODEC;
   const maxHeight = options.maxHeight ?? DEFAULT_MAX_HEIGHT;
-  const audioMap =
-    options.audioStreamIndex !== undefined
-      ? ["-map", `0:${options.audioStreamIndex}?`]
-      : ["-map", "0:a:0?"];
+  const audioMapSpec =
+    options.audioMapSpec ??
+    (options.audioStreamIndex !== undefined ? `0:${options.audioStreamIndex}?` : "0:a:0?");
+  const audioMap = ["-map", audioMapSpec];
 
   return [
     "-hide_banner",
@@ -103,9 +128,65 @@ export function buildClipFfmpegArgs(options: ClipOptions): string[] {
   ];
 }
 
+async function probeInputStreams(inputUrl: string): Promise<ProbedStream[]> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(
+      "ffprobe",
+      [
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-show_entries",
+        "stream=index,codec_type",
+        "-of",
+        "json",
+        inputUrl,
+      ],
+      { stdio: ["ignore", "pipe", "pipe"] },
+    );
+
+    let stdout = "";
+    let stderr = "";
+
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk.toString();
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk.toString();
+    });
+
+    child.on("error", reject);
+    child.on("close", (code) => {
+      if (code !== 0) {
+        reject(new Error(stderr.trim() || `ffprobe exited with code ${code}`));
+        return;
+      }
+
+      try {
+        const parsed = JSON.parse(stdout) as { streams?: ProbedStream[] };
+        resolve(parsed.streams ?? []);
+      } catch (error) {
+        reject(error instanceof Error ? error : new Error("Failed to parse ffprobe output."));
+      }
+    });
+  });
+}
+
 export async function createClip(options: ClipOptions): Promise<void> {
   await mkdir(dirname(options.outputPath), { recursive: true });
-  await runFfmpeg(buildClipFfmpegArgs(options));
+
+  let audioMapSpec = options.audioMapSpec;
+  if (!audioMapSpec && options.audioStreamIndex !== undefined) {
+    try {
+      const streams = await probeInputStreams(options.inputUrl);
+      audioMapSpec = resolveAudioMapSpec(streams, options.audioStreamIndex);
+    } catch {
+      // Jellyfin may serve a remuxed stream where only 0:a:0 exists; URL AudioStreamIndex still applies.
+      audioMapSpec = "0:a:0?";
+    }
+  }
+
+  await runFfmpeg(buildClipFfmpegArgs({ ...options, audioMapSpec }));
 }
 
 async function runFfmpeg(args: string[]): Promise<void> {
