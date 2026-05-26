@@ -93,6 +93,8 @@ make health
 make logs
 ```
 
+Optional live Discord smoke (user token, log-correlated): see [docs/DISCORD_SMOKE_TESTING.md](docs/DISCORD_SMOKE_TESTING.md) (`make smoke-discord-quote`).
+
 Before `/quote` works, build the subtitle index once:
 
 ```bash

@@ -299,4 +299,14 @@ if (config.subtitleIndexOnStartup === "incremental") {
   });
 }
 
-await client.login(config.discordToken);
+if (process.env.JELLYBOT_DISABLE_DISCORD_GATEWAY === "1") {
+  console.warn(
+    JSON.stringify({
+      event: "discord.gateway.disabled",
+      reason: "JELLYBOT_DISABLE_DISCORD_GATEWAY",
+      hostname: hostname(),
+    }),
+  );
+} else {
+  await client.login(config.discordToken);
+}

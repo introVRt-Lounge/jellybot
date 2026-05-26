@@ -17,7 +17,7 @@ describe("quote command contract", () => {
   test("uses autocomplete on match", () => {
     const match = json.options?.find((option) => option.name === "match");
     expect(match?.autocomplete).toBe(true);
-    expect(match?.required).toBe(false);
+    expect(match?.required).toBe(true);
   });
 });
 

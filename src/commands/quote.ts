@@ -6,7 +6,7 @@ import {
 } from "discord.js";
 import type { AppConfig } from "../config.ts";
 import { withTimeout } from "../autocomplete.ts";
-import { isBenignAutocompleteError } from "../autocomplete-guard.ts";
+import { AutocompleteSessionGuard, isBenignAutocompleteError } from "../autocomplete-guard.ts";
 import { beginEphemeralClipPreview, deliverClipPreview } from "../clip-preview/pipeline.ts";
 import type { JellyfinClient } from "../jellyfin.ts";
 import { planQuoteClip } from "../services/quote-request.ts";
@@ -17,6 +17,9 @@ import { getSubtitleSearchIndex } from "../subtitles/search-index.ts";
 import { formatTimestamp } from "../time.ts";
 
 const quoteAutocompleteInFlight = new Map<string, Promise<void>>();
+const quoteMatchAutocompleteGuard = new AutocompleteSessionGuard();
+const QUOTE_MATCH_AUTOCOMPLETE_KEY = (interaction: AutocompleteInteraction) =>
+  `${interaction.user.id}:${interaction.guildId ?? "dm"}:quote:match`;
 const QUOTE_AUTOCOMPLETE_TIMEOUT_MS = 2500;
 
 export const quoteCommand = new SlashCommandBuilder()
@@ -26,7 +29,7 @@ export const quoteCommand = new SlashCommandBuilder()
     option
       .setName("match")
       .setDescription("Search quote text, then pick a match from autocomplete")
-      .setRequired(false)
+      .setRequired(true)
       .setAutocomplete(true),
   )
   .addStringOption((option) =>
@@ -96,14 +99,30 @@ export async function handleQuoteAutocomplete(
   _jellyfin: JellyfinClient,
   config: Pick<AppConfig, "subtitleDbPath">,
 ): Promise<void> {
-  let work = quoteAutocompleteInFlight.get(interaction.id);
-  if (!work) {
-    work = handleQuoteAutocompleteOnce(interaction, config).finally(() => {
-      quoteAutocompleteInFlight.delete(interaction.id);
-    });
-    quoteAutocompleteInFlight.set(interaction.id, work);
+  const existing = quoteAutocompleteInFlight.get(interaction.id);
+  if (existing) {
+    return existing;
   }
-  return work;
+
+  // Register before any await: handleQuoteAutocompleteOnce runs synchronously until its
+  // first await, so calling it before set() allowed duplicate handlers for one token.
+  let release!: () => void;
+  let fail!: (error: unknown) => void;
+  const gate = new Promise<void>((resolve, reject) => {
+    release = resolve;
+    fail = reject;
+  });
+  quoteAutocompleteInFlight.set(interaction.id, gate);
+
+  try {
+    await handleQuoteAutocompleteOnce(interaction, config);
+    release();
+  } catch (error) {
+    fail(error);
+    throw error;
+  } finally {
+    quoteAutocompleteInFlight.delete(interaction.id);
+  }
 }
 
 async function handleQuoteAutocompleteOnce(
@@ -123,6 +142,7 @@ async function handleQuoteAutocompleteOnce(
   }
 
   try {
+    const { isCurrent } = quoteMatchAutocompleteGuard.beginCancellable(QUOTE_MATCH_AUTOCOMPLETE_KEY(interaction));
     const index = getSubtitleSearchIndex(config.subtitleDbPath);
     const results = await withTimeout(Promise.resolve(index.searchQuotes(query, 25)), QUOTE_AUTOCOMPLETE_TIMEOUT_MS);
     const choices = quoteSearchChoices(results);
@@ -136,7 +156,7 @@ async function handleQuoteAutocompleteOnce(
       }),
     );
 
-    if (interaction.responded) {
+    if (!isCurrent() || interaction.responded) {
       return;
     }
 
