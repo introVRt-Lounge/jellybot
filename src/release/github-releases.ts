@@ -14,9 +14,28 @@ export async function fetchLatestRelease(
   githubToken: string,
 ): Promise<GitHubRelease | null> {
   const url = `https://api.github.com/repos/${repoOwner}/${repoName}/releases/latest`;
+  return fetchReleaseFromUrl(url, repoOwner, repoName, githubToken);
+}
+
+export async function fetchReleaseByTag(
+  repoOwner: string,
+  repoName: string,
+  githubToken: string,
+  tag: string,
+): Promise<GitHubRelease | null> {
+  const url = `https://api.github.com/repos/${repoOwner}/${repoName}/releases/tags/${encodeURIComponent(tag)}`;
+  return fetchReleaseFromUrl(url, repoOwner, repoName, githubToken);
+}
+
+async function fetchReleaseFromUrl(
+  url: string,
+  repoOwner: string,
+  repoName: string,
+  _githubToken: string,
+): Promise<GitHubRelease | null> {
   const response = await fetch(url, {
     headers: {
-      Authorization: `Bearer ${githubToken}`,
+      Authorization: `Bearer ${_githubToken}`,
       Accept: "application/vnd.github+json",
       "User-Agent": "jellybot-release-announcer",
     },

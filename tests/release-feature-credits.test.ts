@@ -31,6 +31,10 @@ describe("release feature credits", () => {
     expect(formatGitHubPerson("heavygee", "heavygee")).toBe("@heavygee");
   });
 
+  test("formatGitHubPerson pings mapped lounge members", () => {
+    expect(formatGitHubPerson("Gavin", "Gpcas9")).toContain("<@385136311927046154>");
+  });
+
   test("formatFeatureCredits renders bullet list", () => {
     const formatted = formatFeatureCredits([
       { summary: "clip preview", login: "heavygee", displayName: "HeavyGee" },

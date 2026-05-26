@@ -29,7 +29,9 @@ On **every bot restart** (including Watchtower image upgrades), `ClientReady` ru
 
 There is **no** scheduled/hourly poll. Repeat restarts on the same release are no-ops via DB dedupe.
 
-Required prod env: `GITHUB_TOKEN`, `NOTIFICATION_CHANNEL_ID` (introVRt Lounge announcements: `1159798255295660103`). Major/minor embeds include **Feature credits** from GitHub `feat` commits/PR authors in the release range.
+Required prod env: `GITHUB_TOKEN`, `NOTIFICATION_CHANNEL_ID` (introVRt Lounge announcements: `1159798255295660103`). Major/minor embeds include **Feature credits** from GitHub `feat` commits/PR authors in the release range, and **Community thanks** when closed issues in the release include `Reported by @githubLogin` (Discord pings use `src/release/github-discord-members.ts`).
+
+Retroactive patch announce (operator): `bun run announce:release v1.2.2 --allow-patch` with prod env loaded.
 
 Release pipeline: conventional commits → release-please → GitHub Release → CI pushes GHCR (`:latest` on major/minor only) → Watchtower recreates container → announce on boot.
 
