@@ -74,6 +74,7 @@ Default: branch → PR → green **`ci`** + **`scope-review`** → squash auto-m
 | --- | --- |
 | `OPENAI_API_KEY` | **`scope-review`** workflow (OpenAI gpt-4o-mini) |
 | `CURSOR_API_KEY` | Cursor issue triage |
+| `DISCORD_TRIAGE_DISPATCH_WEBHOOK_URL` | Discord heads-up when triage dispatches Cursor (`Uh oh... #N is under development`) |
 
 ## Ship pipeline (clockwork)
 

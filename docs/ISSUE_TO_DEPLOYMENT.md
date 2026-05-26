@@ -96,6 +96,7 @@ When `@radgey-cmd` adds **`ai-triage`** or **`ai-safe`**:
 3. **Action:** POST to Cursor Cloud Agents API (`CURSOR_API_KEY` repo secret).
 4. **Branch contract:** `ai-triage/fix-issue-{number}`.
 5. **Marker:** label **`ai-triage-enqueued`** on the issue (prevents duplicate starts).
+6. **Discord heads-up:** webhook posts `Uh oh... seems like [#N title](issue) is under development... 👀` (secret `DISCORD_TRIAGE_DISPATCH_WEBHOOK_URL`).
 
 Monitor the run at [cursor.com/agents](https://cursor.com/agents) (Cloud Agents — not Cursor Dashboard **Automations**, which are PR-scoped).
 

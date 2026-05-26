@@ -106,6 +106,33 @@ jobs:
             exit 1
           fi
 
+      - name: Notify Discord triage webhook
+        if: steps.guard.outputs.skip != 'true'
+        env:
+          DISCORD_TRIAGE_WEBHOOK_URL: ${{ secrets.DISCORD_TRIAGE_DISPATCH_WEBHOOK_URL }}
+        run: |
+          set -euo pipefail
+          if [ -z "${DISCORD_TRIAGE_WEBHOOK_URL}" ]; then
+            echo "DISCORD_TRIAGE_DISPATCH_WEBHOOK_URL not set; skipping Discord notify."
+            exit 0
+          fi
+
+          issue_json="$(gh api "/repos/${REPOSITORY}/issues/${ISSUE_NUMBER}")"
+          title="$(echo "${issue_json}" | jq -r '.title')"
+          url="$(echo "${issue_json}" | jq -r '.html_url')"
+          link_label="#${ISSUE_NUMBER} ${title}"
+          if [ "${#link_label}" -gt 120 ]; then
+            link_label="#${ISSUE_NUMBER} ${title:0:117}..."
+          fi
+
+          payload="$(jq -n \
+            --arg content "Uh oh... seems like [${link_label}](${url}) is under development... 👀" \
+            '{content: $content}')"
+
+          curl -fsS -X POST "${DISCORD_TRIAGE_WEBHOOK_URL}" \
+            -H "Content-Type: application/json" \
+            --data "${payload}"
+
       - name: Mark issue enqueued
         if: steps.guard.outputs.skip != 'true'
         run: gh issue edit "${ISSUE_NUMBER}" --repo "${REPOSITORY}" --add-label "${ENQUEUED_LABEL}"
