@@ -13,7 +13,26 @@ Operator checklist for **introVRt-Lounge/jellybot** (public).
 | Dependabot alerts | Enabled | Settings → Security → Dependabot |
 | Dependabot security updates | Enabled | Settings → Security → Dependabot |
 | Private vulnerability reporting | Enabled | `PUT …/private-vulnerability-reporting` |
-| Branch protection `main` | Required check **`ci`** | Settings → Branches |
+| Branch protection `main` | PR required, required check **`ci`**, no force-push/delete, admins enforced | Settings → Branches → `main` |
+
+### Branch protection (`main`) — live settings
+
+Public repo — classic branch protection is available (no Pro required).
+
+| Rule | Setting |
+| --- | --- |
+| Require pull request before merging | Yes |
+| Required approvals | **0** (auto-merge on green **`ci`**; use label **`no-automerge`** to hold) |
+| Dismiss stale approvals on new pushes | Yes |
+| Require status check **`ci`** | Yes |
+| Require branches up to date (`strict`) | Yes |
+| Enforce for administrators | Yes |
+| Allow force pushes | No |
+| Allow deletions | No |
+
+Operator UI: **Settings → Branches → Branch protection rules → `main`**.
+
+API (audit): `gh api repos/introVRt-Lounge/jellybot/branches/main/protection`
 | GitHub Pages | Source: **GitHub Actions** | Settings → Pages (after first green `Docs` workflow) |
 | Social preview | Upload `.github/social-preview.png` | Settings → General → Social preview |
 
