@@ -1,4 +1,6 @@
 import "dotenv/config";
+import { hostname } from "node:os";
+import { randomUUID } from "node:crypto";
 import { Client, Events, GatewayIntentBits } from "discord.js";
 import {
   handleClipPreviewButton,
@@ -71,9 +73,19 @@ const client = new Client({
   intents: [GatewayIntentBits.Guilds],
 });
 
+const gatewayInstanceId = randomUUID().slice(0, 8);
+
 client.once(Events.ClientReady, async (readyClient) => {
   healthState.discordReady = true;
-  console.info(`Logged in as ${readyClient.user.tag}`);
+  console.info(
+    JSON.stringify({
+      event: "discord.ready",
+      tag: readyClient.user.tag,
+      instanceId: gatewayInstanceId,
+      hostname: hostname(),
+      appVersion: config.appVersion,
+    }),
+  );
 
   const announcer = createReleaseAnnouncerFromConfig(config);
   if (announcer) {

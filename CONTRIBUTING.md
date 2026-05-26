@@ -107,6 +107,8 @@ Optional guard labels (add manually; not all are enforced by automation yet):
 
 ### Cursor agent rules
 
+**One Discord gateway per token.** Cloud Agents and CI must not run `bun run start`, `make dev-refresh`, or compose services that log in with `DISCORD_TOKEN`. Use `bun run ci` / `make test` only. If prod (`~/docker/jellybot`) is live, local dev needs a separate Discord dev app - never share the production bot token.
+
 When implementing GitHub issues (human or Cloud Agent):
 
 1. Read the full issue body and comments before editing code.

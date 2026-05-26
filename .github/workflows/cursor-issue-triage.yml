@@ -77,7 +77,13 @@ jobs:
               "",
               "---",
               "",
-              "Implement the fix on branch ai-triage/fix-issue-\($num). Follow CONTRIBUTING.md. Open a PR whose description includes: Closes #\($num)"
+              "Implement the fix on branch ai-triage/fix-issue-\($num). Follow CONTRIBUTING.md. Open a PR whose description includes: Closes #\($num)",
+              "",
+              "## Critical - do not start the Discord bot",
+              "",
+              "Do NOT run bun run start, make dev-refresh, or any Docker profile that connects the Discord gateway.",
+              "Do NOT use the production DISCORD_TOKEN. Run bun run ci for verification only.",
+              "A second gateway connection breaks prod autocomplete (Interaction has already been acknowledged)."
             ] | join("\n")')"
 
           request_body="$(jq -n \

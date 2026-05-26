@@ -15,6 +15,10 @@ if (guildIds.length > 0) {
     await rest.put(Routes.applicationGuildCommands(config.discordClientId, guildId), { body });
     console.info(`Registered guild commands for ${guildId}`);
   }
+  // Guild-scoped bots must not keep stale global commands — Discord can deliver duplicate
+  // autocomplete interactions when both exist (prod sees "already been acknowledged").
+  await rest.put(Routes.applicationCommands(config.discordClientId), { body: [] });
+  console.info("Cleared global commands (guild-scoped registration)");
 } else {
   await rest.put(Routes.applicationCommands(config.discordClientId), { body });
   console.info("Registered global commands");
