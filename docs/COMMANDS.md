@@ -71,7 +71,7 @@ Search indexed subtitles and clip the scene around a matched quote. Uses the sam
 
 ### Options
 
-| Option | Required at runtime | Type | Notes |
+| Option | Required | Type | Notes |
 | --- | --- | --- | --- |
 | `match` | Yes | Autocomplete string | Type at least 3 characters, then pick a quote match |
 | `duration` | No | String | Clip length from the quote (default `15s`) |

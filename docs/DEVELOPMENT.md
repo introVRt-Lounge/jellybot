@@ -29,6 +29,10 @@ Optional `docker-compose.override.yml` (gitignored) for host-specific mounts:
 
 **Do not run a long-lived `jellybot` container from the dev checkout in production.** Use `make test` / short-lived compose profiles for parity checks.
 
+### Optional Discord live smoke (user token)
+
+After autocomplete, gateway, or deploy changes, run log-correlated smokes against the running prod container. See **[Discord smoke testing](DISCORD_SMOKE_TESTING.md)** (`make smoke-discord-quote`, `bun run smoke:discord:all`). Not a CI gate — requires `discord.py-self` credentials.
+
 ## Production (`~/docker/jellybot`)
 
 Only one container named **`jellybot`** should run on the host.

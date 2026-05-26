@@ -13,6 +13,8 @@
     "ci": "bun run typecheck && bun test",
     "pr-scope-review": "bun run scripts/pr-scope-review.ts",
     "smoke:discord": "PYTHONPATH=${DISCORD_PY_SELF_ROOT:?Set DISCORD_PY_SELF_ROOT to discord.py-self checkout} python3 scripts/discord-clip-smoke.py",
+    "smoke:discord:quote": "PYTHONPATH=${DISCORD_PY_SELF_ROOT:?Set DISCORD_PY_SELF_ROOT to discord.py-self checkout} python3 scripts/discord-quote-autocomplete-smoke.py",
+    "smoke:discord:all": "bun run smoke:discord:quote && bun run smoke:discord",
     "secrets:staged": "./scripts/gitleaks-staged.sh",
     "prepare": "husky || true"
   },
