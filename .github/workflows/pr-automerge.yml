@@ -12,6 +12,7 @@ on:
   workflow_run:
     workflows:
       - CI
+      - PR scope review
     types:
       - completed
 
@@ -121,8 +122,15 @@ jobs:
           ci_conclusion="$(gh pr view "${PR_NUMBER}" --repo "${REPOSITORY}" \
             --json statusCheckRollup \
             -q '[.statusCheckRollup[] | select(.name == "ci") | .conclusion][0] // empty')"
+          scope_review_conclusion="$(gh pr view "${PR_NUMBER}" --repo "${REPOSITORY}" \
+            --json statusCheckRollup \
+            -q '[.statusCheckRollup[] | select(.name == "scope-review") | .conclusion][0] // empty')"
           if [ "${ci_conclusion}" != "SUCCESS" ]; then
             echo "Required check ci is '${ci_conclusion:-pending}'; waiting for green CI."
+            exit 0
+          fi
+          if [ "${scope_review_conclusion}" != "SUCCESS" ]; then
+            echo "Required check scope-review is '${scope_review_conclusion:-pending}'; waiting for scope review."
             exit 0
           fi
 

@@ -13,7 +13,7 @@ Operator checklist for **introVRt-Lounge/jellybot** (public).
 | Dependabot alerts | Enabled | Settings → Security → Dependabot |
 | Dependabot security updates | Enabled | Settings → Security → Dependabot |
 | Private vulnerability reporting | Enabled | `PUT …/private-vulnerability-reporting` |
-| Branch protection `main` | PR required, required check **`ci`**, no force-push/delete, admins enforced | Settings → Branches → `main` |
+| Branch protection `main` | PR required, checks **`ci`** + **`scope-review`**, no force-push/delete | Settings → Branches → `main` |
 
 ### Branch protection (`main`) — live settings
 
@@ -22,9 +22,10 @@ Public repo — classic branch protection is available (no Pro required).
 | Rule | Setting |
 | --- | --- |
 | Require pull request before merging | Yes |
-| Required approvals | **0** (auto-merge on green **`ci`**; use label **`no-automerge`** to hold) |
+| Required approvals | **0** (auto-merge on green **`ci`** + **`scope-review`**) |
 | Dismiss stale approvals on new pushes | Yes |
 | Require status check **`ci`** | Yes |
+| Require status check **`scope-review`** | Yes (LLM scope + quality gate; see `docs/PRODUCT_SCOPE.md`) |
 | Require branches up to date (`strict`) | Yes |
 | Enforce for administrators | Yes |
 | Allow force pushes | No |
@@ -33,6 +34,7 @@ Public repo — classic branch protection is available (no Pro required).
 Operator UI: **Settings → Branches → Branch protection rules → `main`**.
 
 API (audit): `gh api repos/introVRt-Lounge/jellybot/branches/main/protection`
+
 | GitHub Pages | Source: **GitHub Actions** | Settings → Pages (after first green `Docs` workflow) |
 | Social preview | Upload `.github/social-preview.png` | Settings → General → Social preview |
 
@@ -46,6 +48,7 @@ Record last verified date when you audit these toggles.
 | `security-audit` | `bun audit` on lockfile |
 | `secret-scan` | gitleaks full tree |
 | `owasp-sast` | Semgrep OWASP + project rules |
+| **`scope-review`** | LLM scope + quality review (`docs/PRODUCT_SCOPE.md`) |
 | **`ci`** | Aggregate gate - required for merge |
 
 Local fallback: Husky pre-commit runs `bun run secrets:staged`.
@@ -61,11 +64,16 @@ Local fallback: Husky pre-commit runs `bun run secrets:staged`.
 
 ## Merge policy
 
-Default: branch → PR → green **`ci`** → squash merge → **Ship main** (release tag + GHCR `:latest`).
+Default: branch → PR → green **`ci`** + **`scope-review`** → squash auto-merge → **Ship main**.
 
 `delete_branch_on_merge` and squash merge are enabled.
 
-**Pull requests:** open PRs targeting **`main`** enable squash **auto-merge** when required check **`ci`** passes (`.github/workflows/pr-automerge.yml`). Opt out with label **`no-automerge`** or **`human-needed`** on the PR or linked issue. **Ship main** runs when the PR closes (merged) — required because `GITHUB_TOKEN` merges do not fire `push` events.
+**Pull requests:** open PRs targeting **`main`** enable squash **auto-merge** when **`ci`** and **`scope-review`** pass (`.github/workflows/pr-automerge.yml`). Opt out with **`no-automerge`**, **`human-needed`**, or **`scope-review-skip`**. **Ship main** runs when the PR closes (merged).
+
+| Repo secret | Purpose |
+| --- | --- |
+| `OPENAI_API_KEY` | **`scope-review`** workflow (OpenAI gpt-4o-mini) |
+| `CURSOR_API_KEY` | Cursor issue triage |
 
 ## Ship pipeline (clockwork)
 
@@ -136,7 +144,7 @@ Use a bind mount, not a named Docker volume — volumes under `/var/lib/docker/v
 | **Repo secret** | `CURSOR_API_KEY` — Settings → Secrets → Actions |
 | **Cursor dashboard** | Connect GitHub integration with access to this repo (required for clone/PR; API key alone is insufficient) |
 | **Enqueue marker** | Label `ai-triage-enqueued` applied by the action |
-| **Auto-merge** | `.github/workflows/pr-automerge.yml` — green **`ci`**, same-repo PRs; skip with **`no-automerge`** / **`human-needed`** |
+| **Auto-merge** | `.github/workflows/pr-automerge.yml` — green **`ci`** + **`scope-review`**; skip with opt-out labels |
 
 Do **not** trigger on every `issues.opened` event. File via the **Agent task** template; **`@radgey-cmd`** adds `ai-triage` or `ai-safe` when ready.
 

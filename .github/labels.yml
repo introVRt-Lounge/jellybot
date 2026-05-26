@@ -51,3 +51,6 @@
 - name: no-automerge
   color: "b60205"
   description: Block squash auto-merge even when CI is green
+- name: scope-review-skip
+  color: "fbca04"
+  description: Skip automated scope-review gate (operator override)

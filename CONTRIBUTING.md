@@ -50,15 +50,24 @@ make register-commands
 
 - Use conventional commit prefixes when possible (`feat:`, `fix:`, `docs:`, `build:`) for release-please compatibility.
 - Merged conventional commits on `main` create semver GitHub Releases via **Ship main** (`.github/workflows/ship-main.yml` + `scripts/create-release-if-needed.sh`), including merges from GitHub Actions auto-merge.
+- Patch releases update GitHub but do **not** move `:latest` or trigger Discord announce noise; major/minor releases do both after Watchtower recreates prod.
 
 ## Pull request auto-merge
 
-Open PRs targeting **`main`** enable squash **auto-merge** when required check **`ci`** is green (`.github/workflows/pr-automerge.yml`). Same-repo PRs only; fork PRs are skipped.
+Open PRs targeting **`main`** enable squash **auto-merge** when required checks **`ci`** and **`scope-review`** are green (`.github/workflows/pr-automerge.yml`). Same-repo PRs only; fork PRs are skipped.
 
-**Opt out:** label the PR or linked issue **`no-automerge`** or **`human-needed`**.
+**Opt out:** label the PR or linked issue **`no-automerge`**, **`human-needed`**, or **`scope-review-skip`**.
 
 Draft PRs are marked ready for review automatically when eligible.
-- Patch releases update GitHub but do **not** move `:latest` or trigger Discord announce noise; major/minor releases do both after Watchtower recreates prod.
+
+## PR scope review gate
+
+Required check **`scope-review`** (`.github/workflows/pr-scope-review.yml`) runs before merge:
+
+- Mission definition: [`docs/PRODUCT_SCOPE.md`](docs/PRODUCT_SCOPE.md)
+- OpenAI review (repo secret **`OPENAI_API_KEY`**) posts a PR comment with pass/fail
+- Docs-only diffs skip the LLM (fast path)
+- Modeled on the superpowers code-reviewer checklist: quality, tests, scope creep
 
 ## PR Checklist
 
