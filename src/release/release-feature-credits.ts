@@ -5,6 +5,7 @@ import {
   fetchReleaseTags,
   type GitHubCompareCommit,
 } from "./github-api.ts";
+import { formatGitHubPerson as formatPersonWithMention } from "./release-community-credits.ts";
 
 export type FeatureCredit = {
   summary: string;
@@ -41,10 +42,7 @@ export function parsePullRequestNumber(commitMessage: string): number | null {
 }
 
 export function formatGitHubPerson(displayName: string, login: string): string {
-  if (displayName && displayName !== login) {
-    return `${displayName} (@${login})`;
-  }
-  return `@${login}`;
+  return formatPersonWithMention(displayName, login);
 }
 
 export function formatFeatureCredits(credits: FeatureCredit[]): string | null {

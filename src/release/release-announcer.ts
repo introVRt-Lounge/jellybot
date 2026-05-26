@@ -2,6 +2,7 @@ import type { Client, TextChannel } from "discord.js";
 import { EmbedBuilder } from "discord.js";
 import { BotStateStore } from "./bot-state.ts";
 import { fetchLatestRelease, type GitHubRelease } from "./github-releases.ts";
+import { buildCommunityCreditsForRelease } from "./build-community-credits.ts";
 import { buildFeatureCreditsForRelease } from "./release-feature-credits.ts";
 import { isPatchRelease } from "./semver.ts";
 
@@ -87,6 +88,15 @@ export class ReleaseAnnouncer {
     });
   }
 
+  async getCommunityCredits(releaseTag: string): Promise<string | null> {
+    return buildCommunityCreditsForRelease({
+      repoOwner: this.config.repoOwner,
+      repoName: this.config.repoName,
+      githubToken: this.config.githubToken,
+      currentTag: releaseTag,
+    });
+  }
+
   async checkAndAnnounceNewRelease(client: Client): Promise<string | null> {
     console.info(JSON.stringify({ event: "release_announcer.check_start" }));
 
@@ -150,8 +160,12 @@ export class ReleaseAnnouncer {
     }
   }
 
-  async announceRelease(client: Client, release: GitHubRelease): Promise<boolean> {
-    if (isPatchRelease(release.tag_name)) {
+  async announceRelease(
+    client: Client,
+    release: GitHubRelease,
+    options?: { allowPatch?: boolean },
+  ): Promise<boolean> {
+    if (isPatchRelease(release.tag_name) && !options?.allowPatch) {
       console.info(JSON.stringify({ event: "release_announcer.skip_patch_announce", tag: release.tag_name }));
       return false;
     }
@@ -181,6 +195,20 @@ export class ReleaseAnnouncer {
         }),
       );
     }
+
+    let communityCredits: string | null = null;
+    try {
+      communityCredits = await this.getCommunityCredits(release.tag_name);
+    } catch (error) {
+      console.warn(
+        JSON.stringify({
+          event: "release_announcer.community_credits_failed",
+          tag: release.tag_name,
+          error: error instanceof Error ? error.message : "unknown error",
+        }),
+      );
+    }
+
     const embed = new EmbedBuilder()
       .setTitle(`New Release: ${release.name}`)
       .setDescription(summary)
@@ -193,6 +221,10 @@ export class ReleaseAnnouncer {
 
     if (featureCredits) {
       embed.addFields({ name: "Feature credits", value: featureCredits.slice(0, 1024) });
+    }
+
+    if (communityCredits) {
+      embed.addFields({ name: "Community thanks", value: communityCredits.slice(0, 1024) });
     }
 
     await (channel as TextChannel).send({ embeds: [embed] });

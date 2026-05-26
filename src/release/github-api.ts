@@ -79,13 +79,60 @@ export async function fetchPullRequestAuthorLogin(
   githubToken: string,
   pullNumber: number,
 ): Promise<string | null> {
-  const payload = await fetchGitHubJson<{ user?: { login?: string } | null }>({
+  const payload = await fetchGitHubJson<{ user?: { login?: string } | null; body?: string | null }>({
     repoOwner,
     repoName,
     githubToken,
     path: `/pulls/${pullNumber}`,
   });
   return payload.user?.login ?? null;
+}
+
+export async function fetchPullRequestBody(
+  repoOwner: string,
+  repoName: string,
+  githubToken: string,
+  pullNumber: number,
+): Promise<string | null> {
+  const payload = await fetchGitHubJson<{ body?: string | null }>({
+    repoOwner,
+    repoName,
+    githubToken,
+    path: `/pulls/${pullNumber}`,
+  });
+  return payload.body ?? null;
+}
+
+export type GitHubIssue = {
+  number: number;
+  title: string;
+  body: string | null;
+};
+
+export async function fetchIssue(
+  repoOwner: string,
+  repoName: string,
+  githubToken: string,
+  issueNumber: number,
+): Promise<GitHubIssue | null> {
+  try {
+    const payload = await fetchGitHubJson<{ number?: number; title?: string; body?: string | null }>({
+      repoOwner,
+      repoName,
+      githubToken,
+      path: `/issues/${issueNumber}`,
+    });
+    if (!payload.number || !payload.title) {
+      return null;
+    }
+    return {
+      number: payload.number,
+      title: payload.title,
+      body: payload.body ?? null,
+    };
+  } catch {
+    return null;
+  }
 }
 
 export async function fetchGitHubUserName(githubToken: string, login: string): Promise<string | null> {

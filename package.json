@@ -15,6 +15,7 @@
     "smoke:discord": "PYTHONPATH=${DISCORD_PY_SELF_ROOT:?Set DISCORD_PY_SELF_ROOT to discord.py-self checkout} python3 scripts/discord-clip-smoke.py",
     "smoke:discord:quote": "PYTHONPATH=${DISCORD_PY_SELF_ROOT:?Set DISCORD_PY_SELF_ROOT to discord.py-self checkout} python3 scripts/discord-quote-autocomplete-smoke.py",
     "smoke:discord:all": "bun run smoke:discord:quote && bun run smoke:discord",
+    "announce:release": "bun run scripts/post-release-announce.ts",
     "secrets:staged": "./scripts/gitleaks-staged.sh",
     "prepare": "husky || true"
   },
