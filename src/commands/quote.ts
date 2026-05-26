@@ -6,10 +6,7 @@ import {
 } from "discord.js";
 import type { AppConfig } from "../config.ts";
 import { withTimeout } from "../autocomplete.ts";
-import {
-  AutocompleteSessionGuard,
-  isBenignAutocompleteError,
-} from "../autocomplete-guard.ts";
+import { isBenignAutocompleteError } from "../autocomplete-guard.ts";
 import { beginEphemeralClipPreview, deliverClipPreview } from "../clip-preview/pipeline.ts";
 import type { JellyfinClient } from "../jellyfin.ts";
 import { planQuoteClip } from "../services/quote-request.ts";
@@ -19,7 +16,6 @@ import { quoteSearchChoices } from "../subtitles/quote-autocomplete.ts";
 import { getSubtitleSearchIndex } from "../subtitles/search-index.ts";
 import { formatTimestamp } from "../time.ts";
 
-const quoteMatchAutocompleteGuard = new AutocompleteSessionGuard();
 const quoteAutocompleteInFlight = new Map<string, Promise<void>>();
 const QUOTE_AUTOCOMPLETE_TIMEOUT_MS = 2500;
 
@@ -55,13 +51,44 @@ export const quoteCommand = new SlashCommandBuilder()
 async function safeAutocompleteRespond(
   interaction: AutocompleteInteraction,
   choices: ApplicationCommandOptionChoiceData[],
+  context: { query: string; resultCount: number },
 ): Promise<void> {
-  if (interaction.responded) return;
+  if (interaction.responded) {
+    console.info(
+      JSON.stringify({
+        event: "quote.autocomplete.respond_skip",
+        reason: "already_responded",
+        query: context.query,
+        resultCount: context.resultCount,
+      }),
+    );
+    return;
+  }
 
-  await interaction.respond(choices).catch((error: unknown) => {
-    if (isBenignAutocompleteError(error)) return;
+  try {
+    await interaction.respond(choices);
+    console.info(
+      JSON.stringify({
+        event: "quote.autocomplete.responded",
+        query: context.query,
+        resultCount: context.resultCount,
+        responded: interaction.responded,
+      }),
+    );
+  } catch (error) {
+    if (isBenignAutocompleteError(error)) {
+      console.warn(
+        JSON.stringify({
+          event: "quote.autocomplete.respond_skipped",
+          query: context.query,
+          resultCount: context.resultCount,
+          error: error instanceof Error ? error.message : "unknown error",
+        }),
+      );
+      return;
+    }
     throw error;
-  });
+  }
 }
 
 export async function handleQuoteAutocomplete(
@@ -71,8 +98,7 @@ export async function handleQuoteAutocomplete(
 ): Promise<void> {
   const pending = quoteAutocompleteInFlight.get(interaction.id);
   if (pending) {
-    await pending;
-    return;
+    return pending;
   }
 
   const work = handleQuoteAutocompleteOnce(interaction, config);
@@ -90,20 +116,17 @@ async function handleQuoteAutocompleteOnce(
 ): Promise<void> {
   const focused = interaction.options.getFocused(true);
   if (focused.name !== "match") {
-    await safeAutocompleteRespond(interaction, []);
+    await safeAutocompleteRespond(interaction, [], { query: "", resultCount: 0 });
     return;
   }
 
   const query = focused.value.trim();
   if (query.length < 3) {
-    await safeAutocompleteRespond(interaction, []);
+    await safeAutocompleteRespond(interaction, [], { query, resultCount: 0 });
     return;
   }
 
   try {
-    const { isCurrent } = quoteMatchAutocompleteGuard.beginCancellable(
-      `${interaction.user.id}:${interaction.guildId ?? "dm"}:quote:match`,
-    );
     const index = getSubtitleSearchIndex(config.subtitleDbPath);
     const results = await withTimeout(Promise.resolve(index.searchQuotes(query, 25)), QUOTE_AUTOCOMPLETE_TIMEOUT_MS);
     const choices = quoteSearchChoices(results);
@@ -111,18 +134,17 @@ async function handleQuoteAutocompleteOnce(
     console.info(
       JSON.stringify({
         event: "quote.autocomplete",
+        interactionId: interaction.id,
         query,
         resultCount: choices.length,
-        current: isCurrent(),
-        responded: interaction.responded,
       }),
     );
 
-    if (!isCurrent() || interaction.responded) {
+    if (interaction.responded) {
       return;
     }
 
-    await safeAutocompleteRespond(interaction, choices);
+    await safeAutocompleteRespond(interaction, choices, { query, resultCount: choices.length });
   } catch (error) {
     if (isBenignAutocompleteError(error)) {
       return;
@@ -136,7 +158,7 @@ async function handleQuoteAutocompleteOnce(
       }),
     );
 
-    await safeAutocompleteRespond(interaction, []);
+    await safeAutocompleteRespond(interaction, [], { query, resultCount: 0 });
   }
 }
 
