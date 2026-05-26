@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shlex
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -28,7 +29,11 @@ def jellybot_repo_root() -> Path:
 
 
 def fetch_bot_logs(log_cmd: str) -> str:
-    result = subprocess.run(log_cmd, shell=True, capture_output=True, text=True, check=False)
+    cmd = log_cmd.strip()
+    if cmd.endswith("2>&1"):
+        cmd = cmd[:-4].strip()
+    argv = shlex.split(cmd)
+    result = subprocess.run(argv, capture_output=True, text=True, check=False)
     return result.stdout + result.stderr
 
 

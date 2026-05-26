@@ -52,7 +52,7 @@ async def main() -> int:
     app_id = int(os.environ.get("DISCORD_CLIENT_ID", "0"))
     channel_id = int(os.environ.get("DISCORD_TEST_CHANNEL_ID", "0"))
     query = os.environ.get("JELLYBOT_SMOKE_QUOTE_QUERY", "carrot").strip()
-    log_cmd = os.environ.get("JELLYBOT_SMOKE_LOG_CMD", "docker logs jellybot 2>&1").strip()
+    log_cmd = os.environ.get("JELLYBOT_SMOKE_LOG_CMD", "docker logs jellybot").strip()
 
     if not token or not app_id or not channel_id:
         print("Missing DISCORD_USER_TOKEN, DISCORD_CLIENT_ID, or DISCORD_TEST_CHANNEL_ID")
