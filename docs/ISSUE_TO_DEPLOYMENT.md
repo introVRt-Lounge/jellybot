@@ -110,7 +110,7 @@ The agent (or a human) opens a PR to `main`. Substantive PRs need:
 
 **Required check:** aggregate job **`ci`** (Docker test suite, `bun audit`, gitleaks, Semgrep).
 
-### Auto-merge (all PRs when CI is green)
+### Auto-merge (all PRs when CI + scope review are green)
 
 [`.github/workflows/pr-automerge.yml`](../.github/workflows/pr-automerge.yml) enables squash **auto-merge** when **all** of:
 
@@ -119,7 +119,7 @@ The agent (or a human) opens a PR to `main`. Substantive PRs need:
 | Base branch | `main` |
 | Head repo | same repository (not a fork) |
 | Blockers | PR and linked issues must **not** have `human-needed` or `no-automerge` |
-| CI | required check **`ci`** = success |
+| CI | required checks **`ci`** + **`scope-review`** = success |
 | Merge state | mergeable |
 
 Draft PRs are marked ready for review automatically when eligible.
@@ -198,7 +198,8 @@ Details: [architecture.md — Production release announce](architecture.md#produ
 | File | Purpose |
 | --- | --- |
 | `.github/workflows/cursor-issue-triage.yml` | Start Cursor agent from issue labels |
-| `.github/workflows/pr-automerge.yml` | Auto-merge open PRs when **`ci`** is green |
+| `.github/workflows/pr-scope-review.yml` | LLM scope + quality gate (`scope-review`) |
+| `.github/workflows/pr-automerge.yml` | Auto-merge when **`ci`** + **`scope-review`** green |
 | `.github/workflows/ci.yml` | Required `ci` gate |
 | `.github/workflows/ship-main.yml` | Release tag + GHCR image after merge to `main` |
 | `.github/workflows/docker-image.yml` | Manual semver tag image builds |
