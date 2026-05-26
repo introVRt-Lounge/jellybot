@@ -50,6 +50,14 @@ make register-commands
 
 - Use conventional commit prefixes when possible (`feat:`, `fix:`, `docs:`, `build:`) for release-please compatibility.
 - Merged conventional commits on `main` create semver GitHub Releases via **Ship main** (`.github/workflows/ship-main.yml` + `scripts/create-release-if-needed.sh`), including merges from GitHub Actions auto-merge.
+
+## Pull request auto-merge
+
+Open PRs targeting **`main`** enable squash **auto-merge** when required check **`ci`** is green (`.github/workflows/pr-automerge.yml`). Same-repo PRs only; fork PRs are skipped.
+
+**Opt out:** label the PR or linked issue **`no-automerge`** or **`human-needed`**.
+
+Draft PRs are marked ready for review automatically when eligible.
 - Patch releases update GitHub but do **not** move `:latest` or trigger Discord announce noise; major/minor releases do both after Watchtower recreates prod.
 
 ## PR Checklist
@@ -81,7 +89,8 @@ Optional guard labels (add manually; not all are enforced by automation yet):
 | Label | Meaning |
 | --- | --- |
 | `ai-triage` | Cursor may inspect and attempt |
-| `ai-safe` | Low-risk implementation allowed; agent PRs from `ai-triage/*` auto-merge when **`ci`** is green (see `.github/workflows/cursor-ai-automerge.yml`) |
+| `ai-safe` | Low-risk implementation allowed; Cursor agent PRs follow the same auto-merge path as human PRs |
+| `no-automerge` | Block squash auto-merge even when **`ci`** is green (PR or linked issue) |
 | `ai-investigate-only` | Comment with findings only; no code |
 | `ai-no-db` | No migrations or schema changes |
 | `ai-no-auth` | No auth/security changes |

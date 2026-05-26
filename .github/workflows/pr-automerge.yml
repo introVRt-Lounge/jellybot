@@ -1,0 +1,143 @@
+name: PR auto-merge
+
+on:
+  pull_request:
+    types:
+      - opened
+      - labeled
+      - unlabeled
+      - synchronize
+      - ready_for_review
+      - reopened
+  workflow_run:
+    workflows:
+      - CI
+    types:
+      - completed
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  automerge:
+    if: |
+      github.event_name == 'pull_request' ||
+      (
+        github.event_name == 'workflow_run' &&
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.event == 'pull_request'
+      )
+    runs-on: ubuntu-latest
+
+    concurrency:
+      group: pr-automerge-${{ github.event.pull_request.number || github.event.workflow_run.id }}
+      cancel-in-progress: false
+
+    steps:
+      - name: Resolve pull request number
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "number=${{ github.event.pull_request.number }}" >> "${GITHUB_OUTPUT}"
+          else
+            number="$(gh api \
+              "/repos/${{ github.repository }}/commits/${{ github.event.workflow_run.head_sha }}/pulls" \
+              --jq '.[0].number // empty')"
+            if [ -z "${number}" ]; then
+              echo "No pull request for workflow_run head commit."
+              exit 0
+            fi
+            echo "number=${number}" >> "${GITHUB_OUTPUT}"
+          fi
+
+      - name: Enable squash auto-merge when CI is green
+        if: steps.pr.outputs.number != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          pr_json="$(gh pr view "${PR_NUMBER}" --repo "${REPOSITORY}" --json \
+            number,title,state,isDraft,mergeable,headRefName,body,labels,baseRefName,headRepositoryOwner,isCrossRepository)"
+
+          state="$(echo "${pr_json}" | jq -r '.state')"
+          if [ "${state}" != "OPEN" ]; then
+            echo "PR #${PR_NUMBER} is ${state}; skipping."
+            exit 0
+          fi
+
+          base_ref="$(echo "${pr_json}" | jq -r '.baseRefName')"
+          if [ "${base_ref}" != "main" ]; then
+            echo "PR #${PR_NUMBER} targets ${base_ref}, not main; skipping."
+            exit 0
+          fi
+
+          if [ "$(echo "${pr_json}" | jq -r '.isCrossRepository')" = "true" ]; then
+            echo "PR #${PR_NUMBER} is from a fork; skipping auto-merge."
+            exit 0
+          fi
+
+          pr_labels="$(echo "${pr_json}" | jq -r '.labels[].name')"
+          if echo "${pr_labels}" | grep -Fxq "no-automerge"; then
+            echo "PR #${PR_NUMBER} has no-automerge; skipping."
+            exit 0
+          fi
+          if echo "${pr_labels}" | grep -Fxq "human-needed"; then
+            echo "PR #${PR_NUMBER} has human-needed; skipping."
+            exit 0
+          fi
+
+          body="$(echo "${pr_json}" | jq -r '.body // ""')"
+          issue_numbers="$(printf '%s' "${body}" \
+            | grep -Eo '(Fixes|Closes|fixes|closes)[[:space:]]+#([0-9]+)' \
+            | grep -Eo '[0-9]+' \
+            | sort -u \
+            || true)"
+
+          for issue_num in ${issue_numbers}; do
+            labels="$(gh issue view "${issue_num}" --repo "${REPOSITORY}" --json labels -q '.labels[].name' 2>/dev/null || true)"
+            if echo "${labels}" | grep -Fxq "human-needed"; then
+              echo "Linked issue #${issue_num} has human-needed; skipping."
+              exit 0
+            fi
+            if echo "${labels}" | grep -Fxq "no-automerge"; then
+              echo "Linked issue #${issue_num} has no-automerge; skipping."
+              exit 0
+            fi
+          done
+
+          is_draft="$(echo "${pr_json}" | jq -r '.isDraft')"
+          if [ "${is_draft}" = "true" ]; then
+            echo "Marking draft PR #${PR_NUMBER} ready for review."
+            gh pr ready "${PR_NUMBER}" --repo "${REPOSITORY}"
+          fi
+
+          ci_conclusion="$(gh pr view "${PR_NUMBER}" --repo "${REPOSITORY}" \
+            --json statusCheckRollup \
+            -q '[.statusCheckRollup[] | select(.name == "ci") | .conclusion][0] // empty')"
+          if [ "${ci_conclusion}" != "SUCCESS" ]; then
+            echo "Required check ci is '${ci_conclusion:-pending}'; waiting for green CI."
+            exit 0
+          fi
+
+          mergeable="$(gh pr view "${PR_NUMBER}" --repo "${REPOSITORY}" --json mergeable -q '.mergeable')"
+          if [ "${mergeable}" != "MERGEABLE" ]; then
+            echo "PR #${PR_NUMBER} is not mergeable (${mergeable}); skipping."
+            exit 0
+          fi
+
+          auto_merge="$(gh pr view "${PR_NUMBER}" --repo "${REPOSITORY}" --json autoMergeRequest -q '.autoMergeRequest.enabledAt // empty')"
+          if [ -n "${auto_merge}" ]; then
+            echo "Auto-merge already enabled on PR #${PR_NUMBER}."
+            exit 0
+          fi
+
+          head_ref="$(echo "${pr_json}" | jq -r '.headRefName')"
+          echo "Enabling squash auto-merge on PR #${PR_NUMBER} (${head_ref})."
+          gh pr merge "${PR_NUMBER}" --repo "${REPOSITORY}" --auto --squash

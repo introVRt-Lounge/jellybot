@@ -26,14 +26,14 @@ flowchart TB
 
   subgraph ci["3 · CI & merge"]
     I["Required check: ci<br/>(test, gitleaks, semgrep, audit)"]
-    J{"Linked issue<br/>has ai-safe?"}
-    K["cursor-ai-automerge.yml<br/>mark ready + squash auto-merge"]
-    L["Maintainer squash merge"]
+    J{"no-automerge or<br/>human-needed?"}
+    K["pr-automerge.yml<br/>mark ready + squash auto-merge"]
+    L["Wait / manual merge"]
     F --> I
     H --> I
     I --> J
-    J -->|yes, ai-triage/* branch| K
-    J -->|no| L
+    J -->|no| K
+    J -->|yes| L
   end
 
   subgraph ship["4 · Ship (release + image)"]
@@ -85,7 +85,7 @@ flowchart TB
 
 1. Open an issue describing the goal, constraints, and acceptance criteria. The **Agent task** template (`.github/ISSUE_TEMPLATE/agent_task.yml`) is a good starting point.
 2. **Do not** add `ai-triage` yourself. Triage is intentional: `@radgey-cmd` reviews scope and risk first.
-3. Guard labels (manual): `ai-investigate-only`, `ai-no-db`, `ai-no-auth`, `human-needed`. Only `human-needed` is enforced by automation today (blocks auto-merge path).
+3. Guard labels (manual): `ai-investigate-only`, `ai-no-db`, `ai-no-auth`, `human-needed`, `no-automerge`. `human-needed` and `no-automerge` block auto-merge.
 
 ## Phase 2 — Agent enqueue
 
@@ -110,17 +110,19 @@ The agent (or a human) opens a PR to `main`. Substantive PRs need:
 
 **Required check:** aggregate job **`ci`** (Docker test suite, `bun audit`, gitleaks, Semgrep).
 
-### Auto-merge (`ai-safe` only)
+### Auto-merge (all PRs when CI is green)
 
-[`.github/workflows/cursor-ai-automerge.yml`](../.github/workflows/cursor-ai-automerge.yml) enables squash **auto-merge** when **all** of:
+[`.github/workflows/pr-automerge.yml`](../.github/workflows/pr-automerge.yml) enables squash **auto-merge** when **all** of:
 
 | Condition | |
 | --- | --- |
-| Head branch | `ai-triage/*` |
-| Linked issue | has **`ai-safe`** (copied to PR if missing) |
-| PR body | contains `Fixes #N` / `Closes #N` |
-| Blockers | issue must **not** have `human-needed` |
+| Base branch | `main` |
+| Head repo | same repository (not a fork) |
+| Blockers | PR and linked issues must **not** have `human-needed` or `no-automerge` |
 | CI | required check **`ci`** = success |
+| Merge state | mergeable |
+
+Draft PRs are marked ready for review automatically when eligible.
 
 Draft agent PRs are marked **ready for review** automatically. Issues labeled **`ai-triage`** without **`ai-safe`** still need a human squash merge after green CI.
 
@@ -172,12 +174,12 @@ Details: [architecture.md — Production release announce](architecture.md#produ
 
 ## Human vs agent quick reference
 
-| Step | Agent path (`ai-safe`) | Human / `ai-triage` only |
+| Step | Agent path | Human path |
 | --- | --- | --- |
 | Issue filed | Yes | Yes |
-| Radgey labels | `ai-safe` | `ai-triage` |
+| Radgey labels | `ai-safe` or `ai-triage` | Optional |
 | Implementation | Cursor cloud agent | Human or agent |
-| Merge | Auto after green `ci` | Manual squash |
+| Merge | Auto after green **`ci`** (unless `no-automerge`) | Same |
 | Deploy | Watchtower on `:latest` | Same |
 | Announce | On next major/minor boot | Same |
 
@@ -187,7 +189,7 @@ Details: [architecture.md — Production release announce](architecture.md#produ
 | --- | --- | --- |
 | Label added, no agent | Wrong labeler, workflow error, missing `CURSOR_API_KEY` | Actions → **Cursor Issue Triage**; issue labels |
 | Agent runs, no PR | Still working or failed in Cursor UI | [cursor.com/agents](https://cursor.com/agents) |
-| PR green, not merging | Not `ai-safe`, wrong branch prefix, or draft/CI pending | Actions → **Cursor AI auto-merge** |
+| PR green, not merging | `no-automerge` / `human-needed`, fork PR, or CI still pending | Actions → **PR auto-merge** |
 | Merged, prod unchanged | Ship main did not run (pre-fix) or Watchtower | Actions → **Ship main**; `docker logs watchtower-minutely` |
 | Merged, no Discord post | Patch-only release or announce already recorded | Check latest GitHub Release semver; `bot-state.db` |
 
@@ -196,7 +198,7 @@ Details: [architecture.md — Production release announce](architecture.md#produ
 | File | Purpose |
 | --- | --- |
 | `.github/workflows/cursor-issue-triage.yml` | Start Cursor agent from issue labels |
-| `.github/workflows/cursor-ai-automerge.yml` | Auto-merge eligible agent PRs |
+| `.github/workflows/pr-automerge.yml` | Auto-merge open PRs when **`ci`** is green |
 | `.github/workflows/ci.yml` | Required `ci` gate |
 | `.github/workflows/ship-main.yml` | Release tag + GHCR image after merge to `main` |
 | `.github/workflows/docker-image.yml` | Manual semver tag image builds |
