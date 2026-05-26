@@ -1,7 +1,7 @@
 import "dotenv/config";
 import { hostname } from "node:os";
 import { randomUUID } from "node:crypto";
-import { Client, Events, GatewayIntentBits } from "discord.js";
+import { Client, Events, GatewayIntentBits, REST } from "discord.js";
 import {
   handleClipPreviewButton,
   handleClipPreviewModal,
@@ -11,6 +11,11 @@ import {
 import { handleClipAutocomplete, handleClipCommand } from "./commands/clip.ts";
 import { handleQuoteAutocomplete, handleQuoteCommand } from "./commands/quote.ts";
 import { loadConfig } from "./config.ts";
+import {
+  createRestCommandRegistry,
+  ensureNoStaleGlobalCommands,
+  planCommandSync,
+} from "./discord/command-sync.ts";
 import { startHealthServer, type HealthState } from "./health.ts";
 import { JellyfinClient } from "./jellyfin.ts";
 import { indexSubtitles } from "./subtitles/indexer.ts";
@@ -86,6 +91,31 @@ client.once(Events.ClientReady, async (readyClient) => {
       appVersion: config.appVersion,
     }),
   );
+
+  const commandSyncPlan = planCommandSync(config.discordGuildIds);
+  if (commandSyncPlan.mode === "guild") {
+    try {
+      const rest = new REST({ version: "10" }).setToken(config.discordToken);
+      const registry = createRestCommandRegistry(rest, config.discordClientId);
+      const cleared = await ensureNoStaleGlobalCommands(registry, commandSyncPlan);
+      if (cleared > 0) {
+        console.warn(
+          JSON.stringify({
+            event: "discord.commands.stale_globals_purged",
+            cleared,
+            guildIds: commandSyncPlan.guildIds,
+          }),
+        );
+      }
+    } catch (error) {
+      console.error(
+        JSON.stringify({
+          event: "discord.commands.stale_globals_purge_failed",
+          error: error instanceof Error ? error.message : "unknown error",
+        }),
+      );
+    }
+  }
 
   const announcer = createReleaseAnnouncerFromConfig(config);
   if (announcer) {
