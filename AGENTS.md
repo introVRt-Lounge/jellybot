@@ -109,7 +109,11 @@ Label-gated automation only — **not** on every new issue. **`@radgey-cmd`** is
 | Label | Effect |
 | --- | --- |
 | `ai-triage` | GitHub Action starts Cursor (assess scope, implement if reasonable) |
-| `ai-safe` | GitHub Action starts Cursor (low-risk: implement, test, PR); eligible PRs **auto-merge** when **`ci`** is green (`.github/workflows/cursor-ai-automerge.yml`) |
+| `ai-safe` | GitHub Action starts Cursor (low-risk: implement, test, PR) |
+| `no-automerge` | Block auto-merge even when checks are green |
+| `scope-review-skip` | Skip LLM scope gate (operator override) |
+
+All open PRs targeting **`main`** squash auto-merge when **`ci`** and **`scope-review`** pass. Mission doc: `docs/PRODUCT_SCOPE.md`. Opt out with labels above on the PR or linked issue.
 | `human-needed` | Do not use agent automation |
 
 Requires **`CURSOR_API_KEY`** repo secret + Cursor GitHub integration. See `CONTRIBUTING.md`.
