@@ -9,6 +9,11 @@ import {
   isClipPreviewModal,
 } from "./clip-preview/handlers.ts";
 import { handleClipAutocomplete, handleClipCommand } from "./commands/clip.ts";
+import {
+  handleFeatureAutocomplete,
+  handleFeatureCommand,
+  isFeatureRankSelect,
+} from "./commands/feature.ts";
 import { handleQuoteAutocomplete, handleQuoteCommand } from "./commands/quote.ts";
 import { loadConfig } from "./config.ts";
 import {
@@ -24,6 +29,7 @@ import { parsePreferredLanguages } from "./subtitles/track-select.ts";
 import { createReleaseAnnouncerFromConfig } from "./release/release-announcer.ts";
 import { looksLikeReleaseTag } from "./release/semver.ts";
 import { isBenignAutocompleteError } from "./autocomplete-guard.ts";
+import { handleRankSelect } from "./features/rank-handlers.ts";
 
 const config = loadConfig();
 const jellyfin = new JellyfinClient(
@@ -160,6 +166,42 @@ client.on(Events.InteractionCreate, async (interaction) => {
           await interaction.respond([]).catch(() => undefined);
         }
       }
+      return;
+    }
+
+    if (interaction.commandName === "feature") {
+      try {
+        await handleFeatureAutocomplete(interaction, config);
+      } catch (error) {
+        console.error("Feature autocomplete error:", error);
+        if (!interaction.responded) {
+          await interaction.respond([]).catch(() => undefined);
+        }
+      }
+    }
+    return;
+  }
+
+  if (interaction.isStringSelectMenu() && isFeatureRankSelect(interaction.customId)) {
+    try {
+      const { FeatureStore } = await import("./features/feature-store.ts");
+      const store = new FeatureStore(config.botStateDbPath);
+      try {
+        await handleRankSelect(interaction, store, config);
+      } finally {
+        store.close();
+      }
+    } catch (error) {
+      console.error(
+        JSON.stringify({
+          event: "feature.rank.error",
+          userId: interaction.user.id,
+          error: error instanceof Error ? error.message : "unknown error",
+        }),
+      );
+      if (!interaction.replied && !interaction.deferred) {
+        await interaction.reply({ content: "Something went wrong while saving your rank.", ephemeral: true }).catch(() => undefined);
+      }
     }
     return;
   }
@@ -245,6 +287,34 @@ client.on(Events.InteractionCreate, async (interaction) => {
         JSON.stringify({
           event: "quote.error",
           command: "quote",
+          userId: interaction.user.id,
+          error: error instanceof Error ? error.message : "unknown error",
+        }),
+      );
+
+      if (interaction.deferred || interaction.replied) {
+        await interaction.editReply("Something went wrong while handling that command.").catch(() => undefined);
+        return;
+      }
+
+      await interaction
+        .reply({
+          content: "Something went wrong while handling that command.",
+          ephemeral: true,
+        })
+        .catch(() => undefined);
+    }
+    return;
+  }
+
+  if (interaction.commandName === "feature") {
+    try {
+      await handleFeatureCommand(interaction, config, client);
+    } catch (error) {
+      console.error(
+        JSON.stringify({
+          event: "feature.error",
+          command: "feature",
           userId: interaction.user.id,
           error: error instanceof Error ? error.message : "unknown error",
         }),
