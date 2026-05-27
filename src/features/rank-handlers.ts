@@ -2,11 +2,12 @@ import { randomUUID } from "node:crypto";
 import {
   ActionRowBuilder,
   StringSelectMenuBuilder,
+  type Client,
   type StringSelectMenuInteraction,
 } from "discord.js";
 import type { AppConfig } from "../config.ts";
 import type { FeatureStore, FeatureSuggestionRow } from "./feature-store.ts";
-import { buildLeaderboardEmbed, buildRankConfirmMessage } from "./leaderboard.ts";
+import { buildRankConfirmMessage } from "./leaderboard.ts";
 import { refreshGuildLeaderboard } from "./leaderboard-sync.ts";
 
 type RankSession = {
@@ -14,11 +15,35 @@ type RankSession = {
   guildId: string;
   step: 1 | 2 | 3;
   picks: FeatureSuggestionRow[];
+  targetPicks: number;
   expiresAt: number;
 };
 
 const sessions = new Map<string, RankSession>();
 const SESSION_TTL_MS = 5 * 60_000;
+
+export function rankTargetCount(openCount: number): number {
+  return Math.min(3, Math.max(0, openCount));
+}
+
+export function shouldFinalizeRank(
+  pickCount: number,
+  targetPicks: number,
+  remainingCount: number,
+): boolean {
+  return pickCount >= targetPicks || remainingCount === 0;
+}
+
+export function rankIntroMessage(openCount: number): string {
+  const target = rankTargetCount(openCount);
+  if (target <= 1) {
+    return "Only one open suggestion — pick it as your **#1** priority.";
+  }
+  if (target === 2) {
+    return "Pick your **#1** guild priority (then **#2** — only two suggestions open).";
+  }
+  return "Pick your **#1** guild priority (you'll choose **#2** and **#3** next):";
+}
 
 export function rankSelectCustomId(step: number, sessionId: string): string {
   return `feature:rank:${step}:${sessionId}`;
@@ -41,7 +66,7 @@ function pruneSessions(): void {
   }
 }
 
-export function startRankSession(userId: string, guildId: string): string {
+export function startRankSession(userId: string, guildId: string, openCount: number): string {
   pruneSessions();
   const sessionId = randomUUID();
   sessions.set(sessionId, {
@@ -49,6 +74,7 @@ export function startRankSession(userId: string, guildId: string): string {
     guildId,
     step: 1,
     picks: [],
+    targetPicks: rankTargetCount(openCount),
     expiresAt: Date.now() + SESSION_TTL_MS,
   });
   return sessionId;
@@ -59,6 +85,10 @@ function buildRankSelectRow(
   sessionId: string,
   options: FeatureSuggestionRow[],
 ): ActionRowBuilder<StringSelectMenuBuilder> {
+  if (options.length === 0) {
+    throw new Error("rank select requires at least one option");
+  }
+
   const menu = new StringSelectMenuBuilder()
     .setCustomId(rankSelectCustomId(step, sessionId))
     .setPlaceholder(`Pick your #${step} priority`)
@@ -77,14 +107,44 @@ export async function beginRankFlow(
   store: FeatureStore,
   guildId: string,
   userId: string,
-): Promise<{ sessionId: string; row: ActionRowBuilder<StringSelectMenuBuilder> } | { error: string }> {
+): Promise<
+  | { sessionId: string; row: ActionRowBuilder<StringSelectMenuBuilder>; openCount: number }
+  | { error: string }
+> {
   const open = store.listOpenForGuild(guildId);
   if (open.length === 0) {
     return { error: "No open suggestions to rank yet. Use `/feature suggest` first." };
   }
 
-  const sessionId = startRankSession(userId, guildId);
-  return { sessionId, row: buildRankSelectRow(1, sessionId, open) };
+  const sessionId = startRankSession(userId, guildId, open.length);
+  return { sessionId, row: buildRankSelectRow(1, sessionId, open), openCount: open.length };
+}
+
+async function finalizeRankSession(
+  interaction: StringSelectMenuInteraction,
+  session: RankSession,
+  store: FeatureStore,
+  config: AppConfig,
+  sessionId: string,
+): Promise<void> {
+  store.clearRanksForVoter(interaction.user.id);
+  session.picks.forEach((pick, index) => {
+    store.setRank(interaction.user.id, index + 1, pick.id);
+  });
+  sessions.delete(sessionId);
+
+  await interaction.update({
+    content: buildRankConfirmMessage(
+      session.picks.map((pick, index) => ({
+        rank: index + 1,
+        title: pick.title,
+        issueNumber: pick.githubIssueNumber,
+      })),
+    ),
+    components: [],
+  });
+
+  await refreshGuildLeaderboard(interaction.client as Client, store, config, session.guildId);
 }
 
 export async function handleRankSelect(
@@ -119,46 +179,21 @@ export async function handleRankSelect(
   session.picks.push(suggestion);
   session.expiresAt = Date.now() + SESSION_TTL_MS;
 
-  if (parsed.step === 1) {
-    session.step = 2;
-    const remaining = store.listOpenForGuild(session.guildId).filter((row) => row.id !== suggestion.id);
-    await interaction.update({
-      content: `#1 saved: **#${suggestion.githubIssueNumber} ${suggestion.title}**\nPick your **#2** priority:`,
-      components: [buildRankSelectRow(2, parsed.sessionId, remaining)],
-    });
+  const pickedIds = new Set(session.picks.map((pick) => pick.id));
+  const remaining = store.listOpenForGuild(session.guildId).filter((row) => !pickedIds.has(row.id));
+
+  if (shouldFinalizeRank(session.picks.length, session.targetPicks, remaining.length)) {
+    await finalizeRankSession(interaction, session, store, config, parsed.sessionId);
     return;
   }
 
-  if (parsed.step === 2) {
-    session.step = 3;
-    const pickedIds = new Set(session.picks.map((pick) => pick.id));
-    const remaining = store.listOpenForGuild(session.guildId).filter((row) => !pickedIds.has(row.id));
-    await interaction.update({
-      content: `#2 saved: **#${suggestion.githubIssueNumber} ${suggestion.title}**\nPick your **#3** priority:`,
-      components: [buildRankSelectRow(3, parsed.sessionId, remaining)],
-    });
-    return;
-  }
-
-  store.clearRanksForVoter(interaction.user.id);
-  const finalPicks = [...session.picks, suggestion];
-  finalPicks.forEach((pick, index) => {
-    store.setRank(interaction.user.id, index + 1, pick.id);
-  });
-  sessions.delete(parsed.sessionId);
+  const nextStep = session.picks.length + 1;
+  session.step = nextStep as 1 | 2 | 3;
 
   await interaction.update({
-    content: buildRankConfirmMessage(
-      finalPicks.map((pick, index) => ({
-        rank: index + 1,
-        title: pick.title,
-        issueNumber: pick.githubIssueNumber,
-      })),
-    ),
-    components: [],
+    content: `#${parsed.step} saved: **#${suggestion.githubIssueNumber} ${suggestion.title}**\nPick your **#${nextStep}** priority:`,
+    components: [buildRankSelectRow(nextStep as 1 | 2 | 3, parsed.sessionId, remaining)],
   });
-
-  await refreshGuildLeaderboard(interaction.client, store, config, session.guildId);
 }
 
 export function isFeatureRankSelect(customId: string): boolean {
