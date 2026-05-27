@@ -8,7 +8,7 @@ import type { AppConfig } from "../config.ts";
 import { FeatureStore } from "../features/feature-store.ts";
 import { blessFeatureIssueForTriage, createFeatureSuggestionIssue } from "../features/github-issues.ts";
 import { postSuggestionCard } from "../features/leaderboard-sync.ts";
-import { beginRankFlow, isFeatureRankSelect } from "../features/rank-handlers.ts";
+import { beginRankFlow, isFeatureRankSelect, rankIntroMessage } from "../features/rank-handlers.ts";
 import { evaluateSuggestionScope, suggestionIssueTitle } from "../features/scope-gate.ts";
 
 export { isFeatureRankSelect };
@@ -186,7 +186,7 @@ async function handleFeatureRank(
   }
 
   await interaction.reply({
-    content: "Pick your **#1** guild priority (you'll choose #2 and #3 next):",
+    content: rankIntroMessage(flow.openCount),
     components: [flow.row],
     ephemeral: true,
   });
