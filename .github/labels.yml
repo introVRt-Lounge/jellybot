@@ -54,3 +54,9 @@
 - name: scope-review-skip
   color: "fbca04"
   description: Skip automated scope-review gate (operator override)
+- name: user-suggested
+  color: "5319e7"
+  description: Feature idea submitted from Discord /feature suggest
+- name: discord-triage-blessed
+  color: "0e8a16"
+  description: Maintainer blessed via /feature choose; allows bot-applied ai-safe triage

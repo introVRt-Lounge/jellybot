@@ -1,6 +1,7 @@
 import { REST } from "discord.js";
 import "dotenv/config";
 import { clipCommand } from "./commands/clip.ts";
+import { featureCommand } from "./commands/feature.ts";
 import { quoteCommand } from "./commands/quote.ts";
 import { loadConfig } from "./config.ts";
 import {
@@ -11,7 +12,7 @@ import {
 
 const config = loadConfig();
 const rest = new REST({ version: "10" }).setToken(config.discordToken);
-const body = [clipCommand.toJSON(), quoteCommand.toJSON()];
+const body = [clipCommand.toJSON(), quoteCommand.toJSON(), featureCommand.toJSON()];
 const plan = planCommandSync(config.discordGuildIds);
 const registry = createRestCommandRegistry(rest, config.discordClientId);
 

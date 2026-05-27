@@ -27,6 +27,8 @@ export type AppConfig = {
   releaseRepoName: string;
   releaseAnnounceGraceMs: number;
   botStateDbPath: string;
+  featureSuggestionsChannelId?: string;
+  featureTriageDiscordUserIds: string[];
 };
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
@@ -59,7 +61,16 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     ...parseReleaseRepo(env),
     releaseAnnounceGraceMs: Number(env.RELEASE_ANNOUNCE_GRACE_MS ?? 60_000),
     botStateDbPath: env.BOT_STATE_DB_PATH?.trim() || "/var/lib/jellybot/data/bot-state.db",
+    featureSuggestionsChannelId: env.FEATURE_SUGGESTIONS_CHANNEL_ID?.trim() || undefined,
+    featureTriageDiscordUserIds: parseCsvIds(env.FEATURE_TRIAGE_DISCORD_USER_IDS ?? "563807698223890442"),
   };
+}
+
+function parseCsvIds(raw: string): string[] {
+  return raw
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
 }
 
 function requireEnv(env: NodeJS.ProcessEnv, name: string): string {

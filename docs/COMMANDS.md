@@ -94,3 +94,29 @@ The subtitle index must exist first. Run `make index-subtitles` on the host/cont
 - clip longer than `MAX_CLIP_SECONDS`
 - rendered file above Discord upload limit
 - Jellyfin item no longer visible to the configured user
+
+## `/feature`
+
+Guild feature suggestions with **ranked** prioritization (Pattern A: top-3 select menus, 3/2/1 points).
+
+Requires `FEATURE_SUGGESTIONS_CHANNEL_ID` and `GITHUB_TOKEN`.
+
+### `/feature suggest`
+
+| Option | Required | Notes |
+| --- | --- | --- |
+| `description` | Yes | Scope-checked against `PRODUCT_SCOPE.md`; creates GitHub issue on pass |
+
+Posts a card in the suggestions channel and updates the guild leaderboard embed.
+
+### `/feature rank`
+
+Ephemeral 3-step select flow: pick **#1**, **#2**, **#3** priorities from open suggestions. Re-run anytime to change your ranks.
+
+### `/feature choose` (maintainer)
+
+| Option | Required | Notes |
+| --- | --- | --- |
+| `issue` | Yes | Autocomplete of open guild suggestions |
+
+Allowed Discord users: `FEATURE_TRIAGE_DISCORD_USER_IDS` (default: Radgey). Adds GitHub labels `discord-triage-blessed` + `ai-safe` to start Cursor triage without manual GitHub labeling.

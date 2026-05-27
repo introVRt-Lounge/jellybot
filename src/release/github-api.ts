@@ -3,17 +3,22 @@ type GitHubRequestOptions = {
   repoName: string;
   githubToken: string;
   path: string;
+  method?: "GET" | "POST" | "PATCH";
+  body?: unknown;
   signal?: AbortSignal;
 };
 
 export async function fetchGitHubJson<T>(options: GitHubRequestOptions): Promise<T> {
   const url = `https://api.github.com/repos/${options.repoOwner}/${options.repoName}${options.path}`;
   const response = await fetch(url, {
+    method: options.method ?? "GET",
     headers: {
       Authorization: `Bearer ${options.githubToken}`,
       Accept: "application/vnd.github+json",
+      "Content-Type": "application/json",
       "User-Agent": "jellybot-release-announcer",
     },
+    body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
     signal: options.signal ?? AbortSignal.timeout(20_000),
   });
 
