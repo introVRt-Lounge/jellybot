@@ -240,10 +240,10 @@ export class FeatureStore {
 
   getLeaderboardMessageId(guildId: string): string | null {
     const row = this.db
-      .query<{ meta_value: string }, [string, string]>(
+      .query<{ meta_value: string }, [string]>(
         `SELECT meta_value FROM feature_meta WHERE guild_id = ? AND meta_key = 'leaderboard_message_id'`,
       )
-      .get(guildId, "leaderboard_message_id");
+      .get(guildId);
     return row?.meta_value ?? null;
   }
 
