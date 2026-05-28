@@ -29,7 +29,6 @@ jobs:
 
     env:
       REPOSITORY: ${{ github.repository }}
-      DISCORD_PIPELINE_ALERT_WEBHOOK_URL: ${{ secrets.DISCORD_TRIAGE_DISPATCH_WEBHOOK_URL }}
 
     steps:
       - uses: actions/checkout@v6

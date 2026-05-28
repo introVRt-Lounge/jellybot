@@ -3,7 +3,6 @@
 set -euo pipefail
 
 REPOSITORY="${REPOSITORY:-introVRt-Lounge/jellybot}"
-DISCORD_WEBHOOK_URL="${DISCORD_PIPELINE_ALERT_WEBHOOK_URL:-${DISCORD_TRIAGE_DISPATCH_WEBHOOK_URL:-}}"
 
 issue_numbers="$(gh issue list --repo "${REPOSITORY}" --label "discord-triage-blessed" --state all --limit 30 --json number -q '.[].number' || true)"
 
@@ -117,13 +116,4 @@ EOF
     echo "Posted pipeline comment on #${ISSUE_NUMBER} (${stage})."
   fi
 
-  if [ "${stage}" = "awaiting_pr" ] || [ "${stage}" = "failed" ]; then
-    if [ -n "${DISCORD_WEBHOOK_URL}" ]; then
-      alert="Pipeline stuck on **#${ISSUE_NUMBER}** (\`${stage}\`): ${blocker} — [issue](${issue_url})"
-      curl -fsS -X POST "${DISCORD_WEBHOOK_URL}" \
-        -H "Content-Type: application/json" \
-        --data "$(jq -n --arg content "${alert}" '{content: $content}')" >/dev/null || true
-      echo "Discord alert sent for #${ISSUE_NUMBER}."
-    fi
-  fi
 done

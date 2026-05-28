@@ -148,7 +148,7 @@ client.once(Events.ClientReady, async (readyClient) => {
 
   if (config.githubToken && config.featureSuggestionsChannelId) {
     const featureStore = new FeatureStore(config.botStateDbPath);
-    startFeaturePipelineReconcileLoop(config, featureStore);
+    startFeaturePipelineReconcileLoop(client, config, featureStore);
   }
 });
 

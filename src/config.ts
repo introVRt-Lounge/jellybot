@@ -29,6 +29,8 @@ export type AppConfig = {
   botStateDbPath: string;
   featureSuggestionsChannelId?: string;
   featureTriageDiscordUserIds: string[];
+  /** Maintainer ops alerts (pipeline stuck/failed). Never use feature suggestions / movies channel. */
+  discordBotspamChannelId?: string;
 };
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
@@ -63,6 +65,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     botStateDbPath: env.BOT_STATE_DB_PATH?.trim() || "/var/lib/jellybot/data/bot-state.db",
     featureSuggestionsChannelId: env.FEATURE_SUGGESTIONS_CHANNEL_ID?.trim() || undefined,
     featureTriageDiscordUserIds: parseCsvIds(env.FEATURE_TRIAGE_DISCORD_USER_IDS ?? "563807698223890442"),
+    discordBotspamChannelId: env.DISCORD_BOTSPAM_CHANNEL_ID?.trim() || undefined,
   };
 }
 
