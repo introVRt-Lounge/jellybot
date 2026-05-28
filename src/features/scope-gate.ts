@@ -19,7 +19,7 @@ function loadScopeDoc(): string {
   }
 }
 
-export function evaluateSuggestionHeuristic(description: string): ScopeGateResult {
+function evaluateHardBlocks(description: string): ScopeGateResult | null {
   const trimmed = description.trim();
   if (trimmed.length < 12) {
     return { ok: false, reason: "Describe the idea in a bit more detail (at least 12 characters)." };
@@ -32,6 +32,17 @@ export function evaluateSuggestionHeuristic(description: string): ScopeGateResul
         "That sounds outside jellybot's mission (Jellyfin → discover → clip → share in Discord). Try framing it around library media.",
     };
   }
+
+  return null;
+}
+
+export function evaluateSuggestionHeuristic(description: string): ScopeGateResult {
+  const hardBlock = evaluateHardBlocks(description);
+  if (hardBlock) {
+    return hardBlock;
+  }
+
+  const trimmed = description.trim();
 
   if (!JELLYFIN_HINTS.test(trimmed)) {
     return {
@@ -50,8 +61,13 @@ export async function evaluateSuggestionScope(
   description: string,
   openaiApiKey?: string,
 ): Promise<ScopeGateResult> {
+  const hardBlock = evaluateHardBlocks(description);
+  if (hardBlock) {
+    return hardBlock;
+  }
+
   const heuristic = evaluateSuggestionHeuristic(description);
-  if (!heuristic.ok || !openaiApiKey) {
+  if (!openaiApiKey) {
     return heuristic;
   }
 
@@ -108,7 +124,9 @@ export async function evaluateSuggestionScope(
       };
     }
 
-    const summary = parsed.summary?.trim() || heuristic.summary;
+    const fallbackSummary =
+      heuristic.ok ? heuristic.summary : description.trim().slice(0, 160);
+    const summary = parsed.summary?.trim() || fallbackSummary;
     const issueBody = buildIssueBody(
       description,
       summary,
