@@ -30,6 +30,8 @@ import { createReleaseAnnouncerFromConfig } from "./release/release-announcer.ts
 import { looksLikeReleaseTag } from "./release/semver.ts";
 import { isBenignAutocompleteError } from "./autocomplete-guard.ts";
 import { handleRankSelect } from "./features/rank-handlers.ts";
+import { FeatureStore } from "./features/feature-store.ts";
+import { startFeaturePipelineReconcileLoop } from "./features/pipeline-reconcile.ts";
 
 const config = loadConfig();
 const jellyfin = new JellyfinClient(
@@ -138,6 +140,11 @@ client.once(Events.ClientReady, async (readyClient) => {
         }),
       );
     }
+  }
+
+  if (config.githubToken && config.featureSuggestionsChannelId) {
+    const featureStore = new FeatureStore(config.botStateDbPath);
+    startFeaturePipelineReconcileLoop(config, featureStore);
   }
 });
 

@@ -69,4 +69,31 @@ describe("FeatureStore", () => {
     expect(store.getLeaderboardMessageId("guild-a")).toBe("msg-123");
     store.close();
   });
+
+  test("records pipeline events and lists building suggestions", () => {
+    const store = makeStore();
+    const row = store.insertSuggestion({
+      githubIssueNumber: 201,
+      title: "[feat]: Pipeline test",
+      description: "test",
+      suggesterDiscordId: "1",
+      suggesterName: "A",
+      guildId: "guild",
+      scopeSummary: "ok",
+    });
+    store.setStatus(row.id, "building");
+    store.recordPipelineEvent({
+      suggestionId: row.id,
+      stage: "awaiting_pr",
+      status: "stuck",
+      detail: "no pr",
+    });
+
+    expect(store.listBuildingForGuild("guild")).toHaveLength(1);
+    expect(store.listGuildIdsWithBuilding()).toEqual(["guild"]);
+    const latest = store.latestPipelineEvent(row.id);
+    expect(latest?.stage).toBe("awaiting_pr");
+    expect(latest?.detail).toBe("no pr");
+    store.close();
+  });
 });

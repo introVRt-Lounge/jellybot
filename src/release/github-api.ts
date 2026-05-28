@@ -112,6 +112,7 @@ export type GitHubIssue = {
   number: number;
   title: string;
   body: string | null;
+  state?: "open" | "closed";
 };
 
 export async function fetchIssue(
@@ -121,7 +122,12 @@ export async function fetchIssue(
   issueNumber: number,
 ): Promise<GitHubIssue | null> {
   try {
-    const payload = await fetchGitHubJson<{ number?: number; title?: string; body?: string | null }>({
+    const payload = await fetchGitHubJson<{
+      number?: number;
+      title?: string;
+      body?: string | null;
+      state?: string;
+    }>({
       repoOwner,
       repoName,
       githubToken,
@@ -134,6 +140,7 @@ export async function fetchIssue(
       number: payload.number,
       title: payload.title,
       body: payload.body ?? null,
+      state: payload.state === "closed" ? "closed" : "open",
     };
   } catch {
     return null;

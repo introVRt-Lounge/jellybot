@@ -54,6 +54,19 @@ CREATE TABLE IF NOT EXISTS feature_meta (
   meta_value TEXT NOT NULL,
   PRIMARY KEY (guild_id, meta_key)
 );
+
+CREATE TABLE IF NOT EXISTS feature_pipeline_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  suggestion_id INTEGER NOT NULL,
+  stage TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('ok', 'pending', 'failed', 'stuck', 'warn')),
+  detail TEXT,
+  recorded_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY (suggestion_id) REFERENCES feature_suggestions(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_feature_pipeline_events_suggestion
+  ON feature_pipeline_events (suggestion_id, recorded_at DESC);
 `;
 
 export class FeatureStore {
@@ -189,6 +202,90 @@ export class FeatureStore {
 
   setStatus(id: number, status: FeatureSuggestionRow["status"]): void {
     this.db.query(`UPDATE feature_suggestions SET status = ? WHERE id = ?`).run(status, id);
+  }
+
+  listBuildingForGuild(guildId: string, limit = 25): FeatureSuggestionRow[] {
+    const rows = this.db
+      .query<
+        {
+          id: number;
+          github_issue_number: number;
+          title: string;
+          description: string;
+          suggester_discord_id: string;
+          suggester_name: string;
+          guild_id: string;
+          channel_message_id: string | null;
+          status: string;
+          scope_summary: string | null;
+          created_at: string;
+        },
+        [string, number]
+      >(
+        `SELECT id, github_issue_number, title, description, suggester_discord_id, suggester_name,
+                guild_id, channel_message_id, status, scope_summary, created_at
+         FROM feature_suggestions
+         WHERE guild_id = ? AND status = 'building'
+         ORDER BY created_at DESC
+         LIMIT ?`,
+      )
+      .all(guildId, limit);
+
+    return rows.map((row) => this.mapSuggestion(row)!);
+  }
+
+  listGuildIdsWithBuilding(): string[] {
+    const rows = this.db
+      .query<{ guild_id: string }, []>(
+        `SELECT DISTINCT guild_id FROM feature_suggestions WHERE status = 'building'`,
+      )
+      .all();
+    return rows.map((row) => row.guild_id);
+  }
+
+  recordPipelineEvent(input: {
+    suggestionId: number;
+    stage: string;
+    status: "ok" | "pending" | "failed" | "stuck" | "warn";
+    detail?: string | null;
+  }): void {
+    this.db
+      .query(
+        `INSERT INTO feature_pipeline_events (suggestion_id, stage, status, detail)
+         VALUES (?, ?, ?, ?)`,
+      )
+      .run(input.suggestionId, input.stage, input.status, input.detail ?? null);
+  }
+
+  latestPipelineEvent(suggestionId: number): {
+    stage: string;
+    status: string;
+    detail: string | null;
+    recordedAt: string;
+  } | null {
+    const row = this.db
+      .query<
+        { stage: string; status: string; detail: string | null; recorded_at: string },
+        [number]
+      >(
+        `SELECT stage, status, detail, recorded_at
+         FROM feature_pipeline_events
+         WHERE suggestion_id = ?
+         ORDER BY recorded_at DESC, id DESC
+         LIMIT 1`,
+      )
+      .get(suggestionId);
+
+    if (!row) {
+      return null;
+    }
+
+    return {
+      stage: row.stage,
+      status: row.status,
+      detail: row.detail,
+      recordedAt: row.recorded_at,
+    };
   }
 
   setRank(voterDiscordId: string, rankPosition: number, suggestionId: number): void {
