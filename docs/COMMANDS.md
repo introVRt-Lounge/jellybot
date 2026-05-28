@@ -105,7 +105,7 @@ Requires `FEATURE_SUGGESTIONS_CHANNEL_ID` and `GITHUB_TOKEN`.
 
 | Option | Required | Notes |
 | --- | --- | --- |
-| `description` | Yes | Scope-checked against `PRODUCT_SCOPE.md`; creates GitHub issue on pass |
+| `description` | Yes | Reframed into a GitHub issue for guild ranking (default yes; maintainer triages) |
 
 Posts a card in the suggestions channel and updates the guild leaderboard embed.
 
