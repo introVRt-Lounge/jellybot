@@ -189,16 +189,34 @@ Details: [architecture.md — Production release announce](architecture.md#produ
 | Symptom | Likely cause | Check |
 | --- | --- | --- |
 | Label added, no agent | Wrong labeler, workflow error, missing `CURSOR_API_KEY` | Actions → **Cursor Issue Triage**; issue labels |
-| Agent runs, no PR | Still working or failed in Cursor UI | [cursor.com/agents](https://cursor.com/agents) |
+| Agent runs, no PR | Still working or failed in Cursor UI; **issue closed before bless** | [cursor.com/agents](https://cursor.com/agents); `/feature status`; issue pipeline comment |
 | PR green, not merging | `no-automerge` / `human-needed`, fork PR, or CI still pending | Actions → **PR auto-merge** |
 | Merged, prod unchanged | Ship main did not run (pre-fix) or Watchtower | Actions → **Ship main**; `docker logs watchtower-minutely` |
 | Merged, no Discord post | Patch-only release or announce already recorded | Check latest GitHub Release semver; `bot-state.db` |
+| **Stuck at `building` in Discord** | No pipeline telemetry before #85 | `/feature status`; GitHub issue **Jellybot pipeline status** comment; Actions → **Feature pipeline watchdog** |
+
+## Pipeline observability (#85)
+
+Every blessed suggestion should be traceable end-to-end:
+
+| Layer | What it records |
+| --- | --- |
+| **SQLite** `feature_pipeline_events` | Stage transitions from bot reconcile loop |
+| **Discord** `/feature status` | Live checklist + blocker for maintainers |
+| **GitHub issue comment** | Auto-updated `jellybot-pipeline-status` table (watchdog workflow) |
+| **GitHub issue comment** | `jellybot-pipeline-agent-id:` when Cursor agent starts |
+| **GitHub issue comment** | `jellybot-agent-conversation` when agent finishes (**Cursor agent conversation archive** workflow) |
+| **Actions** | **Feature pipeline watchdog** (every 30 min + on label/PR events) posts Discord alert when stuck at `awaiting_pr` or `failed` |
+
+**#82 class failure:** branch pushed, no PR, issue already closed — stage `awaiting_pr`, blocker explains manual PR or reopen issue.
 
 ## Related files
 
 | File | Purpose |
 | --- | --- |
 | `.github/workflows/cursor-issue-triage.yml` | Start Cursor agent from issue labels |
+| `.github/workflows/cursor-agent-conversation.yml` | Poll agent; post `/conversation` transcript to issue |
+| `scripts/archive-cursor-agent-conversation.sh` | Archive script (also `workflow_dispatch` with `skip_poll=true` for backfill) |
 | `.github/workflows/pr-scope-review.yml` | LLM scope + quality gate (`scope-review`) |
 | `.github/workflows/pr-automerge.yml` | Auto-merge when **`ci`** + **`scope-review`** green |
 | `.github/workflows/ci.yml` | Required `ci` gate |

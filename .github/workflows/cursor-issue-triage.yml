@@ -8,6 +8,7 @@ on:
 permissions:
   contents: read
   issues: write
+  actions: write
 
 jobs:
   trigger-cursor-agent:
@@ -47,6 +48,7 @@ jobs:
           fi
 
       - name: Start Cursor Cloud Agent
+        id: agent
         if: steps.guard.outputs.skip != 'true'
         run: |
           set -euo pipefail
@@ -108,6 +110,42 @@ jobs:
             echo "Cursor API did not return an agent id."
             exit 1
           fi
+          echo "agent_id=${agent_id}" >> "${GITHUB_OUTPUT}"
+
+      - name: Record pipeline agent id on issue
+        if: steps.guard.outputs.skip != 'true'
+        env:
+          AGENT_ID: ${{ steps.agent.outputs.agent_id }}
+        run: |
+          set -euo pipefail
+          agent_id="${AGENT_ID:-}"
+          if [ -z "${agent_id}" ]; then
+            echo "No agent id output; skipping pipeline comment."
+            exit 0
+          fi
+
+          issue_state="$(gh issue view "${ISSUE_NUMBER}" --repo "${REPOSITORY}" --json state -q '.state')"
+          closed_note=""
+          if [ "${issue_state}" = "CLOSED" ]; then
+            closed_note=$'\n\n> ⚠️ **Pipeline warning:** This issue is already **closed**. Cursor may not open a PR until it is reopened.'
+          fi
+
+          body="$(cat <<EOF
+          <!-- jellybot-pipeline-agent-id: ${agent_id} -->
+
+          **Jellybot pipeline — agent started**
+
+          | Field | Value |
+          | --- | --- |
+          | Cursor agent | [\`${agent_id}\`](https://cursor.com/agents?id=${agent_id}) |
+          | Branch | \`${BRANCH_NAME}\` |
+          | Enqueued | $(date -u +"%Y-%m-%dT%H:%M:%SZ") |
+
+          Track in Discord: \`/feature status issue:${ISSUE_NUMBER}\`${closed_note}
+          EOF
+          )"
+
+          gh issue comment "${ISSUE_NUMBER}" --repo "${REPOSITORY}" --body "${body}"
 
       - name: Notify Discord triage webhook
         if: steps.guard.outputs.skip != 'true'
@@ -139,3 +177,22 @@ jobs:
       - name: Mark issue enqueued
         if: steps.guard.outputs.skip != 'true'
         run: gh issue edit "${ISSUE_NUMBER}" --repo "${REPOSITORY}" --add-label "${ENQUEUED_LABEL}"
+
+      - name: Start conversation archive workflow
+        if: steps.guard.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          AGENT_ID: ${{ steps.agent.outputs.agent_id }}
+        run: |
+          set -euo pipefail
+          if [ -z "${AGENT_ID}" ]; then
+            echo "No agent id; skipping conversation archive."
+            exit 0
+          fi
+          gh workflow run cursor-agent-conversation.yml \
+            --repo "${REPOSITORY}" \
+            -f "issue_number=${ISSUE_NUMBER}" \
+            -f "agent_id=${AGENT_ID}" \
+            -f "repository=${REPOSITORY}" \
+            -f "skip_poll=false"
+          echo "Started cursor-agent-conversation workflow for agent ${AGENT_ID} on issue #${ISSUE_NUMBER}."

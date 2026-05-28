@@ -1,0 +1,49 @@
+name: Cursor agent conversation archive
+
+on:
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: GitHub issue number
+        required: true
+        type: string
+      agent_id:
+        description: Cursor cloud agent id (bc-...)
+        required: true
+        type: string
+      repository:
+        description: owner/repo
+        required: false
+        default: introVRt-Lounge/jellybot
+        type: string
+      skip_poll:
+        description: If true, fetch conversation immediately (agent already finished)
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  archive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+
+    env:
+      CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+      GH_TOKEN: ${{ github.token }}
+      REPOSITORY: ${{ inputs.repository }}
+      ISSUE_NUMBER: ${{ inputs.issue_number }}
+      AGENT_ID: ${{ inputs.agent_id }}
+      SKIP_POLL: ${{ inputs.skip_poll }}
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Archive Cursor agent conversation to issue
+        run: bash ./scripts/archive-cursor-agent-conversation.sh
