@@ -394,24 +394,88 @@ export class JellyfinClient {
     };
   }
 
-  async countSubtitledMedia(): Promise<number> {
+  async countMediaItems(filter: {
+    includeItemTypes: "Movie" | "Episode" | "Series" | "Movie,Episode";
+    hasSubtitles?: boolean;
+    parentId?: string;
+    ids?: string;
+  }): Promise<number> {
     const { userId } = this.requireAuth();
     const searchParams = new URLSearchParams({
       UserId: userId,
-      IncludeItemTypes: "Movie,Episode",
+      IncludeItemTypes: filter.includeItemTypes,
       Recursive: "true",
-      HasSubtitles: "true",
       Limit: "1",
     });
+
+    if (filter.hasSubtitles) {
+      searchParams.set("HasSubtitles", "true");
+    }
+    if (filter.parentId) {
+      searchParams.set("ParentId", filter.parentId);
+    }
+    if (filter.ids) {
+      searchParams.set("Ids", filter.ids);
+    }
 
     const response = await this.fetchAuthed(`${this.baseUrl}/Items?${searchParams}`);
 
     if (!response.ok) {
-      throw new Error(`Jellyfin subtitled count failed (${response.status}).`);
+      throw new Error(`Jellyfin item count failed (${response.status}).`);
     }
 
     const data = (await response.json()) as JellyfinSearchResponse;
     return data.TotalRecordCount ?? 0;
+  }
+
+  async countSubtitledMedia(): Promise<number> {
+    return this.countMediaItems({ includeItemTypes: "Movie,Episode", hasSubtitles: true });
+  }
+
+  async countLibraryMovies(options: { hasSubtitles?: boolean } = {}): Promise<number> {
+    return this.countMediaItems({
+      includeItemTypes: "Movie",
+      parentId: this.moviesLibraryId,
+      hasSubtitles: options.hasSubtitles,
+    });
+  }
+
+  async countLibraryEpisodes(options: { hasSubtitles?: boolean } = {}): Promise<number> {
+    return this.countMediaItems({
+      includeItemTypes: "Episode",
+      parentId: this.tvLibraryId,
+      hasSubtitles: options.hasSubtitles,
+    });
+  }
+
+  async countSeriesEpisodes(
+    seriesId: string,
+    options: { hasSubtitles?: boolean } = {},
+  ): Promise<number> {
+    return this.countMediaItems({
+      includeItemTypes: "Episode",
+      parentId: seriesId,
+      hasSubtitles: options.hasSubtitles,
+    });
+  }
+
+  async movieHasSubtitles(movieId: string): Promise<boolean> {
+    const count = await this.countMediaItems({
+      includeItemTypes: "Movie",
+      ids: movieId,
+      hasSubtitles: true,
+    });
+    return count > 0;
+  }
+
+  async searchSeries(query: string, limit = 25, signal?: AbortSignal): Promise<JellyfinItem[]> {
+    return this.searchItems({
+      query,
+      includeItemTypes: "Series",
+      parentId: this.tvLibraryId,
+      limit,
+      signal,
+    });
   }
 
   async listSubtitledMedia(params: { startIndex: number; limit: number }): Promise<SubtitledMediaPage> {

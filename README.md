@@ -15,6 +15,7 @@ Links: [Contributing](CONTRIBUTING.md) · [Issue → deployment](docs/ISSUE_TO_D
 
 - `/clip` with a required `kind` choice: **Movie** or **TV episode**
 - `/quote` searches indexed subtitles and clips the matching scene
+- `/subcoverage` reports Jellyfin subtitle coverage for the library or a title
 - Jellyfin media autocomplete scoped to that kind
 - `start` plus either `end` or `duration`
 - ffmpeg extracts the segment from Jellyfin; you preview the MP4 privately, then **Post** shares it to the channel

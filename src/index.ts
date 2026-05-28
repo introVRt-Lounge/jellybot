@@ -15,6 +15,10 @@ import {
   isFeatureRankSelect,
 } from "./commands/feature.ts";
 import { handleQuoteAutocomplete, handleQuoteCommand } from "./commands/quote.ts";
+import {
+  handleSubcoverageAutocomplete,
+  handleSubcoverageCommand,
+} from "./commands/subcoverage.ts";
 import { loadConfig } from "./config.ts";
 import {
   createRestCommandRegistry,
@@ -178,6 +182,20 @@ client.on(Events.InteractionCreate, async (interaction) => {
           await interaction.respond([]).catch(() => undefined);
         }
       }
+      return;
+    }
+
+    if (interaction.commandName === "subcoverage") {
+      try {
+        await handleSubcoverageAutocomplete(interaction, jellyfin);
+      } catch (error) {
+        if (!isBenignAutocompleteError(error)) {
+          console.error("Subcoverage autocomplete error:", error);
+        }
+        if (!interaction.responded) {
+          await interaction.respond([]).catch(() => undefined);
+        }
+      }
     }
     return;
   }
@@ -291,6 +309,34 @@ client.on(Events.InteractionCreate, async (interaction) => {
         JSON.stringify({
           event: "quote.error",
           command: "quote",
+          userId: interaction.user.id,
+          error: error instanceof Error ? error.message : "unknown error",
+        }),
+      );
+
+      if (interaction.deferred || interaction.replied) {
+        await interaction.editReply("Something went wrong while handling that command.").catch(() => undefined);
+        return;
+      }
+
+      await interaction
+        .reply({
+          content: "Something went wrong while handling that command.",
+          ephemeral: true,
+        })
+        .catch(() => undefined);
+    }
+    return;
+  }
+
+  if (interaction.commandName === "subcoverage") {
+    try {
+      await handleSubcoverageCommand(interaction, jellyfin, config);
+    } catch (error) {
+      console.error(
+        JSON.stringify({
+          event: "subcoverage.error",
+          command: "subcoverage",
           userId: interaction.user.id,
           error: error instanceof Error ? error.message : "unknown error",
         }),
