@@ -205,6 +205,7 @@ Every blessed suggestion should be traceable end-to-end:
 | **Discord** `/feature status` | Live checklist + blocker for maintainers |
 | **GitHub issue comment** | Auto-updated `jellybot-pipeline-status` table (watchdog workflow) |
 | **GitHub issue comment** | `jellybot-pipeline-agent-id:` when Cursor agent starts |
+| **GitHub issue comment** | `jellybot-agent-conversation` when agent finishes (**Cursor agent conversation archive** workflow) |
 | **Actions** | **Feature pipeline watchdog** (every 30 min + on label/PR events) posts Discord alert when stuck at `awaiting_pr` or `failed` |
 
 **#82 class failure:** branch pushed, no PR, issue already closed — stage `awaiting_pr`, blocker explains manual PR or reopen issue.
@@ -214,6 +215,8 @@ Every blessed suggestion should be traceable end-to-end:
 | File | Purpose |
 | --- | --- |
 | `.github/workflows/cursor-issue-triage.yml` | Start Cursor agent from issue labels |
+| `.github/workflows/cursor-agent-conversation.yml` | Poll agent; post `/conversation` transcript to issue |
+| `scripts/archive-cursor-agent-conversation.sh` | Archive script (also `workflow_dispatch` with `skip_poll=true` for backfill) |
 | `.github/workflows/pr-scope-review.yml` | LLM scope + quality gate (`scope-review`) |
 | `.github/workflows/pr-automerge.yml` | Auto-merge when **`ci`** + **`scope-review`** green |
 | `.github/workflows/ci.yml` | Required `ci` gate |

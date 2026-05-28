@@ -8,6 +8,7 @@ on:
 permissions:
   contents: read
   issues: write
+  actions: write
 
 jobs:
   trigger-cursor-agent:
@@ -176,3 +177,22 @@ jobs:
       - name: Mark issue enqueued
         if: steps.guard.outputs.skip != 'true'
         run: gh issue edit "${ISSUE_NUMBER}" --repo "${REPOSITORY}" --add-label "${ENQUEUED_LABEL}"
+
+      - name: Start conversation archive workflow
+        if: steps.guard.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          AGENT_ID: ${{ steps.agent.outputs.agent_id }}
+        run: |
+          set -euo pipefail
+          if [ -z "${AGENT_ID}" ]; then
+            echo "No agent id; skipping conversation archive."
+            exit 0
+          fi
+          gh workflow run cursor-agent-conversation.yml \
+            --repo "${REPOSITORY}" \
+            -f "issue_number=${ISSUE_NUMBER}" \
+            -f "agent_id=${AGENT_ID}" \
+            -f "repository=${REPOSITORY}" \
+            -f "skip_poll=false"
+          echo "Started cursor-agent-conversation workflow for agent ${AGENT_ID} on issue #${ISSUE_NUMBER}."
