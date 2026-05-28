@@ -5,11 +5,8 @@ export type ScopeGateResult =
   | { ok: true; summary: string; issueBody: string }
   | { ok: false; reason: string };
 
-const JELLYFIN_HINTS =
-  /\b(jellyfin|clip|quote|subtitle|movie|tv|episode|library|media|audio|lyrics|timestamp|discover|share)\b/i;
-
-const OUT_OF_SCOPE_HINTS =
-  /\b(moderation|ticket(?:ing)?|crypto|nft|gambling|admin panel|spotify only|without jellyfin)\b/i;
+const SPAM_HINTS =
+  /\b(crypto|nft|gambling|buy now|click here|free money)\b/i;
 
 function loadScopeDoc(): string {
   try {
@@ -25,11 +22,10 @@ function evaluateHardBlocks(description: string): ScopeGateResult | null {
     return { ok: false, reason: "Describe the idea in a bit more detail (at least 12 characters)." };
   }
 
-  if (OUT_OF_SCOPE_HINTS.test(trimmed)) {
+  if (SPAM_HINTS.test(trimmed)) {
     return {
       ok: false,
-      reason:
-        "That sounds outside jellybot's mission (Jellyfin → discover → clip → share in Discord). Try framing it around library media.",
+      reason: "That looks like spam or unrelated promotion, not a jellybot feature idea.",
     };
   }
 
@@ -43,19 +39,29 @@ export function evaluateSuggestionHeuristic(description: string): ScopeGateResul
   }
 
   const trimmed = description.trim();
-
-  if (!JELLYFIN_HINTS.test(trimmed)) {
-    return {
-      ok: false,
-      reason:
-        "Tie the idea to Jellyfin library media (find, clip, quote, subtitles, etc.). Jellybot doesn't do general Discord utilities.",
-    };
-  }
-
   const summary = trimmed.length > 160 ? `${trimmed.slice(0, 157)}...` : trimmed;
-  const issueBody = buildIssueBody(trimmed, summary, "Heuristic scope pass (Jellyfin-aligned keywords).");
+  const issueBody = buildIssueBody(
+    trimmed,
+    summary,
+    "Forwarded for guild ranking. Maintainer triages via `/feature choose`.",
+  );
   return { ok: true, summary, issueBody };
 }
+
+const SCOPE_ENRICHER_SYSTEM_PROMPT = `You prepare jellybot Discord feature suggestions for community consideration.
+
+DEFAULT: pass=true. Assume YES. Ideas enter the guild ranking queue; the maintainer (Radgey) is the ultimate arbiter via /feature choose and GitHub triage.
+
+Your job when pass=true:
+- Reframe vague wording into a clear summary
+- Expand meta/tooling/transparency requests (subtitle coverage reports, index health, bot stats, operator visibility, UX polish, docs) as valid community ideas
+- Treat library coverage, indexing, reliability, and guild UX as in scope even when not a direct clip command
+
+Set pass=false ONLY for obvious spam, abuse, or proposals with zero connection to jellybot or Jellyfin guild use (unrelated product pitch, pure scam).
+
+When uncertain, pass=true. If pass=false, explain briefly in reason.
+
+Reply JSON only: {"pass":boolean,"reason":string,"summary":string,"userStory":string,"acceptance":string[]}`;
 
 export async function evaluateSuggestionScope(
   description: string,
@@ -82,14 +88,10 @@ export async function evaluateSuggestionScope(
       body: JSON.stringify({
         model: "gpt-4o-mini",
         messages: [
-          {
-            role: "system",
-            content:
-              "You gate jellybot feature suggestions against PRODUCT_SCOPE. Jellybot serves Discord guilds using Jellyfin libraries (movies, TV, music, and other Jellyfin item types). Music, lyrics, timed captions, and quote-to-clip patterns are IN SCOPE when they follow discover → clip → share in Discord. Lean pass when the idea helps guild members find or share something from Jellyfin. Reject only clear off-mission items (moderation bots, crypto, Spotify-only with no Jellyfin path, general Discord utilities unrelated to library media). If pass, rewrite vague wording into a clear one-line summary. Reply JSON only: {\"pass\":boolean,\"reason\":string,\"summary\":string,\"userStory\":string,\"acceptance\":string[]}",
-          },
+          { role: "system", content: SCOPE_ENRICHER_SYSTEM_PROMPT },
           {
             role: "user",
-            content: `PRODUCT_SCOPE:\n${scopeDoc}\n\nSuggestion:\n${description}`,
+            content: `PRODUCT_SCOPE (context only — feature suggestions default to consideration):\n${scopeDoc}\n\nSuggestion:\n${description}`,
           },
         ],
         temperature: 0.2,
@@ -117,23 +119,14 @@ export async function evaluateSuggestionScope(
       acceptance?: string[];
     };
 
-    if (!parsed.pass) {
-      return {
-        ok: false,
-        reason: parsed.reason?.trim() || "Out of scope for jellybot's Jellyfin mission.",
-      };
-    }
-
-    const fallbackSummary =
-      heuristic.ok ? heuristic.summary : description.trim().slice(0, 160);
+    const fallbackSummary = description.trim().slice(0, 160);
     const summary = parsed.summary?.trim() || fallbackSummary;
-    const issueBody = buildIssueBody(
-      description,
-      summary,
-      parsed.reason?.trim() || "Scope gate pass.",
-      parsed.userStory,
-      parsed.acceptance,
-    );
+
+    const scopeNote = parsed.pass
+      ? parsed.reason?.trim() || "Forwarded for guild ranking; maintainer triages."
+      : `Forwarded for guild ranking. Automated note for maintainer (not a block): ${parsed.reason?.trim() || "borderline — human decides"}`;
+
+    const issueBody = buildIssueBody(description, summary, scopeNote, parsed.userStory, parsed.acceptance);
     return { ok: true, summary, issueBody };
   } catch {
     return heuristic;

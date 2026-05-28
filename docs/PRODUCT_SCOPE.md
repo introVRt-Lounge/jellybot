@@ -39,6 +39,15 @@ Changes that directly support:
 - Smallest change that meets the linked issue or PR summary
 - Command/schema changes update `docs/COMMANDS.md` and registration path
 
+## Feature suggestions (`/feature suggest`)
+
+Discord suggestions use a **consideration-first** gate:
+
+- **Default yes** — ideas enter the guild ranking queue unless obviously spam
+- **In consideration** — media features, bot meta/tooling, transparency (subtitle coverage, index health), UX, reliability, docs
+- **Maintainer triage** — Radgey (or configured triage users) blesses via `/feature choose`; that is the real scope arbiter, not the automated enricher
+- **Automated gate** — reframes vague text and expands a GitHub issue sketch; it does not replace human triage
+
 ## Review verdict contract
 
 The `scope-review` check passes when the change is **in scope** and **acceptable quality** with **no critical issues**. Important issues may pass only if explicitly justified in the PR and tied to the mission.
