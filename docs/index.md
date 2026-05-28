@@ -16,6 +16,7 @@ Discord slash-command bot for your Jellyfin library: search media, extract clips
 
 - **`/clip`** - pull a segment from any movie or TV episode in Jellyfin
 - **`/quote`** - search subtitle text and post the matching scene as a clip
+- **`/subcoverage`** - report Jellyfin subtitle coverage for the library or a title
 - **Self-hosted** - runs beside your Jellyfin stack; no cloud transcoding lock-in
 - **Docker-first** - GHCR image, health endpoint, Compose profiles for dev and prod
 
@@ -41,7 +42,7 @@ Package page: [ghcr.io/introvrt-lounge/jellybot](https://github.com/introVRt-Lou
 ## Learn more
 
 - [Issue to deployment](ISSUE_TO_DEPLOYMENT.md) - GitHub issue → Cursor agent → CI → Watchtower prod
-- [Commands](commands.md) - `/clip` and `/quote`
+- [Commands](commands.md) - `/clip`, `/quote`, and `/subcoverage`
 - [Architecture](architecture.md) - stack, data paths, backup
 - [Caps and limits](caps-and-limits.md) - what it can and cannot do, Discord limits, optional OpenSubtitles / Whisper
 - [GitHub repository](https://github.com/introVRt-Lounge/jellybot) - source, issues, contributing

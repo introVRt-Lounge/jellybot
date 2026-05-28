@@ -95,6 +95,33 @@ The subtitle index must exist first. Run `make index-subtitles` on the host/cont
 - rendered file above Discord upload limit
 - Jellyfin item no longer visible to the configured user
 
+## `/subcoverage`
+
+Report how much of your Jellyfin library has subtitles, or check a single movie or TV series.
+
+Data comes from Jellyfin's `HasSubtitles` flag on items in your configured movie and TV libraries. Library-wide reports also compare the `/quote` subtitle index (when present) against Jellyfin subtitled items.
+
+### Options
+
+| Option | Required | Type | Notes |
+| --- | --- | --- | --- |
+| `kind` | No | Choice | `Library (movies + episodes)` (default), `Movie`, or `TV series` |
+| `media` | For movie/series | Autocomplete string | Jellyfin item UUID from search (min 2 characters to search) |
+
+### Examples
+
+```text
+/subcoverage
+/subcoverage kind:TV series media:Breaking Bad
+/subcoverage kind:Movie media:The Matrix
+```
+
+### Failure cases
+
+- `kind` is `Movie` or `TV series` but `media` is missing or not a valid autocomplete pick
+- Jellyfin unreachable or item not visible to the configured user
+- no `/quote` index yet (library report still works; index line explains how to build it)
+
 ## `/feature`
 
 Guild feature suggestions with **ranked** prioritization (Pattern A: top-3 select menus, 3/2/1 points).

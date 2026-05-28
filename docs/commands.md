@@ -13,3 +13,7 @@ Required at runtime: `kind`, `media`, `start`, and either `end` or `duration`.
 Search indexed subtitles and clip the scene around a matched quote.
 
 Requires a built subtitle index (`make index-subtitles`).
+
+## `/subcoverage`
+
+Report Jellyfin subtitle coverage library-wide or for a movie or TV series.

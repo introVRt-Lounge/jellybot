@@ -51,7 +51,27 @@ When a feature is **complete and tests pass**, the default next action is **comm
 
 ### Deploy
 
-After merge to `main`, run **`make dev-refresh`** (or your documented prod deploy) so the running bot matches `main`.
+After merge to `main`, **prod** updates via **Ship main** → GHCR `:latest` → Watchtower recreates `~/docker/jellybot` (no manual pull in normal ops). Run **`make register-commands`** with **prod** credentials (`~/docker/jellybot/.env`) for each prod guild — not the dev `.env` app id.
+
+**Dev bot** (`jellybot-dev` / Bottitesto) is for **you** to confirm behavior (`bun run ci`, optional `make dev-refresh`, register with dev env) **before** merging to `main`. If a PR is merged, **prod** should have the code after Watchtower; slash commands still need a prod register pass.
+
+---
+
+## Happy place (mandatory end state)
+
+**Happy place** = `~/coding/jellybot-dev` ready for the next task:
+
+| Check | Expected |
+| --- | --- |
+| Branch | `main` |
+| `git pull --ff-only` | Up to date with `origin/main` |
+| `git status` | Clean (no modified/untracked work) |
+| Topic branches | Deleted locally after merge |
+| Prod | Matches `main` (image + register when commands changed) |
+
+Return here **every time** after shipping. Do not leave work only on a feature branch or only in a merged PR without confirming prod/register.
+
+**If you cannot reach happy place** (merge blocked, dirty tree you did not create, register fails, prod not on latest image): treat as **CRITICAL** — tell the operator immediately with the exact blocker. Do not hand-wave "done."
 
 ---
 
