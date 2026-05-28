@@ -1,5 +1,6 @@
 import {
   SlashCommandBuilder,
+  MessageFlags,
   type AutocompleteInteraction,
   type ChatInputCommandInteraction,
 } from "discord.js";
@@ -179,16 +180,17 @@ async function handleFeatureRank(
   store: FeatureStore,
   guildId: string,
 ): Promise<void> {
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
   const flow = await beginRankFlow(store, guildId, interaction.user.id);
   if ("error" in flow) {
-    await interaction.reply({ content: flow.error, ephemeral: true });
+    await interaction.editReply({ content: flow.error });
     return;
   }
 
-  await interaction.reply({
+  await interaction.editReply({
     content: rankIntroMessage(flow.openCount),
     components: [flow.row],
-    ephemeral: true,
   });
 }
 
