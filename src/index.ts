@@ -201,6 +201,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
       );
       if (!interaction.replied && !interaction.deferred) {
         await interaction.reply({ content: "Something went wrong while saving your rank.", ephemeral: true }).catch(() => undefined);
+      } else {
+        await interaction
+          .editReply({ content: "Something went wrong while saving your rank.", components: [] })
+          .catch(() => undefined);
       }
     }
     return;

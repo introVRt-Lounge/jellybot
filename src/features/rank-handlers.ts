@@ -133,7 +133,7 @@ async function finalizeRankSession(
   });
   sessions.delete(sessionId);
 
-  await interaction.update({
+  await interaction.editReply({
     content: buildRankConfirmMessage(
       session.picks.map((pick, index) => ({
         rank: index + 1,
@@ -144,7 +144,17 @@ async function finalizeRankSession(
     components: [],
   });
 
-  await refreshGuildLeaderboard(interaction.client as Client, store, config, session.guildId);
+  void refreshGuildLeaderboard(interaction.client as Client, store, config, session.guildId).catch(
+    (error) => {
+      console.error(
+        JSON.stringify({
+          event: "feature.rank.leaderboard_refresh_error",
+          guildId: session.guildId,
+          error: error instanceof Error ? error.message : "unknown error",
+        }),
+      );
+    },
+  );
 }
 
 export async function handleRankSelect(
@@ -152,27 +162,38 @@ export async function handleRankSelect(
   store: FeatureStore,
   config: AppConfig,
 ): Promise<void> {
+  await interaction.deferUpdate();
+
   const parsed = parseRankSelectCustomId(interaction.customId);
   if (!parsed) {
-    await interaction.reply({ content: "Unknown rank session.", ephemeral: true });
+    await interaction.editReply({ content: "Unknown rank session.", components: [] });
     return;
   }
 
   const session = sessions.get(parsed.sessionId);
   if (!session || session.userId !== interaction.user.id) {
-    await interaction.reply({ content: "That rank session expired. Run `/feature rank` again.", ephemeral: true });
+    await interaction.editReply({
+      content: "That rank session expired. Run `/feature rank` again.",
+      components: [],
+    });
     return;
   }
 
   const suggestionId = Number.parseInt(interaction.values[0] ?? "", 10);
   const suggestion = store.getById(suggestionId);
   if (!suggestion) {
-    await interaction.reply({ content: "That suggestion is no longer available.", ephemeral: true });
+    await interaction.editReply({
+      content: "That suggestion is no longer available.",
+      components: [],
+    });
     return;
   }
 
   if (session.picks.some((pick) => pick.id === suggestion.id)) {
-    await interaction.reply({ content: "You already picked that suggestion in this ranking.", ephemeral: true });
+    await interaction.editReply({
+      content: "You already picked that suggestion in this ranking.",
+      components: [],
+    });
     return;
   }
 
@@ -190,7 +211,7 @@ export async function handleRankSelect(
   const nextStep = session.picks.length + 1;
   session.step = nextStep as 1 | 2 | 3;
 
-  await interaction.update({
+  await interaction.editReply({
     content: `#${parsed.step} saved: **#${suggestion.githubIssueNumber} ${suggestion.title}**\nPick your **#${nextStep}** priority:`,
     components: [buildRankSelectRow(nextStep as 1 | 2 | 3, parsed.sessionId, remaining)],
   });
