@@ -85,7 +85,7 @@ export async function evaluateSuggestionScope(
           {
             role: "system",
             content:
-              "You gate jellybot feature suggestions against PRODUCT_SCOPE. Reply JSON only: {\"pass\":boolean,\"reason\":string,\"summary\":string,\"userStory\":string,\"acceptance\":string[]}",
+              "You gate jellybot feature suggestions against PRODUCT_SCOPE. Jellybot serves Discord guilds using Jellyfin libraries (movies, TV, music, and other Jellyfin item types). Music, lyrics, timed captions, and quote-to-clip patterns are IN SCOPE when they follow discover → clip → share in Discord. Lean pass when the idea helps guild members find or share something from Jellyfin. Reject only clear off-mission items (moderation bots, crypto, Spotify-only with no Jellyfin path, general Discord utilities unrelated to library media). If pass, rewrite vague wording into a clear one-line summary. Reply JSON only: {\"pass\":boolean,\"reason\":string,\"summary\":string,\"userStory\":string,\"acceptance\":string[]}",
           },
           {
             role: "user",
