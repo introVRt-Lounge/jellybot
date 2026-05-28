@@ -4,9 +4,9 @@ import { featureCommand } from "../src/commands/feature.ts";
 describe("feature command contract", () => {
   const json = featureCommand.toJSON();
 
-  test("registers suggest, rank, and choose subcommands", () => {
+  test("registers suggest, rank, choose, and status subcommands", () => {
     const names = json.options?.map((option) => option.name);
-    expect(names).toEqual(["suggest", "rank", "choose"]);
+    expect(names).toEqual(["suggest", "rank", "choose", "status"]);
   });
 
   test("choose uses autocomplete on issue option", () => {

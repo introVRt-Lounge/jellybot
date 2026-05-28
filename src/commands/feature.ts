@@ -11,6 +11,8 @@ import { blessFeatureIssueForTriage, createFeatureSuggestionIssue } from "../fea
 import { postSuggestionCard } from "../features/leaderboard-sync.ts";
 import { beginRankFlow, isFeatureRankSelect, rankIntroMessage } from "../features/rank-handlers.ts";
 import { evaluateSuggestionScope, suggestionIssueTitle } from "../features/scope-gate.ts";
+import { formatPipelineInspection, inspectFeaturePipeline } from "../features/pipeline-tracker.ts";
+import { fetchIssue } from "../release/github-api.ts";
 
 export { isFeatureRankSelect };
 
@@ -48,6 +50,18 @@ export const featureCommand = new SlashCommandBuilder()
           .setRequired(true)
           .setAutocomplete(true),
       ),
+  )
+  .addSubcommand((sub) =>
+    sub
+      .setName("status")
+      .setDescription("Pipeline status for a blessed suggestion (maintainer)")
+      .addIntegerOption((option) =>
+        option
+          .setName("issue")
+          .setDescription("GitHub issue number (defaults to all building)")
+          .setRequired(false)
+          .setAutocomplete(true),
+      ),
   );
 
 export function isFeatureTriageUser(config: AppConfig, discordUserId: string): boolean {
@@ -59,8 +73,16 @@ export async function handleFeatureAutocomplete(
   config: AppConfig,
 ): Promise<void> {
   if (interaction.options.getSubcommand() !== "choose") {
-    await interaction.respond([]);
-    return;
+    if (interaction.options.getSubcommand() === "status") {
+      const issueNumber = interaction.options.getInteger("issue");
+      if (issueNumber === null) {
+        await interaction.respond([]);
+        return;
+      }
+    } else {
+      await interaction.respond([]);
+      return;
+    }
   }
 
   const guildId = interaction.guildId;
@@ -72,8 +94,22 @@ export async function handleFeatureAutocomplete(
   const store = storeFor(config);
   const focused = interaction.options.getFocused(true);
   const query = focused.value.toLowerCase();
-  const open = store.listOpenForGuild(guildId, 25);
-  const choices = open
+
+  const sub = interaction.options.getSubcommand();
+  const rows =
+    sub === "status"
+      ? [...store.listBuildingForGuild(guildId, 25), ...store.listOpenForGuild(guildId, 25)]
+      : store.listOpenForGuild(guildId, 25);
+
+  const seen = new Set<number>();
+  const choices = rows
+    .filter((row) => {
+      if (seen.has(row.githubIssueNumber)) {
+        return false;
+      }
+      seen.add(row.githubIssueNumber);
+      return true;
+    })
     .filter(
       (row) =>
         !query ||
@@ -123,6 +159,11 @@ export async function handleFeatureCommand(
 
   if (sub === "choose") {
     await handleFeatureChoose(interaction, config, store, guildId);
+    return;
+  }
+
+  if (sub === "status") {
+    await handleFeatureStatus(interaction, config, store, guildId);
   }
 }
 
@@ -222,6 +263,13 @@ async function handleFeatureChoose(
 
   await interaction.deferReply({ ephemeral: true });
 
+  const issue = await fetchIssue(
+    config.releaseRepoOwner,
+    config.releaseRepoName,
+    config.githubToken,
+    issueNumber,
+  );
+
   await blessFeatureIssueForTriage({
     repoOwner: config.releaseRepoOwner,
     repoName: config.releaseRepoName,
@@ -230,8 +278,85 @@ async function handleFeatureChoose(
   });
 
   store.setStatus(suggestion.id, "building");
+  store.recordPipelineEvent({
+    suggestionId: suggestion.id,
+    stage: "blessed",
+    status: "ok",
+    detail: `Blessed by ${interaction.user.id}`,
+  });
+
+  const closedWarning =
+    issue?.state === "closed"
+      ? "\n\n⚠️ **Warning:** GitHub issue is already **closed** — Cursor may not open a PR. Reopen the issue first."
+      : "";
 
   await interaction.editReply(
-    `Blessed **#${issueNumber}** — added \`ai-safe\` + \`discord-triage-blessed\` on GitHub. Cursor triage should start shortly.`,
+    `Blessed **#${issueNumber}** — added \`ai-safe\` + \`discord-triage-blessed\` on GitHub. Cursor triage should start shortly.\n\nTrack progress with \`/feature status issue:${issueNumber}\`.${closedWarning}`,
   );
+}
+
+async function handleFeatureStatus(
+  interaction: ChatInputCommandInteraction,
+  config: AppConfig,
+  store: FeatureStore,
+  guildId: string,
+): Promise<void> {
+  if (!isFeatureTriageUser(config, interaction.user.id)) {
+    await interaction.reply({ content: "Only feature triage maintainers can view pipeline status.", ephemeral: true });
+    return;
+  }
+
+  if (!config.githubToken) {
+    await interaction.reply({ content: "GitHub integration is not configured (`GITHUB_TOKEN` missing).", ephemeral: true });
+    return;
+  }
+
+  await interaction.deferReply({ ephemeral: true });
+
+  const issueNumber = interaction.options.getInteger("issue");
+  if (issueNumber !== null) {
+    const suggestion = store.getByGithubIssueNumber(issueNumber);
+    if (!suggestion || suggestion.guildId !== guildId) {
+      await interaction.editReply(`Issue #${issueNumber} is not a guild suggestion here.`);
+      return;
+    }
+
+    const inspection = await inspectFeaturePipeline({
+      repoOwner: config.releaseRepoOwner,
+      repoName: config.releaseRepoName,
+      githubToken: config.githubToken,
+      issueNumber,
+    });
+
+    store.recordPipelineEvent({
+      suggestionId: suggestion.id,
+      stage: inspection.stage,
+      status: inspection.blocker ? "stuck" : "pending",
+      detail: inspection.blocker,
+    });
+
+    await interaction.editReply(formatPipelineInspection(inspection).slice(0, 2000));
+    return;
+  }
+
+  const building = store.listBuildingForGuild(guildId);
+  if (building.length === 0) {
+    await interaction.editReply("No suggestions in **building** state. Bless one with `/feature choose`.");
+    return;
+  }
+
+  const sections: string[] = [];
+  for (const row of building.slice(0, 5)) {
+    const inspection = await inspectFeaturePipeline({
+      repoOwner: config.releaseRepoOwner,
+      repoName: config.releaseRepoName,
+      githubToken: config.githubToken,
+      issueNumber: row.githubIssueNumber,
+    });
+    sections.push(
+      `### #${row.githubIssueNumber}\n**${inspection.stageLabel}**${inspection.blocker ? `\n${inspection.blocker}` : ""}`,
+    );
+  }
+
+  await interaction.editReply(sections.join("\n\n").slice(0, 2000));
 }

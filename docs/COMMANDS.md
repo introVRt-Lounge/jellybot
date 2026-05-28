@@ -119,4 +119,12 @@ Ephemeral 3-step select flow: pick **#1**, **#2**, **#3** priorities from open s
 | --- | --- | --- |
 | `issue` | Yes | Autocomplete of open guild suggestions |
 
-Allowed Discord users: `FEATURE_TRIAGE_DISCORD_USER_IDS` (default: Radgey). Adds GitHub labels `discord-triage-blessed` + `ai-safe` to start Cursor triage without manual GitHub labeling.
+Allowed Discord users: `FEATURE_TRIAGE_DISCORD_USER_IDS` (default: Radgey; prod also includes HeavyGee and Ariabel). Adds GitHub labels `discord-triage-blessed` + `ai-safe` to start Cursor triage without manual GitHub labeling. Warns if the GitHub issue is already closed.
+
+### `/feature status` (maintainer)
+
+| Option | Required | Notes |
+| --- | --- | --- |
+| `issue` | No | GitHub issue number; omit to list all **building** suggestions |
+
+Shows pipeline checklist and **blocker** (e.g. branch pushed but no PR, CI failed, issue closed). Backed by GitHub inspection plus SQLite `feature_pipeline_events`. See [Issue to deployment](ISSUE_TO_DEPLOYMENT.md#pipeline-observability-85).

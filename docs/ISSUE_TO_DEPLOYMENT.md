@@ -189,10 +189,25 @@ Details: [architecture.md — Production release announce](architecture.md#produ
 | Symptom | Likely cause | Check |
 | --- | --- | --- |
 | Label added, no agent | Wrong labeler, workflow error, missing `CURSOR_API_KEY` | Actions → **Cursor Issue Triage**; issue labels |
-| Agent runs, no PR | Still working or failed in Cursor UI | [cursor.com/agents](https://cursor.com/agents) |
+| Agent runs, no PR | Still working or failed in Cursor UI; **issue closed before bless** | [cursor.com/agents](https://cursor.com/agents); `/feature status`; issue pipeline comment |
 | PR green, not merging | `no-automerge` / `human-needed`, fork PR, or CI still pending | Actions → **PR auto-merge** |
 | Merged, prod unchanged | Ship main did not run (pre-fix) or Watchtower | Actions → **Ship main**; `docker logs watchtower-minutely` |
 | Merged, no Discord post | Patch-only release or announce already recorded | Check latest GitHub Release semver; `bot-state.db` |
+| **Stuck at `building` in Discord** | No pipeline telemetry before #85 | `/feature status`; GitHub issue **Jellybot pipeline status** comment; Actions → **Feature pipeline watchdog** |
+
+## Pipeline observability (#85)
+
+Every blessed suggestion should be traceable end-to-end:
+
+| Layer | What it records |
+| --- | --- |
+| **SQLite** `feature_pipeline_events` | Stage transitions from bot reconcile loop |
+| **Discord** `/feature status` | Live checklist + blocker for maintainers |
+| **GitHub issue comment** | Auto-updated `jellybot-pipeline-status` table (watchdog workflow) |
+| **GitHub issue comment** | `jellybot-pipeline-agent-id:` when Cursor agent starts |
+| **Actions** | **Feature pipeline watchdog** (every 30 min + on label/PR events) posts Discord alert when stuck at `awaiting_pr` or `failed` |
+
+**#82 class failure:** branch pushed, no PR, issue already closed — stage `awaiting_pr`, blocker explains manual PR or reopen issue.
 
 ## Related files
 
