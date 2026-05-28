@@ -61,4 +61,12 @@ describe("FeatureStore", () => {
     expect(rankPointsForPosition(2)).toBe(2);
     expect(rankPointsForPosition(3)).toBe(1);
   });
+
+  test("leaderboard message id round trips", () => {
+    const store = makeStore();
+    expect(store.getLeaderboardMessageId("guild-a")).toBeNull();
+    store.setLeaderboardMessageId("guild-a", "msg-123");
+    expect(store.getLeaderboardMessageId("guild-a")).toBe("msg-123");
+    store.close();
+  });
 });
