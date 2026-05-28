@@ -1,5 +1,7 @@
+import type { Client } from "discord.js";
 import type { AppConfig } from "../config.ts";
 import type { FeatureStore } from "./feature-store.ts";
+import { notifyPipelineOpsInBotspam } from "./pipeline-discord-notify.ts";
 import { inspectFeaturePipeline } from "./pipeline-tracker.ts";
 import type { PipelineStageId } from "./pipeline-stages.ts";
 
@@ -20,6 +22,7 @@ function pipelineEventStatus(stage: PipelineStageId): "ok" | "pending" | "failed
 }
 
 export async function reconcileBuildingSuggestions(
+  client: Client,
   config: AppConfig,
   store: FeatureStore,
   guildId: string,
@@ -64,6 +67,20 @@ export async function reconcileBuildingSuggestions(
             blocker: inspection.blocker,
           }),
         );
+
+        if ((status === "stuck" || status === "failed") && config.discordBotspamChannelId) {
+          try {
+            await notifyPipelineOpsInBotspam(client, config, inspection);
+          } catch (error) {
+            console.error(
+              JSON.stringify({
+                event: "feature.pipeline.botspam_notify_error",
+                issueNumber: suggestion.githubIssueNumber,
+                error: error instanceof Error ? error.message : "unknown error",
+              }),
+            );
+          }
+        }
       }
 
       if (inspection.merged && inspection.stage === "awaiting_ship") {
@@ -88,13 +105,14 @@ export async function reconcileBuildingSuggestions(
 }
 
 export function startFeaturePipelineReconcileLoop(
+  client: Client,
   config: AppConfig,
   store: FeatureStore,
   intervalMs = 5 * 60_000,
 ): () => void {
   const tick = () => {
     for (const guildId of store.listGuildIdsWithBuilding()) {
-      void reconcileBuildingSuggestions(config, store, guildId);
+      void reconcileBuildingSuggestions(client, config, store, guildId);
     }
   };
 

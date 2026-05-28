@@ -96,7 +96,7 @@ When `@radgey-cmd` adds **`ai-triage`** or **`ai-safe`**:
 3. **Action:** POST to Cursor Cloud Agents API (`CURSOR_API_KEY` repo secret).
 4. **Branch contract:** `ai-triage/fix-issue-{number}`.
 5. **Marker:** label **`ai-triage-enqueued`** on the issue (prevents duplicate starts).
-6. **Discord heads-up:** webhook posts `Uh oh... seems like [#N title](issue) is under development... 👀` (secret `DISCORD_TRIAGE_DISPATCH_WEBHOOK_URL`).
+6. **Discord ops:** pipeline stuck/failed posts to **`DISCORD_BOTSPAM_CHANNEL_ID`** (#botspam) from the running bot — never to the feature suggestions / movies channel.
 
 Monitor the run at [cursor.com/agents](https://cursor.com/agents) (Cloud Agents — not Cursor Dashboard **Automations**, which are PR-scoped).
 
@@ -206,7 +206,7 @@ Every blessed suggestion should be traceable end-to-end:
 | **GitHub issue comment** | Auto-updated `jellybot-pipeline-status` table (watchdog workflow) |
 | **GitHub issue comment** | `jellybot-pipeline-agent-id:` when Cursor agent starts |
 | **GitHub issue comment** | `jellybot-agent-conversation` when agent finishes (**Cursor agent conversation archive** workflow) |
-| **Actions** | **Feature pipeline watchdog** (every 30 min + on label/PR events) posts Discord alert when stuck at `awaiting_pr` or `failed` |
+| **Actions** | **Feature pipeline watchdog** updates GitHub issue comments only (no Discord webhook) |
 
 **#82 class failure:** branch pushed, no PR, issue already closed — stage `awaiting_pr`, blocker explains manual PR or reopen issue.
 
