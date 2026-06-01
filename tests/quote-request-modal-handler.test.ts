@@ -226,6 +226,128 @@ describe("handleQuoteRequestModalSubmit", () => {
     }
   });
 
+  test("when movie is already in Radarr, captures the existing id and persists with the right status", async () => {
+    const restore = patchFetch((url, init) => {
+      if (url.endsWith("/api/v3/qualityprofile")) {
+        return jsonResponse([{ id: 10, name: "HD-1080p (no 4K)" }]);
+      }
+      if (url.endsWith("/api/v3/rootfolder")) {
+        return jsonResponse([{ id: 1, path: "/data/movies", freeSpace: 50 * 1024 ** 3 }]);
+      }
+      if (url.includes("/movie/lookup?term=Serenity")) {
+        return jsonResponse([{ tmdbId: 16320, title: "Serenity", year: 2005 }]);
+      }
+      if (url.includes("/movie/lookup?term=tmdb%3A16320")) {
+        return jsonResponse([{ tmdbId: 16320, title: "Serenity", year: 2005 }]);
+      }
+      if (init.method === "POST" && url.endsWith("/api/v3/movie")) {
+        const body = JSON.stringify([
+          {
+            propertyName: "TmdbId",
+            errorMessage: "This movie has already been added",
+            attemptedValue: 16320,
+            severity: "error",
+            errorCode: "MovieExistsValidator",
+          },
+        ]);
+        return new Response(body, { status: 400, headers: { "Content-Type": "application/json" } });
+      }
+      if (url.includes("/api/v3/movie?tmdbId=16320")) {
+        return jsonResponse([
+          { id: 555, tmdbId: 16320, title: "Serenity", year: 2005, hasFile: false, monitored: true },
+        ]);
+      }
+      throw new Error("unexpected url " + url);
+    });
+
+    try {
+      const dbPath = tmpDb();
+      const { interaction, replies } = makeInteraction({
+        movie: "Serenity",
+        quote: "I am a leaf on the wind",
+      });
+
+      await handleQuoteRequestModalSubmit(interaction as never, {
+        botStateDbPath: dbPath,
+        ...baseRadarrConfig,
+      });
+
+      const reply = String(replies.editReply[0]);
+      expect(reply).toContain("already in Radarr");
+      expect(reply).toContain("hunting for a release");
+
+      const store = new QuoteRequestStore(dbPath);
+      try {
+        const pending = store.listPending();
+        expect(pending).toHaveLength(1);
+        expect(pending[0]?.acquisitionKind).toBe("radarr");
+        expect(pending[0]?.acquisitionExternalId).toBe(555);
+        expect(pending[0]?.acquisitionStatus).toBe("searching");
+      } finally {
+        store.close();
+      }
+    } finally {
+      restore();
+    }
+  });
+
+  test("when already-in-Radarr movie has a file, status starts as imported", async () => {
+    const restore = patchFetch((url, init) => {
+      if (url.endsWith("/api/v3/qualityprofile")) {
+        return jsonResponse([{ id: 10, name: "HD-1080p (no 4K)" }]);
+      }
+      if (url.endsWith("/api/v3/rootfolder")) {
+        return jsonResponse([{ id: 1, path: "/data/movies", freeSpace: 50 * 1024 ** 3 }]);
+      }
+      if (url.includes("/movie/lookup?term=")) {
+        return jsonResponse([{ tmdbId: 11814, title: "Weird Science", year: 1985 }]);
+      }
+      if (init.method === "POST" && url.endsWith("/api/v3/movie")) {
+        return new Response(
+          JSON.stringify([{ errorCode: "MovieExistsValidator", errorMessage: "already exists" }]),
+          { status: 400 },
+        );
+      }
+      if (url.includes("/api/v3/movie?tmdbId=11814")) {
+        return jsonResponse([
+          {
+            id: 777,
+            tmdbId: 11814,
+            title: "Weird Science",
+            year: 1985,
+            hasFile: true,
+            monitored: true,
+          },
+        ]);
+      }
+      throw new Error("unexpected url " + url);
+    });
+
+    try {
+      const dbPath = tmpDb();
+      const { interaction } = makeInteraction({
+        movie: "Weird Science",
+        quote: "fictional",
+      });
+
+      await handleQuoteRequestModalSubmit(interaction as never, {
+        botStateDbPath: dbPath,
+        ...baseRadarrConfig,
+      });
+
+      const store = new QuoteRequestStore(dbPath);
+      try {
+        const pending = store.listPending();
+        expect(pending[0]?.acquisitionStatus).toBe("imported");
+        expect(pending[0]?.acquisitionExternalId).toBe(777);
+      } finally {
+        store.close();
+      }
+    } finally {
+      restore();
+    }
+  });
+
   test("rejects empty fields", async () => {
     const dbPath = tmpDb();
     const { interaction, replies } = makeInteraction({
