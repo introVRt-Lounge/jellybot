@@ -99,15 +99,38 @@ jobs:
 
           auth_header="Authorization: Basic $(printf '%s' "${CURSOR_API_KEY}:" | base64 -w0)"
 
-          response="$(curl -fsS -X POST "https://api.cursor.com/v0/agents" \
+          response_file="$(mktemp)"
+          http_code="$(curl -sS -o "${response_file}" -w '%{http_code}' \
+            -X POST "https://api.cursor.com/v0/agents" \
             -H "${auth_header}" \
             -H "Content-Type: application/json" \
             --data "${request_body}")"
+
+          response="$(cat "${response_file}")"
+          rm -f "${response_file}"
+
+          echo "Cursor API responded HTTP ${http_code}"
+          echo "----- response body -----"
+          echo "${response}"
+          echo "-------------------------"
+
+          if [ "${http_code}" -lt 200 ] || [ "${http_code}" -ge 300 ]; then
+            {
+              printf 'cursor_api_http=%s\n' "${http_code}"
+              printf 'cursor_api_body<<EOF_BODY\n%s\nEOF_BODY\n' "${response}"
+            } >> "${GITHUB_OUTPUT}"
+            echo "Cursor API call failed with HTTP ${http_code}." >&2
+            exit 1
+          fi
 
           echo "${response}" | jq '.'
           agent_id="$(echo "${response}" | jq -r '.id // empty')"
           if [ -z "${agent_id}" ]; then
             echo "Cursor API did not return an agent id."
+            echo "cursor_api_http=${http_code}" >> "${GITHUB_OUTPUT}"
+            {
+              printf 'cursor_api_body<<EOF_BODY\n%s\nEOF_BODY\n' "${response}"
+            } >> "${GITHUB_OUTPUT}"
             exit 1
           fi
           echo "agent_id=${agent_id}" >> "${GITHUB_OUTPUT}"
@@ -150,6 +173,38 @@ jobs:
       - name: Mark issue enqueued
         if: steps.guard.outputs.skip != 'true'
         run: gh issue edit "${ISSUE_NUMBER}" --repo "${REPOSITORY}" --add-label "${ENQUEUED_LABEL}"
+
+      - name: Comment Cursor API failure on issue
+        if: failure() && steps.guard.outputs.skip != 'true' && steps.agent.outputs.cursor_api_http != ''
+        env:
+          CURSOR_HTTP: ${{ steps.agent.outputs.cursor_api_http }}
+          CURSOR_BODY: ${{ steps.agent.outputs.cursor_api_body }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          body="$(cat <<EOF
+          <!-- jellybot-pipeline-cursor-api-error -->
+
+          **Jellybot pipeline — Cursor API rejected the agent request**
+
+          | Field | Value |
+          | --- | --- |
+          | HTTP status | \`${CURSOR_HTTP}\` |
+          | Workflow run | [link](${RUN_URL}) |
+          | Branch (intended) | \`${BRANCH_NAME}\` |
+
+          <details><summary>Cursor API response body</summary>
+
+          \`\`\`json
+          ${CURSOR_BODY}
+          \`\`\`
+
+          </details>
+
+          \`/feature status issue:${ISSUE_NUMBER}\` will surface this as the blocker reason.
+          EOF
+          )"
+          gh issue comment "${ISSUE_NUMBER}" --repo "${REPOSITORY}" --body "${body}"
 
       - name: Start conversation archive workflow
         if: steps.guard.outputs.skip != 'true'
