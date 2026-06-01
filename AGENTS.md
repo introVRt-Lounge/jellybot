@@ -51,9 +51,11 @@ When a feature is **complete and tests pass**, the default next action is **comm
 
 ### Deploy
 
-After merge to `main`, **prod** updates via **Ship main** → GHCR `:latest` → Watchtower recreates `~/docker/jellybot` (no manual pull in normal ops). Run **`make register-commands`** with **prod** credentials (`~/docker/jellybot/.env`) for each prod guild — not the dev `.env` app id.
+After merge to `main`, **prod** updates via **Ship main** → GHCR `:latest` → Watchtower recreates `~/docker/jellybot` (no manual pull in normal ops). Slash commands now **auto-register on startup** when the command body hash differs from the last applied hash (stored in `bot-state.db.command_sync_state`); empty bodies are refused defensively. The first restart after a command change emits `discord.commands.synced`; subsequent restarts log `discord.commands.already_synced` and make no Discord API calls.
 
-**Dev bot** (`jellybot-dev` / Bottitesto) is for **you** to confirm behavior (`bun run ci`, optional `make dev-refresh`, register with dev env) **before** merging to `main`. If a PR is merged, **prod** should have the code after Watchtower; slash commands still need a prod register pass.
+`make register-commands` (and the `register` compose profile) remain as a **manual escape hatch** — run it (or `JELLYBOT_COMMAND_SYNC_FORCE=1` on the running container) only when Discord state has diverged from `bot-state.db` and you need a forced re-sync.
+
+**Dev bot** (`jellybot-dev` / Bottitesto) is for **you** to confirm behavior (`bun run ci`, optional `make dev-refresh`) **before** merging to `main`. If a PR is merged, prod auto-registers on the next Watchtower recreate.
 
 ---
 

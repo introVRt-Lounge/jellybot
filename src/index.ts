@@ -8,17 +8,23 @@ import {
   isClipPreviewButton,
   isClipPreviewModal,
 } from "./clip-preview/handlers.ts";
-import { handleClipAutocomplete, handleClipCommand } from "./commands/clip.ts";
+import { clipCommand, handleClipAutocomplete, handleClipCommand } from "./commands/clip.ts";
 import {
+  featureCommand,
   handleFeatureAutocomplete,
   handleFeatureCommand,
   isFeatureRankSelect,
 } from "./commands/feature.ts";
-import { handleQuoteAutocomplete, handleQuoteCommand } from "./commands/quote.ts";
-import { handleQuoteWishCommand, QUOTE_WISH_COMMAND_NAME } from "./commands/quotewish.ts";
+import { handleQuoteAutocomplete, handleQuoteCommand, quoteCommand } from "./commands/quote.ts";
+import {
+  handleQuoteWishCommand,
+  QUOTE_WISH_COMMAND_NAME,
+  quoteWishCommand,
+} from "./commands/quotewish.ts";
 import {
   handleSubcoverageAutocomplete,
   handleSubcoverageCommand,
+  subcoverageCommand,
 } from "./commands/subcoverage.ts";
 import { startQuoteRequestReconcileLoop } from "./quote-requests/reconciler.ts";
 import { loadConfig } from "./config.ts";
@@ -27,6 +33,8 @@ import {
   ensureNoStaleGlobalCommands,
   planCommandSync,
 } from "./discord/command-sync.ts";
+import { autoSyncSlashCommands } from "./discord/command-sync-auto.ts";
+import { BotStateStore } from "./release/bot-state.ts";
 import { startHealthServer, type HealthState } from "./health.ts";
 import { JellyfinClient } from "./jellyfin.ts";
 import { indexSubtitles } from "./subtitles/indexer.ts";
@@ -107,10 +115,11 @@ client.once(Events.ClientReady, async (readyClient) => {
   );
 
   const commandSyncPlan = planCommandSync(config.discordGuildIds);
-  if (commandSyncPlan.mode === "guild") {
-    try {
-      const rest = new REST({ version: "10" }).setToken(config.discordToken);
-      const registry = createRestCommandRegistry(rest, config.discordClientId);
+  try {
+    const rest = new REST({ version: "10" }).setToken(config.discordToken);
+    const registry = createRestCommandRegistry(rest, config.discordClientId);
+
+    if (commandSyncPlan.mode === "guild") {
       const cleared = await ensureNoStaleGlobalCommands(registry, commandSyncPlan);
       if (cleared > 0) {
         console.warn(
@@ -121,14 +130,68 @@ client.once(Events.ClientReady, async (readyClient) => {
           }),
         );
       }
-    } catch (error) {
-      console.error(
-        JSON.stringify({
-          event: "discord.commands.stale_globals_purge_failed",
-          error: error instanceof Error ? error.message : "unknown error",
-        }),
-      );
     }
+
+    const body = [
+      clipCommand.toJSON(),
+      quoteCommand.toJSON(),
+      quoteWishCommand.toJSON(),
+      featureCommand.toJSON(),
+      subcoverageCommand.toJSON(),
+    ];
+    const syncStateStore = new BotStateStore(config.botStateDbPath);
+    try {
+      const outcome = await autoSyncSlashCommands({
+        registry,
+        body,
+        plan: commandSyncPlan,
+        store: syncStateStore,
+      });
+      if (outcome.kind === "synced") {
+        console.info(
+          JSON.stringify({
+            event: "discord.commands.synced",
+            scopeKey: outcome.scopeKey,
+            bodyHash: outcome.bodyHash,
+            guildIds: outcome.guildIds,
+            globalsCleared: outcome.globalsCleared,
+            commandCount: body.length,
+          }),
+        );
+      } else if (outcome.kind === "noop") {
+        console.info(
+          JSON.stringify({
+            event: "discord.commands.already_synced",
+            scopeKey: outcome.scopeKey,
+            bodyHash: outcome.bodyHash,
+          }),
+        );
+      } else if (outcome.kind === "refused_empty_body") {
+        console.error(
+          JSON.stringify({
+            event: "discord.commands.refused_empty_body",
+            scopeKey: outcome.scopeKey,
+            reason: "body length is zero - refusing to wipe registered commands",
+          }),
+        );
+      } else {
+        console.warn(
+          JSON.stringify({
+            event: "discord.commands.skipped_no_scope",
+            mode: commandSyncPlan.mode,
+          }),
+        );
+      }
+    } finally {
+      syncStateStore.close();
+    }
+  } catch (error) {
+    console.error(
+      JSON.stringify({
+        event: "discord.commands.sync_failed",
+        error: error instanceof Error ? error.message : "unknown error",
+      }),
+    );
   }
 
   const announcer = createReleaseAnnouncerFromConfig(config);
