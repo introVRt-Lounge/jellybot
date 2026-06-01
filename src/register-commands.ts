@@ -3,6 +3,7 @@ import "dotenv/config";
 import { clipCommand } from "./commands/clip.ts";
 import { featureCommand } from "./commands/feature.ts";
 import { quoteCommand } from "./commands/quote.ts";
+import { quoteWishCommand } from "./commands/quotewish.ts";
 import { subcoverageCommand } from "./commands/subcoverage.ts";
 import { loadConfig } from "./config.ts";
 import {
@@ -16,6 +17,7 @@ const rest = new REST({ version: "10" }).setToken(config.discordToken);
 const body = [
   clipCommand.toJSON(),
   quoteCommand.toJSON(),
+  quoteWishCommand.toJSON(),
   featureCommand.toJSON(),
   subcoverageCommand.toJSON(),
 ];
