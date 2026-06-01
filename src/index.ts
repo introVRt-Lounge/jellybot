@@ -16,11 +16,8 @@ import {
   isFeatureRankSelect,
 } from "./commands/feature.ts";
 import { handleQuoteAutocomplete, handleQuoteCommand, quoteCommand } from "./commands/quote.ts";
-import {
-  handleQuoteWishCommand,
-  QUOTE_WISH_COMMAND_NAME,
-  quoteWishCommand,
-} from "./commands/quotewish.ts";
+import { handleQuoteRequestModalSubmit } from "./quote-requests/handle-modal.ts";
+import { isQuoteRequestModal } from "./quote-requests/modal.ts";
 import {
   handleSubcoverageAutocomplete,
   handleSubcoverageCommand,
@@ -135,7 +132,6 @@ client.once(Events.ClientReady, async (readyClient) => {
     const body = [
       clipCommand.toJSON(),
       quoteCommand.toJSON(),
-      quoteWishCommand.toJSON(),
       featureCommand.toJSON(),
       subcoverageCommand.toJSON(),
     ];
@@ -216,7 +212,7 @@ client.once(Events.ClientReady, async (readyClient) => {
     startFeaturePipelineReconcileLoop(client, config, featureStore);
   }
 
-  startQuoteRequestReconcileLoop({ client, config });
+  startQuoteRequestReconcileLoop({ client, config, jellyfin });
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {
@@ -316,6 +312,26 @@ client.on(Events.InteractionCreate, async (interaction) => {
       );
       if (!interaction.replied && !interaction.deferred) {
         await interaction.reply({ content: "Something went wrong with that action.", ephemeral: true }).catch(() => undefined);
+      }
+    }
+    return;
+  }
+
+  if (interaction.isModalSubmit() && isQuoteRequestModal(interaction)) {
+    try {
+      await handleQuoteRequestModalSubmit(interaction, config);
+    } catch (error) {
+      console.error(
+        JSON.stringify({
+          event: "quote_request.modal_dispatch_error",
+          userId: interaction.user.id,
+          error: error instanceof Error ? error.message : "unknown error",
+        }),
+      );
+      if (!interaction.replied && !interaction.deferred) {
+        await interaction
+          .reply({ content: "Something went wrong handling that request.", ephemeral: true })
+          .catch(() => undefined);
       }
     }
     return;
@@ -452,34 +468,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
       await interaction
         .reply({
           content: "Something went wrong while handling that command.",
-          ephemeral: true,
-        })
-        .catch(() => undefined);
-    }
-    return;
-  }
-
-  if (interaction.commandName === QUOTE_WISH_COMMAND_NAME) {
-    try {
-      await handleQuoteWishCommand(interaction, config);
-    } catch (error) {
-      console.error(
-        JSON.stringify({
-          event: "quotewish.error",
-          command: QUOTE_WISH_COMMAND_NAME,
-          userId: interaction.user.id,
-          error: error instanceof Error ? error.message : "unknown error",
-        }),
-      );
-      if (interaction.deferred || interaction.replied) {
-        await interaction
-          .editReply("Something went wrong while saving that wish.")
-          .catch(() => undefined);
-        return;
-      }
-      await interaction
-        .reply({
-          content: "Something went wrong while saving that wish.",
           ephemeral: true,
         })
         .catch(() => undefined);

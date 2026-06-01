@@ -31,6 +31,12 @@ export type AppConfig = {
   featureTriageDiscordUserIds: string[];
   /** Maintainer ops alerts (pipeline stuck/failed). Never use feature suggestions / movies channel. */
   discordBotspamChannelId?: string;
+  radarrUrl?: string;
+  radarrApiKey?: string;
+  radarrQualityProfileId?: number;
+  radarrRootFolderPath?: string;
+  /** Refuse acquisitions when the Radarr root folder has less than this many GB free (default 3). */
+  radarrMinFreeGb: number;
 };
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
@@ -66,7 +72,19 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     featureSuggestionsChannelId: env.FEATURE_SUGGESTIONS_CHANNEL_ID?.trim() || undefined,
     featureTriageDiscordUserIds: parseCsvIds(env.FEATURE_TRIAGE_DISCORD_USER_IDS ?? "563807698223890442"),
     discordBotspamChannelId: env.DISCORD_BOTSPAM_CHANNEL_ID?.trim() || undefined,
+    radarrUrl: env.RADARR_URL?.trim().replace(/\/+$/, "") || undefined,
+    radarrApiKey: env.RADARR_API_KEY?.trim() || undefined,
+    radarrQualityProfileId: parseOptionalNumber(env.RADARR_QUALITY_PROFILE_ID),
+    radarrRootFolderPath: env.RADARR_ROOT_FOLDER_PATH?.trim() || undefined,
+    radarrMinFreeGb: Number(env.RADARR_MIN_FREE_GB ?? 3),
   };
+}
+
+function parseOptionalNumber(raw: string | undefined): number | undefined {
+  const trimmed = raw?.trim();
+  if (!trimmed) return undefined;
+  const value = Number(trimmed);
+  return Number.isFinite(value) ? value : undefined;
 }
 
 function parseCsvIds(raw: string): string[] {

@@ -1,7 +1,8 @@
 import type { Client, Message, TextChannel } from "discord.js";
 import type { AppConfig } from "../config.ts";
 import { displayTitleWithYear } from "../display-title.ts";
-import { formatEpisodeLabel } from "../jellyfin.ts";
+import { formatEpisodeLabel, type JellyfinClient } from "../jellyfin.ts";
+import { RadarrApiError, RadarrClient } from "../radarr/client.ts";
 import { encodeQuoteMatchToken } from "../subtitles/match-token.ts";
 import { openSubtitleIndex, type SubtitleIndex } from "../subtitles/index-db.ts";
 import { formatTimestamp } from "../time.ts";
@@ -12,7 +13,14 @@ const DEFAULT_INTERVAL_MS = 5 * 60_000;
 
 export type QuoteRequestReconcilerDeps = {
   client: Pick<Client, "channels">;
-  config: Pick<AppConfig, "botStateDbPath" | "subtitleDbPath">;
+  config: Pick<
+    AppConfig,
+    | "botStateDbPath"
+    | "subtitleDbPath"
+    | "radarrUrl"
+    | "radarrApiKey"
+  >;
+  jellyfin?: Pick<JellyfinClient, "findItemByTmdbId" | "triggerLibraryRefresh">;
 };
 
 export function startQuoteRequestReconcileLoop(
@@ -42,6 +50,8 @@ export async function runQuoteRequestReconcile(deps: QuoteRequestReconcilerDeps)
   let index: SubtitleIndex | null = null;
 
   try {
+    await pollRadarrAcquisitions(deps, store);
+
     const pending = store.listPending();
     if (pending.length === 0) {
       return;
@@ -204,4 +214,150 @@ function displayMatchTitle(match: QuoteRequestMatch): string {
 function truncate(value: string, max: number): string {
   if (value.length <= max) return value;
   return `${value.slice(0, Math.max(0, max - 1))}…`;
+}
+
+async function pollRadarrAcquisitions(
+  deps: QuoteRequestReconcilerDeps,
+  store: QuoteRequestStore,
+): Promise<void> {
+  if (!deps.config.radarrUrl || !deps.config.radarrApiKey) {
+    return;
+  }
+
+  const acquiring = store.listAcquiring();
+  if (acquiring.length === 0) {
+    return;
+  }
+
+  const radarrRows = acquiring.filter(
+    (row) => row.acquisitionKind === "radarr" && row.acquisitionExternalId !== null,
+  );
+  if (radarrRows.length === 0) {
+    return;
+  }
+
+  const client = new RadarrClient(deps.config.radarrUrl, deps.config.radarrApiKey);
+  let needsLibraryRefresh = false;
+
+  for (const row of radarrRows) {
+    if (row.acquisitionExternalId === null) continue;
+    try {
+      const movie = await client.getMovie(row.acquisitionExternalId);
+      const previous = row.acquisitionStatus;
+
+      if (movie.hasFile) {
+        if (previous !== "imported" && previous !== "indexed") {
+          store.setAcquisitionStatus({
+            id: row.id,
+            status: "imported",
+            metadata: JSON.stringify({
+              ...safeJson(row.acquisitionMetadata),
+              radarrMovieFilePath: movie.movieFile?.path,
+              radarrSizeOnDisk: movie.sizeOnDisk,
+              importedAt: new Date().toISOString(),
+            }),
+          });
+          needsLibraryRefresh = true;
+          console.info(
+            JSON.stringify({
+              event: "quote_request.radarr.imported",
+              requestId: row.id,
+              radarrMovieId: movie.id,
+              tmdbId: movie.tmdbId,
+              path: movie.movieFile?.path,
+            }),
+          );
+        }
+
+        // Try to find the item in Jellyfin by tmdbId; once present, mark indexed
+        // so the FTS-match pass picks it up on this or a future tick.
+        if (deps.jellyfin && previous !== "indexed") {
+          try {
+            const jellyfinItem = await deps.jellyfin.findItemByTmdbId(movie.tmdbId);
+            if (jellyfinItem) {
+              store.setAcquisitionStatus({ id: row.id, status: "indexed" });
+              console.info(
+                JSON.stringify({
+                  event: "quote_request.radarr.in_jellyfin",
+                  requestId: row.id,
+                  jellyfinItemId: jellyfinItem.id,
+                  tmdbId: movie.tmdbId,
+                }),
+              );
+            }
+          } catch (error) {
+            console.warn(
+              JSON.stringify({
+                event: "quote_request.jellyfin_lookup_error",
+                requestId: row.id,
+                tmdbId: movie.tmdbId,
+                error: error instanceof Error ? error.message : "unknown error",
+              }),
+            );
+          }
+        }
+      } else if (previous === "searching" && movie.monitored) {
+        // Radarr has the movie metadata and is searching for releases - no state change yet,
+        // just record progress hint in metadata. Skipped for v1 to keep noise down.
+      }
+    } catch (error) {
+      const status = error instanceof RadarrApiError ? error.status : undefined;
+      if (status === 404) {
+        store.setAcquisitionStatus({
+          id: row.id,
+          status: "failed",
+          metadata: JSON.stringify({
+            ...safeJson(row.acquisitionMetadata),
+            failureReason: "radarr_404",
+            failedAt: new Date().toISOString(),
+          }),
+        });
+        console.warn(
+          JSON.stringify({
+            event: "quote_request.radarr.gone",
+            requestId: row.id,
+            radarrMovieId: row.acquisitionExternalId,
+          }),
+        );
+        continue;
+      }
+      console.error(
+        JSON.stringify({
+          event: "quote_request.radarr.poll_error",
+          requestId: row.id,
+          radarrMovieId: row.acquisitionExternalId,
+          status,
+          error: error instanceof Error ? error.message : "unknown error",
+        }),
+      );
+    }
+  }
+
+  if (needsLibraryRefresh && deps.jellyfin) {
+    try {
+      await deps.jellyfin.triggerLibraryRefresh();
+      console.info(
+        JSON.stringify({ event: "quote_request.jellyfin.refresh_triggered" }),
+      );
+    } catch (error) {
+      console.warn(
+        JSON.stringify({
+          event: "quote_request.jellyfin.refresh_failed",
+          error: error instanceof Error ? error.message : "unknown error",
+        }),
+      );
+    }
+  }
+}
+
+function safeJson(raw: string | null): Record<string, unknown> {
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw);
+    return typeof parsed === "object" && parsed !== null
+      ? (parsed as Record<string, unknown>)
+      : {};
+  } catch {
+    return {};
+  }
 }
