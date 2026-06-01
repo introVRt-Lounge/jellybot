@@ -13,8 +13,15 @@ export const QUOTE_REQUEST_FIELD_QUOTE = "quote";
 /** Magic autocomplete value indicating "user wants to request a quote that isn't indexed". */
 export const QUOTE_REQUEST_AUTOCOMPLETE_TOKEN = "request:new";
 
+/**
+ * Discord autocomplete only fills the option's value; the user still has to
+ * press Enter to submit the slash command. The label needs to make that two-step
+ * action explicit, otherwise users pick the entry expecting a modal to pop and
+ * get nothing. Markdown is NOT rendered in autocomplete, so emphasis is via
+ * UPPERCASE and not asterisks.
+ */
 export const QUOTE_REQUEST_AUTOCOMPLETE_LABEL =
-  "Can't find it? Submit a request - we'll fetch the movie and ping you";
+  "Can't find it? Click and SUBMIT this choice - you can request it!";
 
 export function isQuoteRequestModal(interaction: ModalSubmitInteraction): boolean {
   return interaction.customId === QUOTE_REQUEST_MODAL_ID;

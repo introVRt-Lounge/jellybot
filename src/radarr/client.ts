@@ -106,6 +106,17 @@ export class RadarrClient {
     return this.request<RadarrMovie>("GET", `/api/v3/movie/${id}`);
   }
 
+  /**
+   * Look up an already-added movie by TMDB id. Used to recover the Radarr
+   * internal id when addMovie returns 400 with MovieExistsValidator.
+   */
+  async findMovieByTmdbId(tmdbId: number): Promise<RadarrMovie | null> {
+    const path = `/api/v3/movie?tmdbId=${tmdbId}`;
+    const matches = await this.request<RadarrMovie[]>("GET", path);
+    if (!Array.isArray(matches) || matches.length === 0) return null;
+    return matches.find((m) => m.tmdbId === tmdbId) ?? matches[0] ?? null;
+  }
+
   private async request<T>(method: "GET" | "POST", path: string, body?: unknown): Promise<T> {
     const url = `${this.baseUrl}${path}`;
     const response = await this.fetchImpl(url, {

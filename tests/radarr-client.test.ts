@@ -89,6 +89,29 @@ describe("RadarrClient", () => {
     expect((caught as RadarrApiError).status).toBe(401);
   });
 
+  test("findMovieByTmdbId returns the matching movie or null", async () => {
+    const { fetch, calls } = recordingFetch((url) => {
+      if (url.includes("?tmdbId=16320")) {
+        return jsonResponse([
+          { id: 555, tmdbId: 16320, title: "Serenity", year: 2005, hasFile: false, monitored: true },
+        ]);
+      }
+      if (url.includes("?tmdbId=999999")) {
+        return jsonResponse([]);
+      }
+      throw new Error("unexpected url " + url);
+    });
+    const client = new RadarrClient("http://radarr/radarr", "key", fetch);
+
+    const found = await client.findMovieByTmdbId(16320);
+    expect(found?.id).toBe(555);
+
+    const missing = await client.findMovieByTmdbId(999999);
+    expect(missing).toBeNull();
+
+    expect(calls[0]?.url).toBe("http://radarr/radarr/api/v3/movie?tmdbId=16320");
+  });
+
   test("getMovie returns the parsed payload", async () => {
     const { fetch } = recordingFetch(() =>
       jsonResponse({ id: 42, tmdbId: 11814, title: "Weird Science", year: 1985, hasFile: true, monitored: true, movieFile: { path: "/data/movies/Weird.mkv" } }),

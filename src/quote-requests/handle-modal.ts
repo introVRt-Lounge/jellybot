@@ -1,4 +1,4 @@
-import type { ModalSubmitInteraction } from "discord.js";
+import { MessageFlags, type ModalSubmitInteraction } from "discord.js";
 import type { AppConfig } from "../config.ts";
 import { RadarrApiError, RadarrClient } from "../radarr/client.ts";
 import {
@@ -30,7 +30,7 @@ export async function handleQuoteRequestModalSubmit(
   if (!interaction.guildId || !interaction.channelId) {
     await interaction.reply({
       content: "Use the quote request flow inside a server channel.",
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
     return;
   }
@@ -39,12 +39,12 @@ export async function handleQuoteRequestModalSubmit(
   if (!movie || !quote) {
     await interaction.reply({
       content: "Both movie and quote are required.",
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
     return;
   }
 
-  await interaction.deferReply({ ephemeral: true });
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
   const store = new QuoteRequestStore(config.botStateDbPath);
   try {
@@ -116,18 +116,12 @@ export async function handleQuoteRequestModalSubmit(
         defaults,
       });
     } catch (error) {
-      if (error instanceof RadarrApiError && error.status === 400 && /already exists/i.test(error.message)) {
-        // Already in Radarr - look it up and reuse the id.
-        const existing = await client.lookup(`tmdb:${pick.candidate.tmdbId}`);
-        const fallback = existing.find((m) => m.tmdbId === pick.candidate.tmdbId);
-        if (!fallback) {
+      if (isMovieAlreadyAddedError(error)) {
+        const existing = await client.findMovieByTmdbId(pick.candidate.tmdbId);
+        if (!existing) {
           throw error;
         }
-        // Re-fetch by lookup to satisfy types; for already-added movies the lookup
-        // result still has tmdbId/title but no Radarr internal id, so we have to
-        // call /movie?tmdbId= via a follow-up. Simpler: persist the request without
-        // an external id and let the reconciler treat it as State B until the file
-        // appears in Jellyfin.
+        const status = existing.hasFile ? "imported" : "searching";
         const row = store.insert({
           requesterDiscordId: interaction.user.id,
           requesterName: interaction.user.displayName || interaction.user.username,
@@ -135,11 +129,27 @@ export async function handleQuoteRequestModalSubmit(
           channelId: interaction.channelId,
           movieText: movie,
           quoteText: quote,
+          acquisitionKind: "radarr",
+          acquisitionExternalId: existing.id,
+          acquisitionStatus: status,
+          acquisitionMetadata: JSON.stringify({
+            tmdbId: pick.candidate.tmdbId,
+            title: pick.candidate.title,
+            year: pick.candidate.year,
+            alreadyInRadarr: true,
+            hasFile: existing.hasFile,
+          }),
         });
-        logQuoteRequestEvent("created.already_in_radarr", row.id, interaction);
-        await interaction.editReply(
-          `**${pick.candidate.title}${pick.candidate.year ? ` (${pick.candidate.year})` : ""}** is already in Radarr - I'll watch and ping you when the quote becomes searchable.${altsLine}`,
-        );
+        logQuoteRequestEvent("created.already_in_radarr", row.id, interaction, {
+          radarrMovieId: existing.id,
+          tmdbId: pick.candidate.tmdbId,
+          hasFile: existing.hasFile,
+        });
+        const heading = `**${pick.candidate.title}${pick.candidate.year ? ` (${pick.candidate.year})` : ""}** is already in Radarr`;
+        const tail = existing.hasFile
+          ? "and Radarr has a file already - I'll re-scan Jellyfin and ping you when the quote becomes searchable."
+          : "and Radarr is still hunting for a release - I'll ping you when the file lands and the quote becomes searchable.";
+        await interaction.editReply(`${heading} ${tail}${altsLine}`);
         return;
       }
       throw error;
@@ -222,4 +232,15 @@ function logQuoteRequestEvent(
 function truncate(value: string, max: number): string {
   if (value.length <= max) return value;
   return `${value.slice(0, Math.max(0, max - 1))}…`;
+}
+
+/**
+ * Radarr returns 400 with errorCode "MovieExistsValidator" when adding a movie
+ * that's already in the library. The exact prose can be "already been added" or
+ * "already exists" depending on version, so match on the canonical error code
+ * with a prose fallback.
+ */
+function isMovieAlreadyAddedError(error: unknown): boolean {
+  if (!(error instanceof RadarrApiError) || error.status !== 400) return false;
+  return /MovieExistsValidator|already (been added|exists)/i.test(error.message);
 }
