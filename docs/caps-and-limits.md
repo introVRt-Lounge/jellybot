@@ -47,7 +47,8 @@ Both commands use Jellyfin as the media source and ffmpeg for rendering. Clips a
 | **Transcode your whole library** | Jellybot clips short segments on demand; it is not a batch transcoder or Tdarr replacement |
 | **Administer Jellyfin** | No user management, library scans, plugin config, or metadata editing |
 | **Quote-search image-based subs (PGS/VobSub)** | Indexer requires **text** subtitle streams Jellyfin can expose as VTT/SRT |
-| **Quote items with zero text subs** | Until OpenSubtitles or Whisper long-tail is enabled (see below), `/quote` only sees items Jellyfin marks as subtitled with a usable text track |
+| **Quote items with only PGS / VOBSUB subs** | Indexer only ingests **text** tracks (SRT/VTT/ASS). Blu-ray / DVD bitmap subs need a sidecar SRT - configure Bazarr (`ignore_pgs_subs: true`, `ignore_vobsub_subs: true`) so it fetches text SRTs from providers, or run a PGS OCR step. See "Filling subtitle gaps with Bazarr" below. |
+| **Quote items with no subs anywhere** | Until Whisper long-tail is enabled (see below), `/quote` only sees items with a usable text track on disk |
 | **Guarantee Discord inline video on every client** | HEVC/x265 source may render but show **audio-only** in Discord's player; bot defaults to H.264 |
 | **Bypass Discord upload caps** | Non-boosted servers stay on ~10 MB; the bot cannot raise Discord's limit |
 | **Search across guilds you did not configure** | Guild allowlist via `DISCORD_GUILD_ID` / `DISCORD_GUILD_IDS` |
@@ -58,10 +59,10 @@ Both commands use Jellyfin as the media source and ffmpeg for rendering. Clips a
 `/quote` quality is only as good as your **indexed cue corpus**:
 
 1. **Today (built-in):** embedded Jellyfin text subs in preferred languages (`SUBTITLE_LANGUAGES`, default `eng,en`)
-2. **Optional tier 2 (planned, [#24](https://github.com/introVRt-Lounge/jellybot/issues/24)):** OpenSubtitles.org API gap-fill when Jellyfin has no text track
+2. **Operator tier (recommended):** Bazarr fetches text SRTs from providers (OpenSubtitles, Subf2m, Podnapisi) into media folders; Jellybot picks them up on next index. See "Filling subtitle gaps with Bazarr" below.
 3. **Optional tier 3 (planned, [#25](https://github.com/introVRt-Lounge/jellybot/issues/25)):** Whisper-class STT long-tail from audio when subs are missing entirely
 
-If you already run **Bazarr** (or similar) to pull English subs into files on disk, Jellyfin may still need a library refresh before those tracks appear to the indexer. Jellybot does not replace Bazarr; it indexes what Jellyfin exposes.
+Jellybot does not replace Bazarr; it indexes what Jellyfin exposes. The native OpenSubtitles indexer integration that was previously tracked as #24 has been **closed** in favor of the Bazarr-driven recipe below.
 
 ---
 
@@ -107,34 +108,39 @@ Measured on operator host (2026-05-24, **trigram** FTS - legacy):
 
 ---
 
-## Optional: OpenSubtitles.org hookup
+## Filling subtitle gaps with Bazarr
 
-**Status:** documented for operators; native indexer integration tracked in [#24](https://github.com/introVRt-Lounge/jellybot/issues/24).
+**Recommended.** Bazarr is the right tool for the operator tier - multi-provider rotation, scoring, scheduled retries. Jellybot indexes whatever Bazarr drops on disk.
 
-For users with an OpenSubtitles **API key** ([consumer portal](https://www.opensubtitles.com/en/consumers)):
+### Critical Bazarr settings (Settings → Subtitles)
 
-### When to use it
-
-- Jellyfin item has **no text subtitle track** (or only forced/foreign tracks you exclude)
-- You want `/quote` coverage without manually hunting SRT files
-- Bazarr is not in your stack, or Bazarr has not yet fetched a match
-
-### Planned env (not wired in code yet)
-
-```bash
-# OPENSUBTITLES_ENABLED=true
-# OPENSUBTITLES_API_KEY=your_api_key
-# OPENSUBTITLES_USERNAME=your_username   # if required by API tier
-# OPENSUBTITLES_PASSWORD=your_password
+```yaml
+# config/config.yaml
+general:
+  use_embedded_subs: true       # still parse the file's tracks
+  ignore_pgs_subs: true         # Blu-ray bitmap subs DO NOT satisfy English
+  ignore_vobsub_subs: true      # DVD bitmap subs DO NOT satisfy English
+  embedded_subs_show_desired: true
+  enabled_providers:
+    - opensubtitlescom
+    - podnapisi
+    - subf2m
+    - embeddedsubtitles
 ```
 
-### Operator workflow today (without Jellybot native support)
+Without `ignore_pgs_subs: true`, Bazarr treats the embedded PGS image track as "English present" and never searches providers. Result: Blu-ray rips look subtitled in Jellyfin (`HasSubtitles: true`) but Jellybot's indexer skips them because the codec is `PGSSUB`, not text.
 
-1. Use **Bazarr** or OpenSubtitles manually to attach English subs to media files
-2. Refresh Jellyfin library metadata
-3. Run `make index-subtitles-incremental` (or wait for startup incremental pass)
+### Operator loop
 
-When [#24](https://github.com/introVRt-Lounge/jellybot/issues/24) lands, Jellybot will attempt OpenSubtitles **during indexing** before giving up on an item.
+1. Flip the flags above; restart Bazarr if the API rejects the change.
+2. Trigger **Search Wanted Movies/Series** in Bazarr (or hit `POST /api/system/tasks?taskid=wanted_search_missing_subtitles_movies`).
+3. Wait for SRTs to land in media folders (Bazarr writes them next to the MKV).
+4. Refresh Jellyfin metadata for the affected library (or let the next scheduled scan pick them up).
+5. Run `make index-subtitles-incremental` on the host, or wait for the bot's startup incremental pass.
+
+### When Bazarr cannot find a text SRT
+
+For movies where no provider has a usable English text sub, the next layer is **PGS-to-SRT OCR** (e.g. [Tentacule/PgsToSrt](https://github.com/Tentacule/PgsToSrt) as a sidecar). That is a deployment concern, not a Jellybot concern - Jellybot indexes whatever ends up on disk. Beyond that, see the Whisper section.
 
 ---
 
@@ -200,8 +206,9 @@ See [`.env.example`](../.env.example) for the full list. Subtitle-related:
 | `SUBTITLE_LANGUAGES` | Preferred track languages |
 | `SUBTITLE_INDEX_ON_STARTUP` | `incremental` (default) or `off` |
 | `SUBTITLE_INDEX_CONCURRENCY` | Indexer parallelism |
-| `OPENSUBTITLES_*` | Planned OpenSubtitles gap-fill ([#24](https://github.com/introVRt-Lounge/jellybot/issues/24)) |
 | `WHISPER_*` | Planned STT long-tail ([#25](https://github.com/introVRt-Lounge/jellybot/issues/25)) |
+
+OpenSubtitles is no longer wired through Jellybot. Use Bazarr (see "Filling subtitle gaps with Bazarr") instead.
 
 ---
 
