@@ -15,10 +15,12 @@ import {
   isFeatureRankSelect,
 } from "./commands/feature.ts";
 import { handleQuoteAutocomplete, handleQuoteCommand } from "./commands/quote.ts";
+import { handleQuoteWishCommand, QUOTE_WISH_COMMAND_NAME } from "./commands/quotewish.ts";
 import {
   handleSubcoverageAutocomplete,
   handleSubcoverageCommand,
 } from "./commands/subcoverage.ts";
+import { startQuoteRequestReconcileLoop } from "./quote-requests/reconciler.ts";
 import { loadConfig } from "./config.ts";
 import {
   createRestCommandRegistry,
@@ -150,6 +152,8 @@ client.once(Events.ClientReady, async (readyClient) => {
     const featureStore = new FeatureStore(config.botStateDbPath);
     startFeaturePipelineReconcileLoop(client, config, featureStore);
   }
+
+  startQuoteRequestReconcileLoop({ client, config });
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {
@@ -385,6 +389,34 @@ client.on(Events.InteractionCreate, async (interaction) => {
       await interaction
         .reply({
           content: "Something went wrong while handling that command.",
+          ephemeral: true,
+        })
+        .catch(() => undefined);
+    }
+    return;
+  }
+
+  if (interaction.commandName === QUOTE_WISH_COMMAND_NAME) {
+    try {
+      await handleQuoteWishCommand(interaction, config);
+    } catch (error) {
+      console.error(
+        JSON.stringify({
+          event: "quotewish.error",
+          command: QUOTE_WISH_COMMAND_NAME,
+          userId: interaction.user.id,
+          error: error instanceof Error ? error.message : "unknown error",
+        }),
+      );
+      if (interaction.deferred || interaction.replied) {
+        await interaction
+          .editReply("Something went wrong while saving that wish.")
+          .catch(() => undefined);
+        return;
+      }
+      await interaction
+        .reply({
+          content: "Something went wrong while saving that wish.",
           ephemeral: true,
         })
         .catch(() => undefined);

@@ -95,6 +95,37 @@ The subtitle index must exist first. Run `make index-subtitles` on the host/cont
 - rendered file above Discord upload limit
 - Jellyfin item no longer visible to the configured user
 
+## `/quotewish`
+
+Submit a quote you wish was searchable. The bot stores the request and pings you when the quote shows up in the subtitle index.
+
+Useful when `/quote` returns nothing because the movie has only image-based subtitles (PGS/VobSub) or no subtitles at all - operator can fill the gap via Bazarr/manual SRT, and the next index pass will trigger a notification automatically.
+
+### Options
+
+| Option | Required | Type | Notes |
+| --- | --- | --- | --- |
+| `movie` | Yes | String (max 200) | Movie or show title (free text). Best guess is fine. |
+| `quote` | Yes | String (max 500) | The line you want, as best as you remember it. |
+
+### Behavior
+
+- Each user can have up to 10 pending wishes at once.
+- A reconciler runs every 5 minutes against the latest subtitle index. When a candidate cue matches the requested quote and the candidate item's title fuzzy-matches the requested movie, the bot posts a public notification in the original channel @-mentioning the requester, including the matching cue text and a `match:` token to clip with `/quote`.
+- High vs medium confidence is reflected in the notification copy; the requester can decide whether the match looks right before clipping.
+
+### Examples
+
+```text
+/quotewish movie:Happy Gilmore quote:I eat pieces of shit like you for breakfast
+/quotewish movie:Seinfeld quote:the sea was angry that day my friends
+```
+
+### Failure cases
+
+- used outside a guild channel
+- requester has 10+ pending wishes already
+
 ## `/subcoverage`
 
 Report how much of your Jellyfin library has subtitles, or check a single movie or TV series.
