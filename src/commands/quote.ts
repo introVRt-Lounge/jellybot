@@ -15,6 +15,13 @@ import { openSubtitleIndex } from "../subtitles/index-db.ts";
 import { quoteSearchChoices } from "../subtitles/quote-autocomplete.ts";
 import { getSubtitleSearchIndex } from "../subtitles/search-index.ts";
 import { formatTimestamp } from "../time.ts";
+import {
+  buildQuoteRequestModal,
+  QUOTE_REQUEST_AUTOCOMPLETE_LABEL,
+  QUOTE_REQUEST_AUTOCOMPLETE_TOKEN,
+} from "../quote-requests/modal.ts";
+
+export { QUOTE_REQUEST_AUTOCOMPLETE_TOKEN } from "../quote-requests/modal.ts";
 
 const quoteAutocompleteInFlight = new Map<string, Promise<void>>();
 const quoteMatchAutocompleteGuard = new AutocompleteSessionGuard();
@@ -144,8 +151,12 @@ async function handleQuoteAutocompleteOnce(
   try {
     const { isCurrent } = quoteMatchAutocompleteGuard.beginCancellable(QUOTE_MATCH_AUTOCOMPLETE_KEY(interaction));
     const index = getSubtitleSearchIndex(config.subtitleDbPath);
-    const results = await withTimeout(Promise.resolve(index.searchQuotes(query, 25)), QUOTE_AUTOCOMPLETE_TIMEOUT_MS);
-    const choices = quoteSearchChoices(results);
+    const results = await withTimeout(Promise.resolve(index.searchQuotes(query, 24)), QUOTE_AUTOCOMPLETE_TIMEOUT_MS);
+    const choices: ApplicationCommandOptionChoiceData[] = quoteSearchChoices(results);
+    choices.push({
+      name: QUOTE_REQUEST_AUTOCOMPLETE_LABEL,
+      value: QUOTE_REQUEST_AUTOCOMPLETE_TOKEN,
+    });
 
     console.info(
       JSON.stringify({
@@ -191,10 +202,16 @@ export async function handleQuoteCommand(
   const paddingRaw = interaction.options.getString("padding");
   const burnInSubtitles = interaction.options.getBoolean("subtitles") ?? false;
 
+  if (matchRaw === QUOTE_REQUEST_AUTOCOMPLETE_TOKEN) {
+    await interaction.showModal(buildQuoteRequestModal());
+    return;
+  }
+
   const token = parseQuoteMatchToken(matchRaw);
   if (!token) {
     await interaction.reply({
-      content: "Pick a quote from the autocomplete list. Free-typed text in `match` is not supported.",
+      content:
+        "Pick a quote from the autocomplete list, or use the `Can't find it? Submit a request` option to ask the bot to fetch the movie.",
       ephemeral: true,
     });
     return;

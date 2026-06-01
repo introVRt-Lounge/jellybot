@@ -90,41 +90,40 @@ The subtitle index must exist first. Run `make index-subtitles` on the host/cont
 ### Failure cases
 
 - subtitle index missing or stale for the selected match
-- free-typed `match` text instead of an autocomplete pick
+- free-typed `match` text instead of an autocomplete pick or the missing-quote submission entry
 - clip longer than `MAX_CLIP_SECONDS`
 - rendered file above Discord upload limit
 - Jellyfin item no longer visible to the configured user
 
-## `/quotewish`
+### Missing-quote submission flow
 
-Submit a quote you wish was searchable. The bot stores the request and pings you when the quote shows up in the subtitle index.
+Every `/quote` autocomplete response includes a final synthetic entry: **`Can't find it? Submit a request - we'll fetch the movie and ping you`**. Picking that entry opens a Discord modal with two fields:
 
-Useful when `/quote` returns nothing because the movie has only image-based subtitles (PGS/VobSub) or no subtitles at all - operator can fill the gap via Bazarr/manual SRT, and the next index pass will trigger a notification automatically.
+| Field | Required | Notes |
+| --- | --- | --- |
+| `Movie title` | Yes | Best guess; year helps but is optional. Free text, max 200 chars. |
+| `The line you want` | Yes | The quote, as best as you remember it. Max 500 chars. |
 
-### Options
+On submit:
 
-| Option | Required | Type | Notes |
-| --- | --- | --- | --- |
-| `movie` | Yes | String (max 200) | Movie or show title (free text). Best guess is fine. |
-| `quote` | Yes | String (max 500) | The line you want, as best as you remember it. |
+1. The bot looks up the title in Radarr (TMDB-backed search), picks the best candidate by title similarity + year hint, and **auto-adds it to Radarr** with the configured root folder + quality profile (defaults to `HD-1080p (no 4K)` when present, otherwise the first available 1080p profile).
+2. A row is persisted in `quote_requests` with `acquisition_kind='radarr'` and the Radarr movie id.
+3. A reconciler runs every 5 minutes:
+   - Polls Radarr for the movie's `hasFile` flag.
+   - Once Radarr reports `hasFile=true`, triggers a Jellyfin library refresh and waits for the item to show up.
+   - Once the item shows up in Jellyfin, the next subtitle-index pass (or `make index-subtitles`) populates the FTS database.
+   - When the requested quote matches a cue in the new item, the bot posts a public notification in the original channel @-mentioning the requester, with the cue text + a `match:` token they can paste back into `/quote`.
 
-### Behavior
+Auto-approval is intentional: Radarr is configured to refuse 4K REMUX size profiles, so the cap is the operator's existing quality discipline, not a per-request gate. If `RADARR_URL`/`RADARR_API_KEY` are unset, the bot falls back to a passive watch-and-notify mode (no acquisition, just notifies if the quote appears later from a manual SRT or Bazarr drop).
 
-- Each user can have up to 10 pending wishes at once.
-- A reconciler runs every 5 minutes against the latest subtitle index. When a candidate cue matches the requested quote and the candidate item's title fuzzy-matches the requested movie, the bot posts a public notification in the original channel @-mentioning the requester, including the matching cue text and a `match:` token to clip with `/quote`.
-- High vs medium confidence is reflected in the notification copy; the requester can decide whether the match looks right before clipping.
+#### Refusals
 
-### Examples
+- **Low disk space.** Refused if the Radarr root folder has less than `RADARR_MIN_FREE_GB` (default 3 GB) free.
+- **No candidates.** Radarr's TMDB lookup returned nothing for the title; user must retry with a more specific query.
+- **Already in Radarr.** Falls back to the passive watch flow against the existing Radarr movie.
+- **Pending cap.** Each user can have up to 10 pending requests at once.
 
-```text
-/quotewish movie:Happy Gilmore quote:I eat pieces of shit like you for breakfast
-/quotewish movie:Seinfeld quote:the sea was angry that day my friends
-```
-
-### Failure cases
-
-- used outside a guild channel
-- requester has 10+ pending wishes already
+TV episode acquisition (Sonarr-targeted single-episode fetch) is filed under issue #97 Phase 2 and is not implemented in this command yet.
 
 ## `/subcoverage`
 

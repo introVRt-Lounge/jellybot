@@ -468,6 +468,36 @@ export class JellyfinClient {
     return count > 0;
   }
 
+  /** Look up a Jellyfin item by TMDB id (used after Radarr drops a new movie). */
+  async findItemByTmdbId(tmdbId: number): Promise<JellyfinItem | null> {
+    const { userId } = this.requireAuth();
+    const params = new URLSearchParams({
+      UserId: userId,
+      IncludeItemTypes: "Movie",
+      Recursive: "true",
+      Limit: "1",
+      AnyProviderIdEquals: `tmdb.${tmdbId}`,
+      Fields: ITEM_FIELDS,
+    });
+    const response = await this.fetchAuthed(`${this.baseUrl}/Items?${params}`);
+    if (!response.ok) {
+      throw new Error(`Jellyfin TMDB lookup failed (${response.status}).`);
+    }
+    const data = (await response.json()) as JellyfinSearchResponse;
+    const items = this.mapItems(data);
+    return items[0] ?? null;
+  }
+
+  /** Tell Jellyfin to scan all libraries for new files. Idempotent / fire-and-forget. */
+  async triggerLibraryRefresh(): Promise<void> {
+    const response = await this.fetchAuthed(`${this.baseUrl}/Library/Refresh`, {
+      method: "POST",
+    });
+    if (!response.ok && response.status !== 204) {
+      throw new Error(`Jellyfin library refresh failed (${response.status}).`);
+    }
+  }
+
   async searchSeries(query: string, limit = 25, signal?: AbortSignal): Promise<JellyfinItem[]> {
     return this.searchItems({
       query,
