@@ -181,3 +181,71 @@ describe("findQuoteRequestMatch with quality-suffixed titles", () => {
     expect(result?.candidate.itemId).toBe(serenityCue.itemId);
   });
 });
+
+describe("findQuoteRequestMatch relaxed fallback", () => {
+  // Mock that mimics FTS-over-AND: the strict path returns nothing because
+  // "me" isn't in the cue text, but a distinctive-tokens-only retry succeeds.
+  function strictThenRelaxedIndex(cue: QuoteSearchResult, distinctiveTokens: string[]) {
+    return {
+      searchQuotes: (query: string): QuoteSearchResult[] => {
+        const tokens = query
+          .toLowerCase()
+          .split(/[^a-z0-9]+/)
+          .filter(Boolean);
+        const matchesEveryToken = tokens.every((t) => cue.text.toLowerCase().includes(t));
+        const matchesDistinctiveOnly =
+          tokens.length === distinctiveTokens.length &&
+          tokens.every((t) => distinctiveTokens.includes(t));
+        if (matchesEveryToken || matchesDistinctiveOnly) return [cue];
+        return [];
+      },
+    };
+  }
+
+  test("falls back to distinctive tokens when the user misremembers filler words", () => {
+    const serenityCue: QuoteSearchResult = {
+      itemId: "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      itemType: "Movie",
+      title: "Serenity",
+      productionYear: 2005,
+      startMs: 5_154_000,
+      endMs: 5_157_000,
+      // Real cue has "Watch how I soar" - request says "Watch me soar"
+      text: "I am a leaf on the wind. Watch how I soar.",
+      rank: -8.4,
+    };
+
+    const result = findQuoteRequestMatch(
+      strictThenRelaxedIndex(serenityCue, ["leaf", "wind", "watch", "soar"]),
+      "Serenity",
+      "I am a leaf on the wind. Watch me soar!",
+    );
+
+    expect(result).not.toBeNull();
+    expect(result?.candidate.itemId).toBe(serenityCue.itemId);
+    // Relaxed-search hits are capped at medium confidence even for perfect titles.
+    expect(result?.confidence).toBe("medium");
+  });
+
+  test("does not fall back when the request has fewer than 2 distinctive tokens", () => {
+    const cue: QuoteSearchResult = {
+      itemId: "ffffffffffffffffffffffffffffffff",
+      itemType: "Movie",
+      title: "Whatever",
+      productionYear: 2024,
+      startMs: 0,
+      endMs: 1_000,
+      text: "Hello there.",
+      rank: -3.0,
+    };
+
+    // "yo go" has zero >=4-char tokens; relaxed fallback should bail.
+    const result = findQuoteRequestMatch(
+      strictThenRelaxedIndex(cue, []),
+      "Whatever",
+      "yo go",
+    );
+
+    expect(result).toBeNull();
+  });
+});
