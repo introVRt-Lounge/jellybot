@@ -191,11 +191,58 @@ export async function handleQuoteRequestModalSubmit(
       }),
     );
     await interaction
-      .editReply("Something went wrong submitting that request - try again in a minute.")
+      .editReply(formatModalErrorReply(error))
       .catch(() => undefined);
   } finally {
     store.close();
   }
+}
+
+export function formatModalErrorReply(error: unknown): string {
+  if (error instanceof RadarrApiError) {
+    if ([408, 502, 503, 504].includes(error.status)) {
+      const upstream = extractRadarrUpstreamMessage(error.message);
+      const suffix = upstream ? ` (${truncate(upstream, 160)})` : "";
+      return `Radarr's metadata source is temporarily unavailable${suffix}. Try again in a few minutes.`;
+    }
+    if (error.status === 401 || error.status === 403) {
+      return "Radarr auth is misconfigured. The maintainer needs to look at this.";
+    }
+    if (error.status === 400) {
+      const upstream = extractRadarrUpstreamMessage(error.message);
+      return upstream
+        ? `Radarr refused this request: ${truncate(upstream, 200)}`
+        : "Radarr refused this request - check the title and try again.";
+    }
+    if (error.status >= 500) {
+      return "Radarr returned an error. Try again in a few minutes.";
+    }
+  }
+  return "Something went wrong submitting that request - try again in a minute.";
+}
+
+/**
+ * Radarr's error body is JSON like
+ *   `[{"propertyName":...,"errorMessage":"..."}]` for 400s, or
+ *   `{"message":"...","description":"..."}` for SkyHook 5xx pass-through.
+ * Pull the human-readable bit out of the raw error.message captured by
+ * RadarrApiError so we can show it to the user instead of "5xx".
+ */
+function extractRadarrUpstreamMessage(raw: string): string | null {
+  const colonIndex = raw.indexOf(": ");
+  const tail = colonIndex >= 0 ? raw.slice(colonIndex + 2) : raw;
+  try {
+    const parsed = JSON.parse(tail);
+    if (Array.isArray(parsed) && parsed.length > 0 && typeof parsed[0]?.errorMessage === "string") {
+      return parsed[0].errorMessage;
+    }
+    if (parsed && typeof parsed === "object" && typeof (parsed as { message?: unknown }).message === "string") {
+      return (parsed as { message: string }).message;
+    }
+  } catch {
+    // Body wasn't JSON; fall through.
+  }
+  return null;
 }
 
 function formatRefusal(refusal: AcquisitionRefusal): string {
