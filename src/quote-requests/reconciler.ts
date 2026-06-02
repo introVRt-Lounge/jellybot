@@ -7,6 +7,10 @@ import { encodeQuoteMatchToken } from "../subtitles/match-token.ts";
 import { openSubtitleIndex, type SubtitleIndex } from "../subtitles/index-db.ts";
 import { formatTimestamp } from "../time.ts";
 import { findQuoteRequestMatch, type QuoteRequestMatch } from "./matcher.ts";
+import {
+  renderAndPostFulfillmentClip,
+  type RenderAndPostConfig,
+} from "./render-and-post.ts";
 import { QuoteRequestStore, type QuoteRequestRow } from "./store.ts";
 
 const DEFAULT_INTERVAL_MS = 5 * 60_000;
@@ -19,8 +23,15 @@ export type QuoteRequestReconcilerDeps = {
     | "subtitleDbPath"
     | "radarrUrl"
     | "radarrApiKey"
-  >;
-  jellyfin?: Pick<JellyfinClient, "findItemByTmdbId" | "triggerLibraryRefresh">;
+  > &
+    Partial<RenderAndPostConfig>;
+  /**
+   * Full Jellyfin client when available - the render-and-post fulfillment path
+   * uses it for streaming and metadata. The Radarr poll path only needs a
+   * narrower slice (findItemByTmdbId / triggerLibraryRefresh), which the full
+   * type also satisfies.
+   */
+  jellyfin?: JellyfinClient;
 };
 
 export function startQuoteRequestReconcileLoop(
@@ -78,7 +89,7 @@ export async function runQuoteRequestReconcile(deps: QuoteRequestReconcilerDeps)
         continue;
       }
 
-      const messageId = await postFulfillmentNotification(deps.client, request, match);
+      const fulfillment = await fulfillRequest(deps, request, match);
       const matchToken = encodeQuoteMatchToken({
         itemId: match.candidate.itemId,
         startMs: match.candidate.startMs,
@@ -89,18 +100,19 @@ export async function runQuoteRequestReconcile(deps: QuoteRequestReconcilerDeps)
         id: request.id,
         itemId: match.candidate.itemId,
         matchToken,
-        notificationMessageId: messageId,
+        notificationMessageId: fulfillment.messageId,
       });
       fulfilled += 1;
 
       console.info(
         JSON.stringify({
-          event: "quotewish.fulfilled",
+          event: "quote_request.fulfilled",
           requestId: request.id,
           itemId: match.candidate.itemId,
           confidence: match.confidence,
           titleScore: Math.round(match.titleScore * 100) / 100,
-          messageId,
+          messageId: fulfillment.messageId,
+          mode: fulfillment.mode,
         }),
       );
     }
@@ -118,6 +130,70 @@ export async function runQuoteRequestReconcile(deps: QuoteRequestReconcilerDeps)
     index?.close();
     store.close();
   }
+}
+
+async function fulfillRequest(
+  deps: QuoteRequestReconcilerDeps,
+  request: QuoteRequestRow,
+  match: QuoteRequestMatch,
+): Promise<{ messageId: string | null; mode: "clip" | "text" | "skipped" }> {
+  const renderConfig = pickRenderConfig(deps.config);
+  if (deps.jellyfin && renderConfig) {
+    try {
+      const result = await renderAndPostFulfillmentClip({
+        client: deps.client,
+        jellyfin: deps.jellyfin,
+        config: renderConfig,
+        request,
+        match,
+      });
+      if (result.posted) {
+        return { messageId: result.messageId, mode: "clip" };
+      }
+      console.warn(
+        JSON.stringify({
+          event: "quote_request.fulfill.render_fallback",
+          requestId: request.id,
+          reason: result.reason,
+        }),
+      );
+    } catch (error) {
+      console.error(
+        JSON.stringify({
+          event: "quote_request.fulfill.render_error",
+          requestId: request.id,
+          error: error instanceof Error ? error.message : "unknown error",
+        }),
+      );
+    }
+  }
+
+  const messageId = await postFulfillmentNotification(deps.client, request, match);
+  return { messageId, mode: messageId ? "text" : "skipped" };
+}
+
+function pickRenderConfig(
+  config: QuoteRequestReconcilerDeps["config"],
+): RenderAndPostConfig | null {
+  const required = [
+    config.clipTempDir,
+    config.maxClipMb,
+    config.maxClipSeconds,
+    config.audioLanguages,
+    config.subtitleLanguages,
+    config.subtitleDefaultClipSeconds,
+    config.subtitleQuotePaddingSeconds,
+  ];
+  if (required.some((value) => value === undefined || value === null)) return null;
+  return {
+    clipTempDir: config.clipTempDir as string,
+    maxClipMb: config.maxClipMb as number,
+    maxClipSeconds: config.maxClipSeconds as number,
+    audioLanguages: config.audioLanguages as string,
+    subtitleLanguages: config.subtitleLanguages as string,
+    subtitleDefaultClipSeconds: config.subtitleDefaultClipSeconds as number,
+    subtitleQuotePaddingSeconds: config.subtitleQuotePaddingSeconds as number,
+  };
 }
 
 async function postFulfillmentNotification(

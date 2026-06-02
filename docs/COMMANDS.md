@@ -112,7 +112,7 @@ On submit:
    - Polls Radarr for the movie's `hasFile` flag.
    - Once Radarr reports `hasFile=true`, triggers a Jellyfin library refresh and waits for the item to show up.
    - Once the item shows up in Jellyfin, the next subtitle-index pass (or `make index-subtitles`) populates the FTS database.
-   - When the requested quote matches a cue in the new item, the bot posts a public notification in the original channel @-mentioning the requester, with the cue text + a `match:` token they can paste back into `/quote`.
+   - When the requested quote matches a cue in the new item, the bot **renders the clip with the configured default duration + padding and posts the MP4 directly** in the original channel, @-mentioning the requester. The cue text and a `match:` token are included in the message so the user can re-clip with different timing if they want. If clip rendering fails (item gone, oversized, ffmpeg error), the bot falls back to a text-only fulfillment with just the cue + token.
 
 Auto-approval is intentional: Radarr is configured to refuse 4K REMUX size profiles, so the cap is the operator's existing quality discipline, not a per-request gate. If `RADARR_URL`/`RADARR_API_KEY` are unset, the bot falls back to a passive watch-and-notify mode (no acquisition, just notifies if the quote appears later from a manual SRT or Bazarr drop).
 
