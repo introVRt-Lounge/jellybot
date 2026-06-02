@@ -57,6 +57,18 @@ After merge to `main`, **prod** updates via **Ship main** → GHCR `:latest` →
 
 **Dev bot** (`jellybot-dev` / Bottitesto) is for **you** to confirm behavior (`bun run ci`, optional `make dev-refresh`) **before** merging to `main`. If a PR is merged, prod auto-registers on the next Watchtower recreate.
 
+#### Manual prod recreate (env changes only)
+
+Watchtower handles image upgrades. When you change `~/docker/jellybot/.env` and need the new vars loaded **right now** (e.g. enabling webhook secrets, rotating tokens), use:
+
+```bash
+bash ~/docker/jellybot/recreate.sh
+```
+
+This script does an atomic `docker compose up -d --force-recreate --remove-orphans` in a single invocation, then polls `docker inspect` for `Health.Status=healthy`.
+
+**Do not** run `docker compose pull && docker compose up -d` as separate commands, and do not issue two consecutive `docker compose up -d` calls. The race between the first invocation's removal and the second's create makes Docker assign a transient `<short-id>_jellybot` name that compose never heals; `protect-containers.sh` then fires `CRITICAL: jellybot MISSING_FROM_DOCKER` even though the bot is fine. (The protection script auto-renames transient containers on its next monitor pass as of 2026-06, but the right answer is to never create the transient name in the first place.)
+
 ---
 
 ## Happy place (mandatory end state)
