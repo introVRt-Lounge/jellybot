@@ -1,5 +1,218 @@
 # Architecture
 
+## Visual map
+
+Five diagrams, top-down, from where the bytes live to where the user sees a clip. GitHub renders mermaid natively; click any node to read the prose section that backs it up.
+
+### 1. System topology
+
+Containers, storage, and the GitHub deploy edge.
+
+```mermaid
+flowchart LR
+  user(["Discord user"])
+  subgraph dc["Discord"]
+    gw["Discord gateway"]
+  end
+  subgraph host["Host server (~/docker/*)"]
+    bot["jellybot<br/>:8080 /healthz + /hooks/*"]
+    jf["jellyfin<br/>:8096"]
+    radarr["radarr<br/>:7878"]
+    sonarr["sonarr<br/>:8989"]
+    bazarr["bazarr<br/>:6767"]
+    sab["sabnzbd<br/>(via VPN)"]
+    watchtower["watchtower"]
+  end
+  subgraph storage["Storage (host bind-mount)"]
+    media[("/media/movies<br/>/media/tv")]
+    db[("subtitles.db<br/>SQLite FTS5")]
+  end
+  subgraph github["GitHub"]
+    repo["introVRt-Lounge/jellybot"]
+    ghcr[("ghcr.io/...<br/>jellybot:latest")]
+  end
+
+  user <-->|slash commands| gw
+  gw <--> bot
+  bot -->|REST + subtitle stream| jf
+  bot -->|REST acquire| radarr
+  bot -->|REST acquire| sonarr
+  bot --> db
+  jf --> media
+  radarr -->|grab| sab --> media
+  sonarr -->|grab| sab --> media
+  bazarr -->|fetch SRT| media
+  bazarr -->|provider poll| sonarr
+  bazarr -->|provider poll| radarr
+  repo -->|Ship main| ghcr
+  ghcr -->|pull on label change| watchtower --> bot
+```
+
+### 2. `/quote` happy path
+
+Subtitle is already indexed. Keystroke to clip in a couple of seconds.
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor U as Discord user
+  participant D as Discord gateway
+  participant B as jellybot
+  participant FTS as subtitles.db (FTS5)
+  participant JF as Jellyfin
+  participant FF as ffmpeg
+
+  U->>D: /quote query="cunning plan"
+  D->>B: AutocompleteInteraction
+  B->>FTS: MATCH "cunning plan"
+  FTS-->>B: top hits (item_id, ts, snippet)
+  B-->>D: up to 25 autocomplete choices
+  U->>D: pick a choice
+  D->>B: ChatInputCommand (token = item | ts)
+  B->>JF: stream + seek (~15s window)
+  JF-->>B: media bytes
+  B->>FF: render H.264 / AAC MP4
+  FF-->>B: clip.mp4 (validated by ffprobe)
+  B->>D: editReply with attachment
+  D-->>U: clip posted
+  B->>B: rm clip.mp4
+```
+
+### 3. `/quote` miss → acquisition
+
+The big one. User asks for a quote we don't have, bot acquires the media, fetches subs, indexes, then auto-posts the clip.
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor U as Discord user
+  participant D as Discord gateway
+  participant B as jellybot
+  participant R as Radarr
+  participant S as Sonarr
+  participant DL as sabnzbd
+  participant BZ as Bazarr
+  participant M as media volume
+  participant JF as Jellyfin
+  participant FTS as subtitles.db (FTS5)
+  participant FF as ffmpeg
+
+  U->>D: /quote query="..."
+  D->>B: Autocomplete (no FTS hit)
+  B-->>D: choice "Can't find it? click & submit"
+  U->>D: pick that choice
+  D->>B: ChatInputCommand (escape token)
+  B-->>D: ephemeral select Movie / TV
+
+  alt Movie
+    U->>D: select Movie
+    D->>B: StringSelect
+    B-->>D: open movie modal
+    U->>D: submit (title + quote)
+    D->>B: ModalSubmit
+    B->>R: lookup + add (or attach to existing)
+    R-->>B: tmdbId, monitored=true
+  else TV
+    U->>D: select TV
+    D->>B: StringSelect
+    B-->>D: open TV modal
+    U->>D: submit (show + S + E + quote)
+    D->>B: ModalSubmit
+    B->>S: lookup + add series + monitor episode
+    S-->>B: tvdbId, episode monitored
+  end
+
+  B->>B: persist quote_request (acquisition_status=searching)
+  B-->>D: ephemeral confirmation
+
+  par grab
+    R->>DL: send NZB
+    S->>DL: send NZB
+    DL-->>R: imported file
+    DL-->>S: imported file
+  end
+
+  R->>BZ: import event (provider poll)
+  S->>BZ: import event (provider poll)
+  BZ->>BZ: fetch English SRT
+  BZ->>M: write .srt sidecar
+
+  loop reconciler tick (~30s)
+    B->>JF: list HasSubtitles=true (incremental)
+    JF-->>B: new item visible
+    B->>JF: fetch SRT/VTT stream
+    JF-->>B: cues
+    B->>FTS: insert
+  end
+
+  loop reconciler match
+    B->>FTS: search request quote
+    FTS-->>B: hit (item_id, ts)
+    B->>JF: stream + seek
+    B->>FF: render clip
+    FF-->>B: clip.mp4
+    B->>D: post in channel + ping requester
+  end
+```
+
+### 4. Subtitle index triggers
+
+Four paths feed the same indexer. The webhook path is wired but currently a no-op until [#126](https://github.com/introVRt-Lounge/jellybot/issues/126) lands; safety nets cover it meanwhile.
+
+```mermaid
+flowchart TD
+  A["Bot startup<br/>SUBTITLE_INDEX_ON_STARTUP=incremental"]
+  B["Daily cron<br/>09:00 UTC"]
+  C["Webhook kick<br/>POST /hooks/{radarr,sonarr,bazarr}<br/>broken on prod data, see #126"]
+  D["Manual CLI<br/>bun run src/cli/index-subtitles.ts --incremental"]
+
+  E["src/subtitles/indexer.ts"]
+  F["Jellyfin GET /Items HasSubtitles=true"]
+  G{"dateLastRefreshed<br/>newer than stored?"}
+  H["fetch SRT/VTT stream"]
+  I["parse cues"]
+  J[("subtitle_cues_fts<br/>+ media_items")]
+  K["skip"]
+
+  A --> E
+  B --> E
+  C --> E
+  D --> E
+  E --> F --> G
+  G -->|no| K
+  G -->|yes| H --> I --> J
+```
+
+### 5. Deploy + self-heal
+
+How code gets to production and how the host keeps containers honest.
+
+```mermaid
+flowchart LR
+  subgraph dev["Local"]
+    pr["PR merged to main"]
+  end
+  subgraph ci["GitHub Actions"]
+    ship["Ship main<br/>build + push :latest<br/>(major/minor only)"]
+  end
+  subgraph reg["Registry"]
+    ghcr[("ghcr.io/.../jellybot:latest")]
+  end
+  subgraph prod["Production host"]
+    wt["watchtower"]
+    cmp["docker compose<br/>~/docker/jellybot/"]
+    bot["jellybot container"]
+    rec["recreate.sh<br/>(atomic --force-recreate<br/>--remove-orphans)"]
+    pc["protect-containers.sh<br/>monitors + heals<br/>transient _name"]
+  end
+
+  pr --> ship --> ghcr
+  ghcr -->|new digest| wt -->|pull + recreate| cmp --> bot
+  rec -.->|operator: env changes| cmp
+  pc -.->|every minute| bot
+  pc -.->|rename if<br/>transient| bot
+```
+
 ## Components
 
 | Piece | Role |
