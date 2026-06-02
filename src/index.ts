@@ -41,6 +41,7 @@ import { JellyfinClient } from "./jellyfin.ts";
 import { indexSubtitles } from "./subtitles/indexer.ts";
 import { openSubtitleIndex } from "./subtitles/index-db.ts";
 import { parsePreferredLanguages } from "./subtitles/track-select.ts";
+import { WebhookDispatcher } from "./webhooks/dispatch.ts";
 import { createReleaseAnnouncerFromConfig } from "./release/release-announcer.ts";
 import { looksLikeReleaseTag } from "./release/semver.ts";
 import { isBenignAutocompleteError } from "./autocomplete-guard.ts";
@@ -91,11 +92,53 @@ function refreshSubtitleHealth(force = false): void {
   }
 }
 
-startHealthServer(config.healthPort, config.appVersion, () => {
-  refreshSubtitleHealth();
-  return healthState;
-});
+const webhookDispatcher = config.webhookSharedSecret
+  ? new WebhookDispatcher({
+      jellyfin,
+      config: {
+        subtitleDbPath: config.subtitleDbPath,
+        preferredLanguages: parsePreferredLanguages(config.subtitleLanguages),
+        debounceMs: config.webhookDebounceMs,
+        pollMaxAttempts: config.webhookPollMaxAttempts,
+        pollIntervalMs: config.webhookPollIntervalMs,
+        postRefreshSettleMs: config.webhookPostRefreshSettleMs,
+      },
+    })
+  : null;
+
+startHealthServer(
+  config.healthPort,
+  config.appVersion,
+  () => {
+    refreshSubtitleHealth();
+    return healthState;
+  },
+  webhookDispatcher
+    ? {
+        webhooks: {
+          config: { sharedSecret: config.webhookSharedSecret ?? "" },
+          dispatcher: webhookDispatcher,
+        },
+      }
+    : {},
+);
 console.info(`Health server listening on :${config.healthPort}/healthz`);
+if (webhookDispatcher) {
+  console.info(
+    JSON.stringify({
+      event: "webhook.server_ready",
+      paths: ["/hooks/radarr", "/hooks/sonarr", "/hooks/bazarr"],
+      debounceMs: config.webhookDebounceMs,
+    }),
+  );
+} else {
+  console.info(
+    JSON.stringify({
+      event: "webhook.disabled",
+      reason: "WEBHOOK_SHARED_SECRET not set",
+    }),
+  );
+}
 
 const client = new Client({
   intents: [GatewayIntentBits.Guilds],

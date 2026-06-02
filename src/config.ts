@@ -50,6 +50,20 @@ export type AppConfig = {
    * keep the request flow away from special-purpose libraries.
    */
   sonarrExcludedRootKeywords: string[];
+  /**
+   * Shared secret required on every webhook POST. Compared against the
+   * X-Webhook-Token header or ?token= query string. Empty/undefined disables
+   * the entire webhook surface so /hooks/* returns 404.
+   */
+  webhookSharedSecret?: string;
+  /** Coalesce window for repeated webhooks against the same item. */
+  webhookDebounceMs: number;
+  /** Cap on poll-for-item retries before we give up waiting on Jellyfin. */
+  webhookPollMaxAttempts: number;
+  /** Poll interval between item-lookup retries. */
+  webhookPollIntervalMs: number;
+  /** Pause after Jellyfin per-item refresh before reading media streams (ms). */
+  webhookPostRefreshSettleMs: number;
 };
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
@@ -97,6 +111,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     sonarrRootFolderPath: env.SONARR_ROOT_FOLDER_PATH?.trim() || undefined,
     sonarrMinFreeGb: Number(env.SONARR_MIN_FREE_GB ?? 3),
     sonarrExcludedRootKeywords: parseCsvIds(env.SONARR_EXCLUDED_ROOT_KEYWORDS ?? ""),
+    webhookSharedSecret: env.WEBHOOK_SHARED_SECRET?.trim() || undefined,
+    webhookDebounceMs: Number(env.WEBHOOK_DEBOUNCE_SECONDS ?? 30) * 1000,
+    webhookPollMaxAttempts: Number(env.WEBHOOK_POLL_MAX_ATTEMPTS ?? 12),
+    webhookPollIntervalMs: Number(env.WEBHOOK_POLL_INTERVAL_SECONDS ?? 10) * 1000,
+    webhookPostRefreshSettleMs: Number(env.WEBHOOK_POST_REFRESH_SETTLE_MS ?? 1500),
   };
 }
 
