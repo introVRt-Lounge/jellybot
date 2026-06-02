@@ -98,12 +98,70 @@ function compareTitles(a: string, b: string): number {
   return union === 0 ? 0 : intersect / union;
 }
 
+const QUALITY_TOKENS = new Set([
+  "4k",
+  "8k",
+  "uhd",
+  "hd",
+  "720p",
+  "1080p",
+  "1440p",
+  "2160p",
+  "4320p",
+  "720",
+  "1080",
+  "2160",
+  "hdr",
+  "hdr10",
+  "hdr10plus",
+  "dv",
+  "dolby",
+  "vision",
+  "atmos",
+  "hevc",
+  "x265",
+  "x264",
+  "h265",
+  "h264",
+  "av1",
+  "bluray",
+  "brrip",
+  "bdrip",
+  "web",
+  "webrip",
+  "webdl",
+  "remux",
+  "remastered",
+  "directors",
+  "director's",
+  "extended",
+  "imax",
+  "10bit",
+]);
+
 export function normaliseTitle(value: string): string {
-  return value
+  // Strip parenthesised/bracketed year tags first so titles like "Serenity (2005) 4K"
+  // or "Inception [2010]" lose the year component before we tokenise. Bare leading
+  // four-digit titles (e.g. "1917") are preserved because they don't sit inside
+  // brackets in any sensible library naming scheme.
+  const yearTagsRemoved = value.replace(/[(\[]\s*(?:19|20)\d{2}\s*[)\]]/g, " ");
+
+  const stripped = yearTagsRemoved
     .toLowerCase()
     .replace(/[\u2018\u2019\u201c\u201d]/g, "'")
     .replace(/[^a-z0-9\s'&]/g, " ")
     .replace(/\b(the|a|an)\b/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+
+  if (!stripped) return stripped;
+
+  const filtered = stripped
+    .split(" ")
+    .filter((token) => token.length > 0 && !QUALITY_TOKENS.has(token))
+    .join(" ");
+
+  // If filtering would obliterate the title (e.g. just "4K"), keep the original
+  // normalised form so the matcher still has something to compare against.
+  return filtered.length > 0 ? filtered : stripped;
 }
