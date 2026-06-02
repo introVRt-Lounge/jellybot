@@ -16,10 +16,12 @@ import { quoteSearchChoices } from "../subtitles/quote-autocomplete.ts";
 import { getSubtitleSearchIndex } from "../subtitles/search-index.ts";
 import { formatTimestamp } from "../time.ts";
 import {
-  buildQuoteRequestModal,
+  buildMediaTypeSelectMenu,
   QUOTE_REQUEST_AUTOCOMPLETE_LABEL,
   QUOTE_REQUEST_AUTOCOMPLETE_TOKEN,
+  QUOTE_REQUEST_MEDIA_TYPE_PROMPT,
 } from "../quote-requests/modal.ts";
+import { MessageFlags } from "discord.js";
 
 export { QUOTE_REQUEST_AUTOCOMPLETE_TOKEN } from "../quote-requests/modal.ts";
 
@@ -203,7 +205,15 @@ export async function handleQuoteCommand(
   const burnInSubtitles = interaction.options.getBoolean("subtitles") ?? false;
 
   if (matchRaw === QUOTE_REQUEST_AUTOCOMPLETE_TOKEN) {
-    await interaction.showModal(buildQuoteRequestModal());
+    // Reply with an ephemeral message that lets the user disambiguate Movie vs
+    // TV show. The downstream select-menu interaction calls showModal with the
+    // matching modal definition. Doing this server-side (instead of straight
+    // to a movie modal) lets V1 ship the TV path without a second slash command.
+    await interaction.reply({
+      content: QUOTE_REQUEST_MEDIA_TYPE_PROMPT,
+      components: [buildMediaTypeSelectMenu()],
+      flags: MessageFlags.Ephemeral,
+    });
     return;
   }
 

@@ -3,6 +3,7 @@ import type { AppConfig } from "../config.ts";
 import { displayTitleWithYear } from "../display-title.ts";
 import { formatEpisodeLabel, type JellyfinClient } from "../jellyfin.ts";
 import { RadarrApiError, RadarrClient } from "../radarr/client.ts";
+import { SonarrApiError, SonarrClient } from "../sonarr/client.ts";
 import { encodeQuoteMatchToken } from "../subtitles/match-token.ts";
 import { openSubtitleIndex, type SubtitleIndex } from "../subtitles/index-db.ts";
 import { formatTimestamp } from "../time.ts";
@@ -23,6 +24,8 @@ export type QuoteRequestReconcilerDeps = {
     | "subtitleDbPath"
     | "radarrUrl"
     | "radarrApiKey"
+    | "sonarrUrl"
+    | "sonarrApiKey"
   > &
     Partial<RenderAndPostConfig>;
   /**
@@ -62,6 +65,7 @@ export async function runQuoteRequestReconcile(deps: QuoteRequestReconcilerDeps)
 
   try {
     await pollRadarrAcquisitions(deps, store);
+    await pollSonarrAcquisitions(deps, store);
 
     const pending = store.listPending();
     if (pending.length === 0) {
@@ -435,5 +439,115 @@ function safeJson(raw: string | null): Record<string, unknown> {
       : {};
   } catch {
     return {};
+  }
+}
+
+async function pollSonarrAcquisitions(
+  deps: QuoteRequestReconcilerDeps,
+  store: QuoteRequestStore,
+): Promise<void> {
+  if (!deps.config.sonarrUrl || !deps.config.sonarrApiKey) {
+    return;
+  }
+
+  const acquiring = store.listAcquiring();
+  if (acquiring.length === 0) {
+    return;
+  }
+
+  const sonarrRows = acquiring.filter(
+    (row) => row.acquisitionKind === "sonarr" && row.acquisitionExternalId !== null,
+  );
+  if (sonarrRows.length === 0) {
+    return;
+  }
+
+  const client = new SonarrClient(deps.config.sonarrUrl, deps.config.sonarrApiKey);
+  let needsLibraryRefresh = false;
+
+  for (const row of sonarrRows) {
+    if (row.acquisitionExternalId === null) continue;
+    try {
+      const episode = await client.getEpisode(row.acquisitionExternalId);
+      const previous = row.acquisitionStatus;
+
+      if (episode.hasFile) {
+        if (previous !== "imported" && previous !== "indexed") {
+          store.setAcquisitionStatus({
+            id: row.id,
+            status: "imported",
+            metadata: JSON.stringify({
+              ...safeJson(row.acquisitionMetadata),
+              sonarrEpisodeFileId: episode.episodeFileId,
+              importedAt: new Date().toISOString(),
+            }),
+          });
+          needsLibraryRefresh = true;
+          console.info(
+            JSON.stringify({
+              event: "quote_request.sonarr.imported",
+              requestId: row.id,
+              sonarrEpisodeId: episode.id,
+              seasonNumber: episode.seasonNumber,
+              episodeNumber: episode.episodeNumber,
+            }),
+          );
+        }
+
+        // Once Jellyfin has sucked it up, the next reconciler tick can run an FTS
+        // match against the bot's subtitle index and post the clip. We don't have
+        // a TMDB-tvdb mapping handy, so just mark `indexed` after a successful
+        // import + library refresh; the FTS pass is the actual gate.
+        if (previous !== "indexed") {
+          store.setAcquisitionStatus({ id: row.id, status: "indexed" });
+        }
+      }
+    } catch (error) {
+      const status = error instanceof SonarrApiError ? error.status : undefined;
+      if (status === 404) {
+        store.setAcquisitionStatus({
+          id: row.id,
+          status: "failed",
+          metadata: JSON.stringify({
+            ...safeJson(row.acquisitionMetadata),
+            failureReason: "sonarr_episode_404",
+            failedAt: new Date().toISOString(),
+          }),
+        });
+        console.warn(
+          JSON.stringify({
+            event: "quote_request.sonarr.gone",
+            requestId: row.id,
+            sonarrEpisodeId: row.acquisitionExternalId,
+          }),
+        );
+        continue;
+      }
+      console.error(
+        JSON.stringify({
+          event: "quote_request.sonarr.poll_error",
+          requestId: row.id,
+          sonarrEpisodeId: row.acquisitionExternalId,
+          status,
+          error: error instanceof Error ? error.message : "unknown error",
+        }),
+      );
+    }
+  }
+
+  if (needsLibraryRefresh && deps.jellyfin) {
+    try {
+      await deps.jellyfin.triggerLibraryRefresh();
+      console.info(
+        JSON.stringify({ event: "quote_request.jellyfin.refresh_triggered_sonarr" }),
+      );
+    } catch (error) {
+      console.warn(
+        JSON.stringify({
+          event: "quote_request.jellyfin.refresh_failed_sonarr",
+          error: error instanceof Error ? error.message : "unknown error",
+        }),
+      );
+    }
   }
 }
