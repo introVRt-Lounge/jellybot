@@ -140,4 +140,44 @@ describe("normaliseTitle", () => {
     expect(normaliseTitle("Ferris Bueller's Day Off")).toBe("ferris bueller's day off");
     expect(normaliseTitle("Beavis & Butt-Head")).toBe("beavis & butt head");
   });
+
+  test("strips year and quality suffixes that libraries tag onto folder/item names", () => {
+    expect(normaliseTitle("Serenity (2005) 4K")).toBe("serenity");
+    expect(normaliseTitle("Serenity (2005)")).toBe("serenity");
+    expect(normaliseTitle("Inception (2010) 1080p REMUX")).toBe("inception");
+    expect(normaliseTitle("The Matrix (1999) 4K HDR")).toBe("matrix");
+    expect(normaliseTitle("Apocalypto (2006) BluRay x265 10bit")).toBe("apocalypto");
+    expect(normaliseTitle("1917 (2019) 2160p HDR10Plus")).toBe("1917");
+  });
+
+  test("does not obliterate titles that are themselves a year", () => {
+    // Year-only fallback: avoid empty strings, return the unfiltered normalised form.
+    expect(normaliseTitle("2001")).toBe("2001");
+    expect(normaliseTitle("4K")).toBe("4k");
+  });
+});
+
+describe("findQuoteRequestMatch with quality-suffixed titles", () => {
+  test("matches 'Serenity' against indexed 'Serenity (2005) 4K'", () => {
+    const serenityCue: QuoteSearchResult = {
+      itemId: "ddddddddddddddddddddddddddddddddd",
+      itemType: "Movie",
+      title: "Serenity (2005) 4K",
+      productionYear: 2005,
+      startMs: 5_280_000,
+      endMs: 5_283_000,
+      text: "I am a leaf on the wind.",
+      rank: -9.4,
+    };
+
+    const result = findQuoteRequestMatch(
+      searchIndex([serenityCue]),
+      "Serenity",
+      "I am a leaf on the wind. Watch me soar!",
+    );
+
+    expect(result).not.toBeNull();
+    expect(result?.confidence).toBe("high");
+    expect(result?.candidate.itemId).toBe(serenityCue.itemId);
+  });
 });
