@@ -3,6 +3,13 @@ import type { AppConfig } from "../config.ts";
 import { displayTitleWithYear } from "../display-title.ts";
 import { formatEpisodeLabel, type JellyfinClient } from "../jellyfin.ts";
 import { RadarrApiError, RadarrClient } from "../radarr/client.ts";
+import {
+  acquireEpisode,
+  checkSonarrDiskSpace,
+  pickBestSeries,
+  resolveSonarrDefaults,
+  type ExcludedRootMatcher,
+} from "../sonarr/acquire.ts";
 import { SonarrApiError, SonarrClient } from "../sonarr/client.ts";
 import { encodeQuoteMatchToken } from "../subtitles/match-token.ts";
 import { openSubtitleIndex, type SubtitleIndex } from "../subtitles/index-db.ts";
@@ -26,6 +33,11 @@ export type QuoteRequestReconcilerDeps = {
     | "radarrApiKey"
     | "sonarrUrl"
     | "sonarrApiKey"
+    | "sonarrQualityProfileId"
+    | "sonarrLanguageProfileId"
+    | "sonarrRootFolderPath"
+    | "sonarrMinFreeGb"
+    | "sonarrExcludedRootKeywords"
   > &
     Partial<RenderAndPostConfig>;
   /**
@@ -64,6 +76,7 @@ export async function runQuoteRequestReconcile(deps: QuoteRequestReconcilerDeps)
   let index: SubtitleIndex | null = null;
 
   try {
+    await replayDeferredAcquisitions(deps, store);
     await pollRadarrAcquisitions(deps, store);
     await pollSonarrAcquisitions(deps, store);
 
@@ -545,6 +558,183 @@ async function pollSonarrAcquisitions(
       console.warn(
         JSON.stringify({
           event: "quote_request.jellyfin.refresh_failed_sonarr",
+          error: error instanceof Error ? error.message : "unknown error",
+        }),
+      );
+    }
+  }
+}
+
+/**
+ * Replays acquisition rows that were submitted while their integration was
+ * offline (`acquisition_kind` set, `acquisition_external_id IS NULL`,
+ * `acquisition_status='not_requested'`) once the integration is configured.
+ *
+ * Currently only Sonarr is replayed; Radarr's no-config path always rejected
+ * the modal upfront so it never persists deferred rows.
+ */
+async function replayDeferredAcquisitions(
+  deps: QuoteRequestReconcilerDeps,
+  store: QuoteRequestStore,
+): Promise<void> {
+  if (!deps.config.sonarrUrl || !deps.config.sonarrApiKey) {
+    return;
+  }
+
+  const deferred = store.listDeferredAcquisitions();
+  const sonarrDeferred = deferred.filter((row) => row.acquisitionKind === "sonarr");
+  if (sonarrDeferred.length === 0) {
+    return;
+  }
+
+  const client = new SonarrClient(deps.config.sonarrUrl, deps.config.sonarrApiKey);
+
+  const excludedKeywords = deps.config.sonarrExcludedRootKeywords ?? [];
+  const excludedMatcher: ExcludedRootMatcher | undefined =
+    excludedKeywords.length > 0
+      ? (path) => excludedKeywords.some((kw) => path.toLowerCase().includes(kw.toLowerCase()))
+      : undefined;
+
+  let defaults: Awaited<ReturnType<typeof resolveSonarrDefaults>> | null = null;
+  try {
+    defaults = await resolveSonarrDefaults(
+      client,
+      {
+        qualityProfileId: deps.config.sonarrQualityProfileId,
+        rootFolderPath: deps.config.sonarrRootFolderPath,
+      },
+      { excludedRootMatcher: excludedMatcher },
+    );
+  } catch (error) {
+    console.warn(
+      JSON.stringify({
+        event: "quote_request.sonarr.replay_defaults_failed",
+        error: error instanceof Error ? error.message : "unknown error",
+      }),
+    );
+    return;
+  }
+
+  if ("kind" in defaults) {
+    console.warn(
+      JSON.stringify({
+        event: "quote_request.sonarr.replay_skipped_no_defaults",
+        refusal: defaults.kind,
+      }),
+    );
+    return;
+  }
+  if (deps.config.sonarrLanguageProfileId !== undefined) {
+    defaults.languageProfileId = deps.config.sonarrLanguageProfileId;
+  }
+
+  const diskRefusal = checkSonarrDiskSpace(defaults, deps.config.sonarrMinFreeGb);
+  if (diskRefusal) {
+    console.warn(
+      JSON.stringify({
+        event: "quote_request.sonarr.replay_skipped_disk",
+        refusal: diskRefusal.kind,
+      }),
+    );
+    return;
+  }
+
+  for (const row of sonarrDeferred) {
+    const meta = safeJson(row.acquisitionMetadata);
+    const seasonRaw = (meta as { season?: unknown }).season;
+    const episodeRaw = (meta as { episode?: unknown }).episode;
+    const season = typeof seasonRaw === "number" ? seasonRaw : Number(seasonRaw);
+    const episode = typeof episodeRaw === "number" ? episodeRaw : Number(episodeRaw);
+    if (!Number.isInteger(season) || !Number.isInteger(episode) || season <= 0 || episode <= 0) {
+      console.warn(
+        JSON.stringify({
+          event: "quote_request.sonarr.replay_unparseable_meta",
+          requestId: row.id,
+        }),
+      );
+      continue;
+    }
+
+    try {
+      const lookup = await client.lookup(row.movieText);
+      const pick = pickBestSeries(lookup, { showText: row.movieText });
+      if ("kind" in pick) {
+        console.warn(
+          JSON.stringify({
+            event: "quote_request.sonarr.replay_no_match",
+            requestId: row.id,
+            show: row.movieText,
+          }),
+        );
+        continue;
+      }
+
+      let result;
+      try {
+        result = await acquireEpisode({
+          client,
+          candidate: pick.candidate,
+          defaults,
+          seasonNumber: season,
+          episodeNumber: episode,
+        });
+      } catch (error) {
+        if (
+          error instanceof SonarrApiError &&
+          error.status === 400 &&
+          /seriesexistsvalidator|already (been added|exists|added)/i.test(error.message)
+        ) {
+          const existing = await client.findSeriesByTvdbId(pick.candidate.tvdbId);
+          if (!existing) throw error;
+          const ep = await client.findEpisode(existing.id, season, episode);
+          if (!ep) {
+            console.warn(
+              JSON.stringify({
+                event: "quote_request.sonarr.replay_episode_missing",
+                requestId: row.id,
+                seriesId: existing.id,
+                season,
+                episode,
+              }),
+            );
+            continue;
+          }
+          if (!ep.monitored) await client.setEpisodeMonitored(ep.id, true);
+          if (!ep.hasFile) await client.episodeSearch([ep.id]);
+          result = { series: existing, episode: ep, alreadyAdded: true };
+        } else {
+          throw error;
+        }
+      }
+
+      store.setAcquisitionStatus({
+        id: row.id,
+        externalId: result.episode.id,
+        status: result.episode.hasFile ? "imported" : "searching",
+        metadata: JSON.stringify({
+          ...(meta as Record<string, unknown>),
+          tvdbId: pick.candidate.tvdbId,
+          seriesId: result.series.id,
+          season,
+          episode,
+          replayedAt: new Date().toISOString(),
+        }),
+      });
+      console.info(
+        JSON.stringify({
+          event: "quote_request.sonarr.replayed",
+          requestId: row.id,
+          show: pick.candidate.title,
+          season,
+          episode,
+          alreadyAdded: result.alreadyAdded,
+        }),
+      );
+    } catch (error) {
+      console.error(
+        JSON.stringify({
+          event: "quote_request.sonarr.replay_error",
+          requestId: row.id,
           error: error instanceof Error ? error.message : "unknown error",
         }),
       );
