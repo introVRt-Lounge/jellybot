@@ -9,6 +9,8 @@ export type QuoteRequestMatch = {
 
 const DEFAULT_TITLE_THRESHOLD = 0.55;
 const STRONG_TITLE_THRESHOLD = 0.8;
+const RELAXED_MIN_DISTINCTIVE_TOKENS = 2;
+const DISTINCTIVE_TOKEN_MIN_LENGTH = 4;
 
 export function findQuoteRequestMatch(
   index: Pick<SubtitleIndex, "searchQuotes">,
@@ -25,7 +27,22 @@ export function findQuoteRequestMatch(
   const cleanedQuote = quoteText.trim();
   if (!cleanedQuote) return null;
 
-  const candidates = index.searchQuotes(cleanedQuote, searchLimit);
+  let candidates = index.searchQuotes(cleanedQuote, searchLimit);
+  let usedRelaxedSearch = false;
+
+  // Real users misremember small filler words ("watch me soar" vs "watch how I
+  // soar"), and the FTS query AND-joins every >=2-char token. If the strict
+  // search came up empty, retry using only distinctive (>=4-char) tokens so
+  // forgotten connectives don't kill the match. The distinctive set still has
+  // to be specific enough on its own (>=2 long tokens) or we skip the retry.
+  if (candidates.length === 0) {
+    const distinctive = extractDistinctiveTokens(cleanedQuote);
+    if (distinctive.length >= RELAXED_MIN_DISTINCTIVE_TOKENS) {
+      candidates = index.searchQuotes(distinctive.join(" "), searchLimit);
+      usedRelaxedSearch = candidates.length > 0;
+    }
+  }
+
   if (candidates.length === 0) return null;
 
   let best: QuoteRequestMatch | null = null;
@@ -34,8 +51,14 @@ export function findQuoteRequestMatch(
     const titleScore = scoreTitleMatch(cleanedMovie, candidate);
     if (titleScore < titleThreshold) continue;
 
-    const confidence: QuoteRequestMatch["confidence"] =
+    let confidence: QuoteRequestMatch["confidence"] =
       titleScore >= STRONG_TITLE_THRESHOLD ? "high" : "medium";
+
+    // Relaxed-fallback hits are inherently fuzzier; never auto-promote past
+    // medium even when the title is a perfect match.
+    if (usedRelaxedSearch && confidence === "high") {
+      confidence = "medium";
+    }
 
     if (!best || isBetter(titleScore, candidate.rank, best)) {
       best = { candidate, titleScore, cueRank: candidate.rank, confidence };
@@ -43,6 +66,14 @@ export function findQuoteRequestMatch(
   }
 
   return best;
+}
+
+function extractDistinctiveTokens(quote: string): string[] {
+  return quote
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]+/gu, " ")
+    .split(/\s+/)
+    .filter((token) => token.length >= DISTINCTIVE_TOKEN_MIN_LENGTH);
 }
 
 function isBetter(
