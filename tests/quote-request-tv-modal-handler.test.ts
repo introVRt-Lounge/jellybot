@@ -373,7 +373,7 @@ describe("handleQuoteRequestModalSubmit (TV)", () => {
     }
   });
 
-  test("falls back to State-B watch when Sonarr is not configured", async () => {
+  test("Sonarr not configured: persists S/E in metadata as deferred sonarr request (#129)", async () => {
     const dbPath = tmpDb();
     const { interaction, replies } = makeTvInteraction({
       show: "Buffy",
@@ -391,12 +391,22 @@ describe("handleQuoteRequestModalSubmit (TV)", () => {
 
     const reply = String(replies.editReply[0]);
     expect(reply).toContain("Sonarr isn't configured");
+    expect(reply).toContain("Buffy");
+    expect(reply).toContain("S02E05");
 
     const store = new QuoteRequestStore(dbPath);
     try {
       const pending = store.listPending();
       expect(pending).toHaveLength(1);
-      expect(pending[0]?.acquisitionKind).toBe("none");
+      expect(pending[0]?.acquisitionKind).toBe("sonarr");
+      expect(pending[0]?.acquisitionExternalId).toBeNull();
+      expect(pending[0]?.acquisitionStatus).toBe("not_requested");
+
+      const meta = JSON.parse(pending[0]?.acquisitionMetadata ?? "{}");
+      expect(meta.season).toBe(2);
+      expect(meta.episode).toBe(5);
+      expect(meta.deferredReason).toBe("sonarr_not_configured");
+      expect(typeof meta.deferredAt).toBe("string");
     } finally {
       store.close();
     }

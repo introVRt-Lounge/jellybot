@@ -233,4 +233,143 @@ describe("Sonarr reconciler poll path", () => {
       restore();
     }
   });
+
+  test("replays deferred sonarr request when integration becomes available (#129)", async () => {
+    let lookupCalls = 0;
+    let addSeriesCalls = 0;
+    let monitorCalls = 0;
+    let searchCalls = 0;
+
+    const restore = patchFetch((url, init) => {
+      const method = (init?.method ?? "GET").toUpperCase();
+      if (url.endsWith("/api/v3/qualityprofile")) {
+        return jsonResponse([{ id: 4, name: "HD-1080p" }]);
+      }
+      if (url.endsWith("/api/v3/languageprofile")) {
+        return jsonResponse([]);
+      }
+      if (url.endsWith("/api/v3/rootfolder")) {
+        return jsonResponse([
+          { id: 1, path: "/data/tv", freeSpace: 50 * 1024 ** 3, accessible: true },
+        ]);
+      }
+      if (url.includes("/api/v3/series/lookup")) {
+        lookupCalls += 1;
+        return jsonResponse([
+          {
+            tvdbId: 70327,
+            title: "Buffy the Vampire Slayer",
+            year: 1997,
+            seasons: [{ seasonNumber: 2, monitored: false }],
+          },
+        ]);
+      }
+      if (method === "GET" && url.endsWith("/api/v3/series")) {
+        return jsonResponse([]);
+      }
+      if (method === "POST" && url.endsWith("/api/v3/series")) {
+        addSeriesCalls += 1;
+        return jsonResponse({ id: 99, tvdbId: 70327, title: "Buffy" }, 201);
+      }
+      if (url.match(/\/api\/v3\/episode\?seriesId=99$/)) {
+        return jsonResponse([
+          {
+            id: 555,
+            seriesId: 99,
+            seasonNumber: 2,
+            episodeNumber: 5,
+            monitored: false,
+            hasFile: false,
+          },
+        ]);
+      }
+      if (url.endsWith("/api/v3/episode/555") && method === "GET") {
+        return jsonResponse({
+          id: 555,
+          seriesId: 99,
+          seasonNumber: 2,
+          episodeNumber: 5,
+          monitored: false,
+          hasFile: false,
+        });
+      }
+      if (url.endsWith("/api/v3/episode/555") && method === "PUT") {
+        monitorCalls += 1;
+        return jsonResponse({
+          id: 555,
+          seriesId: 99,
+          seasonNumber: 2,
+          episodeNumber: 5,
+          monitored: true,
+          hasFile: false,
+        });
+      }
+      if (url.endsWith("/api/v3/command")) {
+        searchCalls += 1;
+        return jsonResponse({ id: 1, name: "EpisodeSearch", status: "queued" });
+      }
+      throw new Error("unexpected url " + url + " method=" + method);
+    });
+
+    try {
+      const botStateDbPath = tmpPath("qr-tv-deferred");
+      const subtitleDbPath = tmpPath("qr-tv-deferred-subs");
+
+      const store = new QuoteRequestStore(botStateDbPath);
+      store.insert({
+        requesterDiscordId: "u1",
+        requesterName: "U1",
+        guildId: "g",
+        channelId: "c",
+        movieText: "Buffy",
+        quoteText: "fictional quote",
+        acquisitionKind: "sonarr",
+        acquisitionStatus: "not_requested",
+        acquisitionMetadata: JSON.stringify({
+          season: 2,
+          episode: 5,
+          deferredReason: "sonarr_not_configured",
+        }),
+      });
+      store.close();
+
+      const fake = makeFakeClient();
+      const fakeJf = makeFakeJellyfin();
+
+      await runQuoteRequestReconcile({
+        client: fake.client as never,
+        config: {
+          botStateDbPath,
+          subtitleDbPath,
+          sonarrUrl: "http://sonarr/sonarr",
+          sonarrApiKey: "key",
+          sonarrMinFreeGb: 3,
+          sonarrExcludedRootKeywords: [],
+        },
+        jellyfin: fakeJf.jellyfin as never,
+      });
+
+      const verify = new QuoteRequestStore(botStateDbPath);
+      try {
+        const row = verify.getById(1);
+        expect(row?.acquisitionExternalId).toBe(555);
+        expect(row?.acquisitionStatus).toBe("searching");
+        const meta = JSON.parse(row?.acquisitionMetadata ?? "{}");
+        expect(meta.tvdbId).toBe(70327);
+        expect(meta.seriesId).toBe(99);
+        expect(typeof meta.replayedAt).toBe("string");
+        expect(meta.season).toBe(2);
+        expect(meta.episode).toBe(5);
+      } finally {
+        verify.close();
+      }
+
+      expect(lookupCalls).toBeGreaterThanOrEqual(1);
+      expect(addSeriesCalls).toBe(1);
+      expect(monitorCalls).toBe(1);
+      expect(searchCalls).toBe(1);
+    } finally {
+      restore();
+    }
+  });
 });

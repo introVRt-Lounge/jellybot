@@ -207,22 +207,69 @@ export class QuoteRequestStore {
     return rows.map((row) => this.mapRow(row)!);
   }
 
+  /**
+   * Rows that signalled an intent to use Sonarr/Radarr but never got the
+   * external acquisition kicked off (most commonly: integration was offline at
+   * submit time). Reconciler replays these once the integration is wired.
+   */
+  listDeferredAcquisitions(limit = 200): QuoteRequestRow[] {
+    const rows = this.db
+      .query<Row, [number]>(
+        `SELECT ${SELECT_COLUMNS}
+         FROM quote_requests
+         WHERE status = 'pending'
+           AND acquisition_kind IN ('sonarr', 'radarr')
+           AND acquisition_external_id IS NULL
+           AND acquisition_status = 'not_requested'
+         ORDER BY created_at ASC
+         LIMIT ?`,
+      )
+      .all(limit);
+
+    return rows.map((row) => this.mapRow(row)!);
+  }
+
   setAcquisitionStatus(input: {
     id: number;
     status: AcquisitionStatus;
     metadata?: string | null;
+    externalId?: number;
   }): void {
-    if (input.metadata === undefined) {
+    const setExternalId = input.externalId !== undefined;
+    const setMetadata = input.metadata !== undefined;
+
+    if (!setExternalId && !setMetadata) {
       this.db
         .query(`UPDATE quote_requests SET acquisition_status = ? WHERE id = ?`)
         .run(input.status, input.id);
-    } else {
+      return;
+    }
+
+    if (setExternalId && setMetadata) {
       this.db
         .query(
-          `UPDATE quote_requests SET acquisition_status = ?, acquisition_metadata = ? WHERE id = ?`,
+          `UPDATE quote_requests
+             SET acquisition_status = ?, acquisition_external_id = ?, acquisition_metadata = ?
+             WHERE id = ?`,
         )
-        .run(input.status, input.metadata, input.id);
+        .run(input.status, input.externalId!, input.metadata!, input.id);
+      return;
     }
+
+    if (setExternalId) {
+      this.db
+        .query(
+          `UPDATE quote_requests SET acquisition_status = ?, acquisition_external_id = ? WHERE id = ?`,
+        )
+        .run(input.status, input.externalId!, input.id);
+      return;
+    }
+
+    this.db
+      .query(
+        `UPDATE quote_requests SET acquisition_status = ?, acquisition_metadata = ? WHERE id = ?`,
+      )
+      .run(input.status, input.metadata!, input.id);
   }
 
   countPendingForRequester(requesterDiscordId: string): number {

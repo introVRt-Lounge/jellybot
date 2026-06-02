@@ -366,13 +366,21 @@ async function handleTvQuoteRequest(
         channelId: interaction.channelId!,
         movieText: parsed.show,
         quoteText: parsed.quote,
+        acquisitionKind: "sonarr",
+        acquisitionStatus: "not_requested",
+        acquisitionMetadata: JSON.stringify({
+          season: parsed.season!,
+          episode: parsed.episode!,
+          deferredReason: "sonarr_not_configured",
+          deferredAt: new Date().toISOString(),
+        }),
       });
       logQuoteRequestEvent("created.no_sonarr", row.id, interaction, {
         season: parsed.season,
         episode: parsed.episode,
       });
       await interaction.editReply(
-        `Saved as a watch request. Sonarr isn't configured on this bot, so it can't fetch missing TV episodes - I'll only ping you if **${truncate(parsed.show, 80)} S${pad2(parsed.season!)}E${pad2(parsed.episode!)}** is already in the library and the quote shows up after a re-index.`,
+        `Saved as a watch request. Sonarr isn't configured on this bot right now, so it can't fetch **${truncate(parsed.show, 80)} S${pad2(parsed.season!)}E${pad2(parsed.episode!)}** for you yet. Once an operator wires up Sonarr the bot will replay your request automatically; in the meantime I'll match if the episode is already in the library.`,
       );
       return;
     }
