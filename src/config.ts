@@ -37,6 +37,19 @@ export type AppConfig = {
   radarrRootFolderPath?: string;
   /** Refuse acquisitions when the Radarr root folder has less than this many GB free (default 3). */
   radarrMinFreeGb: number;
+  sonarrUrl?: string;
+  sonarrApiKey?: string;
+  sonarrQualityProfileId?: number;
+  sonarrLanguageProfileId?: number;
+  sonarrRootFolderPath?: string;
+  /** Refuse acquisitions when the Sonarr root folder has less than this many GB free (default 3). */
+  sonarrMinFreeGb: number;
+  /**
+   * Comma-separated case-insensitive substrings; any Sonarr root folder whose
+   * path matches any of these is skipped during default selection. Use this to
+   * keep the request flow away from special-purpose libraries.
+   */
+  sonarrExcludedRootKeywords: string[];
 };
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
@@ -77,6 +90,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     radarrQualityProfileId: parseOptionalNumber(env.RADARR_QUALITY_PROFILE_ID),
     radarrRootFolderPath: env.RADARR_ROOT_FOLDER_PATH?.trim() || undefined,
     radarrMinFreeGb: Number(env.RADARR_MIN_FREE_GB ?? 3),
+    sonarrUrl: env.SONARR_URL?.trim().replace(/\/+$/, "") || undefined,
+    sonarrApiKey: env.SONARR_API_KEY?.trim() || undefined,
+    sonarrQualityProfileId: parseOptionalNumber(env.SONARR_QUALITY_PROFILE_ID),
+    sonarrLanguageProfileId: parseOptionalNumber(env.SONARR_LANGUAGE_PROFILE_ID),
+    sonarrRootFolderPath: env.SONARR_ROOT_FOLDER_PATH?.trim() || undefined,
+    sonarrMinFreeGb: Number(env.SONARR_MIN_FREE_GB ?? 3),
+    sonarrExcludedRootKeywords: parseCsvIds(env.SONARR_EXCLUDED_ROOT_KEYWORDS ?? ""),
   };
 }
 

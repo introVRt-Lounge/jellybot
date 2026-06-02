@@ -17,6 +17,10 @@ import {
 } from "./commands/feature.ts";
 import { handleQuoteAutocomplete, handleQuoteCommand, quoteCommand } from "./commands/quote.ts";
 import { handleQuoteRequestModalSubmit } from "./quote-requests/handle-modal.ts";
+import {
+  handleQuoteRequestMediaTypeSelect,
+  isQuoteRequestMediaTypeSelect,
+} from "./quote-requests/handle-select.ts";
 import { isQuoteRequestModal } from "./quote-requests/modal.ts";
 import {
   handleSubcoverageAutocomplete,
@@ -265,6 +269,26 @@ client.on(Events.InteractionCreate, async (interaction) => {
         if (!interaction.responded) {
           await interaction.respond([]).catch(() => undefined);
         }
+      }
+    }
+    return;
+  }
+
+  if (interaction.isStringSelectMenu() && isQuoteRequestMediaTypeSelect(interaction)) {
+    try {
+      await handleQuoteRequestMediaTypeSelect(interaction);
+    } catch (error) {
+      console.error(
+        JSON.stringify({
+          event: "quote_request.media_type_select_error",
+          userId: interaction.user.id,
+          error: error instanceof Error ? error.message : "unknown error",
+        }),
+      );
+      if (!interaction.replied && !interaction.deferred) {
+        await interaction
+          .reply({ content: "Something went wrong opening that form.", ephemeral: true })
+          .catch(() => undefined);
       }
     }
     return;

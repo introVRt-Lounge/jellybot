@@ -97,7 +97,11 @@ The subtitle index must exist first. Run `make index-subtitles` on the host/cont
 
 ### Missing-quote submission flow
 
-Every `/quote` autocomplete response includes a final synthetic entry: **`Can't find it? Submit a request - we'll fetch the movie and ping you`**. Picking that entry opens a Discord modal with two fields:
+Every `/quote` autocomplete response includes a final synthetic entry: **`Can't find it? Click and SUBMIT this choice - you can request it!`**. Picking and submitting that entry replies with an ephemeral message asking *"Were you looking for a movie or a TV show?"* and a select menu with two options.
+
+#### Movie path
+
+Picking **Movie** opens a modal with two fields:
 
 | Field | Required | Notes |
 | --- | --- | --- |
@@ -116,14 +120,35 @@ On submit:
 
 Auto-approval is intentional: Radarr is configured to refuse 4K REMUX size profiles, so the cap is the operator's existing quality discipline, not a per-request gate. If `RADARR_URL`/`RADARR_API_KEY` are unset, the bot falls back to a passive watch-and-notify mode (no acquisition, just notifies if the quote appears later from a manual SRT or Bazarr drop).
 
-#### Refusals
+#### TV path
 
-- **Low disk space.** Refused if the Radarr root folder has less than `RADARR_MIN_FREE_GB` (default 3 GB) free.
-- **No candidates.** Radarr's TMDB lookup returned nothing for the title; user must retry with a more specific query.
-- **Already in Radarr.** Falls back to the passive watch flow against the existing Radarr movie.
-- **Pending cap.** Each user can have up to 10 pending requests at once.
+Picking **TV show** opens a modal with four fields:
 
-TV episode acquisition (Sonarr-targeted single-episode fetch) is filed under issue #97 Phase 2 and is not implemented in this command yet.
+| Field | Required | Notes |
+| --- | --- | --- |
+| `Show name` | Yes | Best guess; max 200 chars. |
+| `Season number` | Yes | Whole non-negative integer. |
+| `Episode number` | Yes | Whole non-negative integer. |
+| `The line you want` | Yes | The quote, as best as you remember it. Max 500 chars. |
+
+Both Season and Episode are required - a `Season-blank means fan out` mode is intentionally **not** supported in V1; if the user can't recall both, the request is rejected with an explanatory message.
+
+On submit:
+
+1. The bot looks up the show in Sonarr (TVDB-backed search) and picks the best candidate.
+2. If the series isn't already in Sonarr, the bot adds it **unmonitored at the show level** with `addOptions.monitor: "none"`. This is the "add but don't grab the whole show" pattern - we want the parent series record so we can selectively grab a single episode.
+3. The targeted episode is flipped to `monitored: true` and an `EpisodeSearch` command is queued. If the episode already has a file on disk, the search is skipped.
+4. A row is persisted in `quote_requests` with `acquisition_kind='sonarr'` and the Sonarr **episode** id (not series id) so the reconciler can poll exactly the episode the user asked for.
+5. The reconciler polls Sonarr's episode endpoint each tick. Once `hasFile=true`, it advances the row to `imported`, triggers a Jellyfin library refresh, and marks `indexed`. The FTS-match pass on subsequent ticks then runs the same render-and-post fulfillment described above.
+
+If `SONARR_URL`/`SONARR_API_KEY` are unset, the TV path falls back to a passive watch-and-notify mode (no acquisition, just notifies if the quote later appears from a manual SRT or library scan).
+
+#### Refusals (apply to both paths)
+
+- **Low disk space.** Refused if the chosen Radarr/Sonarr root folder has less than the corresponding `*_MIN_FREE_GB` (default 3 GB) free.
+- **No candidates.** Radarr or Sonarr's metadata lookup returned nothing for the title; user must retry with a more specific query.
+- **Already added.** Movie path: falls back to passive watch against the existing Radarr movie. TV path: skips the add and only monitors+searches the requested episode.
+- **Pending cap.** Each user can have up to 10 pending requests at once across both paths.
 
 ## `/subcoverage`
 

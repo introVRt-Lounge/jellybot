@@ -77,6 +77,13 @@ const baseRadarrConfig = {
   radarrQualityProfileId: undefined,
   radarrRootFolderPath: undefined,
   radarrMinFreeGb: 3,
+  sonarrUrl: undefined,
+  sonarrApiKey: undefined,
+  sonarrQualityProfileId: undefined,
+  sonarrLanguageProfileId: undefined,
+  sonarrRootFolderPath: undefined,
+  sonarrMinFreeGb: 3,
+  sonarrExcludedRootKeywords: [] as string[],
 };
 
 describe("handleQuoteRequestModalSubmit", () => {
@@ -211,6 +218,13 @@ describe("handleQuoteRequestModalSubmit", () => {
       radarrQualityProfileId: undefined,
       radarrRootFolderPath: undefined,
       radarrMinFreeGb: 3,
+      sonarrUrl: undefined,
+      sonarrApiKey: undefined,
+      sonarrQualityProfileId: undefined,
+      sonarrLanguageProfileId: undefined,
+      sonarrRootFolderPath: undefined,
+      sonarrMinFreeGb: 3,
+      sonarrExcludedRootKeywords: [],
     });
 
     const reply = String(replies.editReply[0]);
