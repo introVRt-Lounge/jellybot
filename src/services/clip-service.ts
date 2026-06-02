@@ -1,6 +1,12 @@
 import { dirname } from "node:path";
 import { pickAudioStream, parsePreferredLanguages as parseAudioLanguages } from "../audio-track-select.ts";
-import { cleanup, createClip, fileSizeMb } from "../ffmpeg.ts";
+import {
+  cleanup,
+  createClip,
+  fileSizeMb,
+  probeRenderedClipStats,
+  validateRenderedClip,
+} from "../ffmpeg.ts";
 import { displayTitle } from "../display-title.ts";
 import type { JellyfinClient, JellyfinItem, MediaKind } from "../jellyfin.ts";
 import { formatTimestamp } from "../time.ts";
@@ -126,6 +132,46 @@ export async function renderClip(params: {
       return {
         ok: false,
         message: `Clip is ${sizeMb.toFixed(1)} MB, above the ${params.maxClipMb} MB Discord limit. Try a shorter clip.`,
+      };
+    }
+
+    // ffmpeg cheerfully exits 0 even when the matroska demuxer hits "File
+    // ended prematurely" mid-seek and writes an mp4 with zero packets. Catch
+    // those before we ship them to Discord with a "your wish is granted"
+    // message attached.
+    let stats;
+    try {
+      stats = await probeRenderedClipStats(params.outputPath);
+    } catch (error) {
+      await cleanup(params.outputPath);
+      return {
+        ok: false,
+        message: `Failed to validate clip output: ${error instanceof Error ? error.message : "unknown error"}`,
+      };
+    }
+
+    const validation = validateRenderedClip(stats);
+    if (!validation.ok) {
+      console.warn(
+        JSON.stringify({
+          event: "clip.empty_output",
+          itemId: params.item.id,
+          startSeconds: params.plan.startSeconds,
+          durationSeconds: params.plan.durationSeconds,
+          reason: validation.reason,
+          sizeBytes: validation.stats.sizeBytes,
+          videoFrames: validation.stats.videoFrames,
+          audioFrames: validation.stats.audioFrames,
+        }),
+      );
+      await cleanup(params.outputPath);
+      const detail =
+        validation.reason === "tiny_file"
+          ? `output was ${validation.stats.sizeBytes} bytes`
+          : `no video frames decoded`;
+      return {
+        ok: false,
+        message: `Render produced an empty clip (${detail}). The source file may be corrupt or not seekable at that timestamp.`,
       };
     }
 

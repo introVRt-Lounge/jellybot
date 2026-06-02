@@ -215,6 +215,109 @@ export async function fileSizeMb(path: string): Promise<number> {
   return info.size / (1024 * 1024);
 }
 
+export async function fileSizeBytes(path: string): Promise<number> {
+  const info = await stat(path);
+  return info.size;
+}
+
 export async function cleanup(path: string): Promise<void> {
   await rm(path, { force: true });
+}
+
+/**
+ * Smallest plausible clip we'd ever ship. ffmpeg writes ~860 bytes of moov
+ * atom even when zero packets get muxed (e.g. matroska demuxer hit a
+ * structurally damaged source mid-seek and bailed with "File ended
+ * prematurely" but exit-coded 0). 16 KB is comfortably below any real video
+ * clip and well above the empty-mp4 floor. Tunable - widen carefully.
+ */
+export const MIN_CLIP_BYTES = 16 * 1024;
+
+export type RenderedClipStats = {
+  sizeBytes: number;
+  videoFrames: number;
+  audioFrames?: number;
+};
+
+export type ClipOutputValidation =
+  | { ok: true }
+  | { ok: false; reason: "tiny_file" | "no_video"; stats: RenderedClipStats };
+
+/**
+ * Decide whether a freshly-rendered clip is shippable. Pure - no IO, no
+ * logging - so callers can wire in real ffprobe data or fixtures.
+ */
+export function validateRenderedClip(stats: RenderedClipStats): ClipOutputValidation {
+  if (stats.sizeBytes < MIN_CLIP_BYTES) {
+    return { ok: false, reason: "tiny_file", stats };
+  }
+  if (stats.videoFrames < 1) {
+    return { ok: false, reason: "no_video", stats };
+  }
+  return { ok: true };
+}
+
+/** ffprobe a freshly-rendered clip and report packet/frame counts per stream type. */
+export async function probeRenderedClipStats(path: string): Promise<RenderedClipStats> {
+  const sizeBytes = await fileSizeBytes(path);
+  const counts = await probeStreamPacketCounts(path);
+  return { sizeBytes, videoFrames: counts.video, audioFrames: counts.audio };
+}
+
+async function probeStreamPacketCounts(
+  path: string,
+): Promise<{ video: number; audio: number }> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(
+      "ffprobe",
+      [
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-count_packets",
+        "-show_entries",
+        "stream=codec_type,nb_read_packets",
+        "-of",
+        "json",
+        path,
+      ],
+      { stdio: ["ignore", "pipe", "pipe"] },
+    );
+
+    let stdout = "";
+    let stderr = "";
+
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk.toString();
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk.toString();
+    });
+
+    child.on("error", reject);
+    child.on("close", (code) => {
+      if (code !== 0) {
+        reject(new Error(stderr.trim() || `ffprobe exited with code ${code}`));
+        return;
+      }
+
+      try {
+        const parsed = JSON.parse(stdout) as {
+          streams?: Array<{ codec_type?: string; nb_read_packets?: string | number }>;
+        };
+        let video = 0;
+        let audio = 0;
+        for (const stream of parsed.streams ?? []) {
+          const raw = stream.nb_read_packets;
+          const count = typeof raw === "number" ? raw : raw ? Number(raw) : 0;
+          if (!Number.isFinite(count)) continue;
+          if (stream.codec_type === "video") video += count;
+          else if (stream.codec_type === "audio") audio += count;
+        }
+        resolve({ video, audio });
+      } catch (error) {
+        reject(error instanceof Error ? error : new Error("Failed to parse ffprobe output."));
+      }
+    });
+  });
 }
