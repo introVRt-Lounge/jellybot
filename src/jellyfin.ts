@@ -498,6 +498,67 @@ export class JellyfinClient {
     }
   }
 
+  /**
+   * Refresh a single item's metadata + media probe. Used after Bazarr drops a
+   * new sidecar SRT - that doesn't change the file size so a library refresh
+   * may skip it, but a directed item refresh forces Jellyfin to re-read the
+   * media streams (and bump dateLastRefreshed, which is what the indexer
+   * keys on for incremental decisions).
+   *
+   * Defaults to Default mode metadata refresh + image refresh, force-replace
+   * subtitle/file metadata so Bazarr drops are picked up reliably.
+   */
+  async refreshItem(itemId: string): Promise<void> {
+    const params = new URLSearchParams({
+      Recursive: "false",
+      MetadataRefreshMode: "Default",
+      ImageRefreshMode: "Default",
+      ReplaceAllMetadata: "false",
+      ReplaceAllImages: "false",
+    });
+    const response = await this.fetchAuthed(
+      `${this.baseUrl}/Items/${encodeURIComponent(itemId)}/Refresh?${params}`,
+      { method: "POST" },
+    );
+    if (!response.ok && response.status !== 204) {
+      throw new Error(`Jellyfin item refresh failed (${response.status}).`);
+    }
+  }
+
+  /** Look up a Jellyfin episode by TVDB series id + season + episode numbers (used after Sonarr drops a new file). */
+  async findEpisodeByTvdb(
+    tvdbId: number,
+    seasonNumber: number,
+    episodeNumber: number,
+  ): Promise<JellyfinItem | null> {
+    const { userId } = this.requireAuth();
+    const params = new URLSearchParams({
+      UserId: userId,
+      IncludeItemTypes: "Episode",
+      Recursive: "true",
+      Limit: "50",
+      AnyProviderIdEquals: `tvdb.${tvdbId}`,
+      Fields: ITEM_FIELDS,
+    });
+    const response = await this.fetchAuthed(`${this.baseUrl}/Items?${params}`);
+    if (!response.ok) {
+      throw new Error(`Jellyfin TVDB episode lookup failed (${response.status}).`);
+    }
+    const data = (await response.json()) as JellyfinSearchResponse;
+    const items = this.mapItems(data);
+    // The series and the episodes can both reach this query (the AnyProviderId
+    // index on Jellyfin matches the series tvdb id on its episode rows). Match
+    // on episode + season explicitly so we don't index the wrong row.
+    return (
+      items.find(
+        (item) =>
+          item.type === "Episode" &&
+          item.seasonNumber === seasonNumber &&
+          item.episodeNumber === episodeNumber,
+      ) ?? null
+    );
+  }
+
   async searchSeries(query: string, limit = 25, signal?: AbortSignal): Promise<JellyfinItem[]> {
     return this.searchItems({
       query,

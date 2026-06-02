@@ -106,6 +106,49 @@ export async function indexSubtitles(
   }
 }
 
+export type IndexSingleItemResult =
+  | { ok: true; itemId: string; cueCount: number }
+  | { ok: false; itemId: string; reason: "missing" | "no_cues" | "error"; message?: string };
+
+/**
+ * Index just one Jellyfin item. Used by the webhook indexer-kick path so
+ * Radarr/Sonarr/Bazarr Connect events can produce a sub-second targeted
+ * refresh instead of waiting for the full incremental scan or the 09:00 cron.
+ *
+ * Opens its own SubtitleIndex handle so callers don't have to manage db
+ * lifecycle; that mirrors the design of `indexSubtitles`. Concurrency-safe
+ * w.r.t. the bulk indexer because both go through SQLite.
+ */
+export async function indexJellyfinItem(
+  jellyfin: JellyfinClient,
+  options: { dbPath: string; itemId: string; preferredLanguages: string[] },
+): Promise<IndexSingleItemResult> {
+  const index = openSubtitleIndex(options.dbPath);
+  try {
+    const detailed = await jellyfin.getItemWithMedia(options.itemId);
+    if (!detailed) {
+      return { ok: false, itemId: options.itemId, reason: "missing" };
+    }
+
+    try {
+      const cueCount = await indexOneItem(jellyfin, index, detailed, options.preferredLanguages);
+      if (cueCount === 0) {
+        return { ok: false, itemId: options.itemId, reason: "no_cues" };
+      }
+      return { ok: true, itemId: options.itemId, cueCount };
+    } catch (error) {
+      return {
+        ok: false,
+        itemId: options.itemId,
+        reason: "error",
+        message: error instanceof Error ? error.message : "unknown error",
+      };
+    }
+  } finally {
+    index.close();
+  }
+}
+
 async function indexOneItem(
   jellyfin: JellyfinClient,
   index: SubtitleIndex,
