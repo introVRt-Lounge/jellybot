@@ -11,6 +11,18 @@ const DEFAULT_TITLE_THRESHOLD = 0.55;
 const STRONG_TITLE_THRESHOLD = 0.8;
 const RELAXED_MIN_DISTINCTIVE_TOKENS = 2;
 const DISTINCTIVE_TOKEN_MIN_LENGTH = 4;
+// Anchor-fallback tier (#137): the first N distinctive tokens of a long
+// quote are AND'd to find the cue where the dialogue starts. The clip
+// renders from that cue's timestamp, so users can submit verbose monologue
+// quotes that span 3+ SRT cues without us doubling index size with wider
+// merged windows.
+const ANCHOR_TOKEN_COUNT = 4;
+// #136: when the user's movie text is a strict subset of the candidate
+// title (token-level), treat the title score as strong enough to clear
+// the default threshold even if the character-ratio is low ("Buffy" ->
+// "Buffy the Vampire Slayer" sits at 0.25 by raw char ratio but is
+// obviously the right show).
+const SUBSTRING_CONTAINMENT_FLOOR = 0.6;
 
 export function findQuoteRequestMatch(
   index: Pick<SubtitleIndex, "searchQuotes">,
@@ -29,18 +41,32 @@ export function findQuoteRequestMatch(
 
   let candidates = index.searchQuotes(cleanedQuote, searchLimit);
   let usedRelaxedSearch = false;
+  let usedAnchorSearch = false;
 
   // Real users misremember small filler words ("watch me soar" vs "watch how I
   // soar"), and the FTS query AND-joins every >=2-char token. If the strict
   // search came up empty, retry using only distinctive (>=4-char) tokens so
   // forgotten connectives don't kill the match. The distinctive set still has
   // to be specific enough on its own (>=2 long tokens) or we skip the retry.
+  const distinctive = extractDistinctiveTokens(cleanedQuote);
   if (candidates.length === 0) {
-    const distinctive = extractDistinctiveTokens(cleanedQuote);
     if (distinctive.length >= RELAXED_MIN_DISTINCTIVE_TOKENS) {
       candidates = index.searchQuotes(distinctive.join(" "), searchLimit);
       usedRelaxedSearch = candidates.length > 0;
     }
+  }
+
+  // #137: anchor fallback for long monologues that span 3+ cues. Both
+  // strict and relaxed FTS need every token in a single FTS row, so a
+  // 5-cue monologue can't match even with #130's merged-window indexing.
+  // Retry with just the first N distinctive tokens to anchor the match
+  // on where the dialogue starts; the clip renders from that cue's time.
+  // Confidence is forced to medium downstream so anchor hits never look
+  // as authoritative as a full-quote match.
+  if (candidates.length === 0 && distinctive.length > ANCHOR_TOKEN_COUNT) {
+    const anchor = distinctive.slice(0, ANCHOR_TOKEN_COUNT);
+    candidates = index.searchQuotes(anchor.join(" "), searchLimit);
+    usedAnchorSearch = candidates.length > 0;
   }
 
   if (candidates.length === 0) return null;
@@ -55,8 +81,10 @@ export function findQuoteRequestMatch(
       titleScore >= STRONG_TITLE_THRESHOLD ? "high" : "medium";
 
     // Relaxed-fallback hits are inherently fuzzier; never auto-promote past
-    // medium even when the title is a perfect match.
-    if (usedRelaxedSearch && confidence === "high") {
+    // medium even when the title is a perfect match. Same rule for anchor
+    // hits (#137): we only matched the START of the quote, not the whole
+    // span, so the user-visible confidence shouldn't claim more than that.
+    if ((usedRelaxedSearch || usedAnchorSearch) && confidence === "high") {
       confidence = "medium";
     }
 
@@ -111,15 +139,41 @@ function scoreTitleMatch(cleanedMovie: string, candidate: QuoteSearchResult): nu
 
 function compareTitles(a: string, b: string): number {
   if (a === b) return 1;
+
+  const aTokens = new Set(a.split(" ").filter(Boolean));
+  const bTokens = new Set(b.split(" ").filter(Boolean));
+  if (aTokens.size === 0 || bTokens.size === 0) return 0;
+
+  // Token-level full containment ("buffy" -> "buffy vampire slayer") gets a
+  // confidence floor so short user input vs long series names doesn't get
+  // killed by the raw character ratio (#136). Still bounded by token-jaccard
+  // upward — a single common word like "the" can't trip the floor because we
+  // require at least one >=4-char distinctive token in `a`.
+  const aIsSubsetOfB = [...aTokens].every((t) => bTokens.has(t));
+  const bIsSubsetOfA = [...bTokens].every((t) => aTokens.has(t));
+  const hasDistinctiveAnchor = [...aTokens].some(
+    (t) => t.length >= DISTINCTIVE_TOKEN_MIN_LENGTH,
+  );
+
+  if ((aIsSubsetOfB || bIsSubsetOfA) && hasDistinctiveAnchor) {
+    // Pure character ratio falls out of token containment as a tie-breaker
+    // upper bound: "buffy"(5) vs "buffy vampire slayer"(20) -> ratio 0.25,
+    // but the floor lifts it to 0.6 (matchable, not strong). "lebowski"(8)
+    // vs "big lebowski"(12) -> ratio 0.67, ratio wins.
+    const longer = a.length > b.length ? a : b;
+    const shorter = a.length > b.length ? b : a;
+    const charRatio = shorter.length / longer.length;
+    return Math.max(charRatio, SUBSTRING_CONTAINMENT_FLOOR);
+  }
+
+  // Plain string-includes (no token boundary) is only used when token
+  // containment didn't fire — it's a weaker signal so it doesn't get the
+  // floor treatment, just the raw character ratio.
   if (b.includes(a) || a.includes(b)) {
     const longer = a.length > b.length ? a : b;
     const shorter = a.length > b.length ? b : a;
     return shorter.length / longer.length;
   }
-
-  const aTokens = new Set(a.split(" ").filter(Boolean));
-  const bTokens = new Set(b.split(" ").filter(Boolean));
-  if (aTokens.size === 0 || bTokens.size === 0) return 0;
 
   let intersect = 0;
   for (const token of aTokens) {
