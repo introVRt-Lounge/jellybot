@@ -9,10 +9,11 @@ import { formatDiscordUploadLimit, maxClipMbForDiscordUpload } from "../discord-
 import type { JellyfinClient } from "../jellyfin.ts";
 import { cleanup } from "../ffmpeg.ts";
 import { formatTimestamp } from "../time.ts";
+import { openSubtitleIndexForResolver } from "../services/clip-item-resolver.ts";
 import {
   buildClipArtifact,
   renderClip,
-  validateClipItem,
+  resolveAndValidateClipItem,
 } from "../services/clip-service.ts";
 import { planClipRequest } from "../services/clip-request.ts";
 import { planQuoteClip } from "../services/quote-request.ts";
@@ -331,8 +332,8 @@ export async function handleClipPreviewModal(
   }
 
   const maxClipMb = maxClipMbForDiscordUpload(interaction.attachmentSizeLimit, config.maxClipMb);
-  const item = await jellyfin.getItem(plan.itemId);
-  const validated = validateClipItem(item, plan);
+  const subtitleIndex = openSubtitleIndexForResolver(config.subtitleDbPath);
+  const validated = await resolveAndValidateClipItem({ jellyfin, subtitleIndex, plan });
   if (!validated.ok) {
     await interaction.editReply({
       content: validated.message,
@@ -395,6 +396,7 @@ export async function handleClipPreviewModal(
 export function isClipPreviewButton(interaction: ButtonInteraction): boolean {
   return parsePreviewButtonCustomId(interaction.customId) !== null;
 }
+
 
 export function isClipPreviewModal(interaction: ModalSubmitInteraction): boolean {
   return parsePreviewModalCustomId(interaction.customId) !== null;

@@ -166,6 +166,36 @@ export class SubtitleIndex {
     this.db.close();
   }
 
+  /**
+   * Look up the indexed media metadata for an item id. Used by the clip-item
+   * resolver to recover from "no longer exists" when Jellyfin reissues an
+   * item id after a file replace. Issue #118.
+   */
+  getMediaItem(itemId: string): IndexedMediaItem | null {
+    const row = this.db
+      .query(
+        `SELECT
+          item_id AS itemId,
+          item_type AS itemType,
+          title,
+          series_name AS seriesName,
+          season_number AS seasonNumber,
+          episode_number AS episodeNumber,
+          production_year AS productionYear,
+          runtime_ticks AS runtimeTicks,
+          media_source_id AS mediaSourceId,
+          subtitle_index AS subtitleIndex,
+          subtitle_language AS subtitleLanguage,
+          subtitle_codec AS subtitleCodec,
+          item_date_refreshed AS itemDateRefreshed
+         FROM media_items
+         WHERE item_id = ?
+         LIMIT 1`,
+      )
+      .get(itemId) as IndexedMediaItem | null;
+    return row ?? null;
+  }
+
   getStoredDateRefreshed(itemId: string): string | null {
     const row = this.db
       .query("SELECT item_date_refreshed FROM media_items WHERE item_id = ?")
