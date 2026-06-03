@@ -18,10 +18,28 @@ export type IndexedMediaItem = {
   itemDateRefreshed?: string;
 };
 
+/**
+ * Subtitle cue persisted to the FTS index.
+ *
+ * `kind` distinguishes:
+ * - `single`: one row per source SRT cue. Drives clip start/end and the
+ *   matcher's confidence calculation.
+ * - `merged`: a synthetic row spanning two adjacent source cues
+ *   (`text_n + " " + text_{n+1}`). Stored so the FTS matcher can fulfill
+ *   user quotes that span a cue boundary, e.g. "Harry, It's an inanimate
+ *   fucking object." which the SRT splits into two on-screen lines.
+ *
+ * `media_items.cue_count` only counts `single` rows so the operator metric
+ * stays "what's in the file" rather than "what's in the FTS index". See
+ * issue #130.
+ */
+export type CueKind = "single" | "merged";
+
 export type IndexedCue = {
   startMs: number;
   endMs: number;
   text: string;
+  kind?: CueKind;
 };
 
 export type QuoteSearchResult = {
@@ -72,6 +90,7 @@ CREATE TABLE IF NOT EXISTS subtitle_cues (
   start_ms INTEGER NOT NULL,
   end_ms INTEGER NOT NULL,
   text TEXT NOT NULL,
+  kind TEXT NOT NULL DEFAULT 'single',
   FOREIGN KEY (item_id) REFERENCES media_items(item_id) ON DELETE CASCADE
 );
 
@@ -138,6 +157,7 @@ export class SubtitleIndex {
     this.db.exec("PRAGMA journal_mode = WAL;");
     this.db.exec("PRAGMA foreign_keys = ON;");
     this.db.exec(BASE_SCHEMA);
+    ensureCueKindColumn(this.db);
     ensureUnicode61Fts(this.db);
     this.db.exec(FTS_TRIGGERS);
   }
@@ -155,6 +175,7 @@ export class SubtitleIndex {
 
   replaceItem(item: IndexedMediaItem, cues: IndexedCue[]): number {
     const indexedAt = new Date().toISOString();
+    const singleCount = cues.reduce((acc, cue) => acc + (cue.kind === "merged" ? 0 : 1), 0);
     const tx = this.db.transaction(() => {
       this.db.run("DELETE FROM subtitle_cues WHERE item_id = ?", [item.itemId]);
       this.db.run("DELETE FROM media_items WHERE item_id = ?", [item.itemId]);
@@ -180,21 +201,21 @@ export class SubtitleIndex {
           item.subtitleCodec ?? null,
           item.itemDateRefreshed ?? null,
           indexedAt,
-          cues.length,
+          singleCount,
         ],
       );
 
       const insertCue = this.db.query(
-        "INSERT INTO subtitle_cues (item_id, start_ms, end_ms, text) VALUES (?, ?, ?, ?)",
+        "INSERT INTO subtitle_cues (item_id, start_ms, end_ms, text, kind) VALUES (?, ?, ?, ?, ?)",
       );
 
       for (const cue of cues) {
-        insertCue.run(item.itemId, cue.startMs, cue.endMs, cue.text);
+        insertCue.run(item.itemId, cue.startMs, cue.endMs, cue.text, cue.kind ?? "single");
       }
     });
 
     tx();
-    return cues.length;
+    return singleCount;
   }
 
   searchQuotes(query: string, limit = 25): QuoteSearchResult[] {
@@ -254,7 +275,13 @@ export class SubtitleIndex {
 
   getStats(): SubtitleIndexStats {
     const itemCount = (this.db.query("SELECT COUNT(*) AS count FROM media_items").get() as { count: number }).count;
-    const cueCount = (this.db.query("SELECT COUNT(*) AS count FROM subtitle_cues").get() as { count: number }).count;
+    // Operator metric reports source-cue count only; merged-window rows
+    // (issue #130) are an FTS-side artifact, not actual subtitle cues.
+    const cueCount = (
+      this.db.query("SELECT COUNT(*) AS count FROM subtitle_cues WHERE kind = 'single'").get() as {
+        count: number;
+      }
+    ).count;
     const lastIndexedAt =
       (this.db.query("SELECT MAX(indexed_at) AS value FROM media_items").get() as { value: string | null }).value ??
       null;
@@ -316,6 +343,28 @@ export function prepareFtsQuery(query: string): string {
       return `"${escaped}"${prefix}`;
     })
     .join(" AND ");
+}
+
+/**
+ * Add the `kind` column to subtitle_cues if it's missing (issue #130). The
+ * column is required by the merged-window matcher path; existing rows in
+ * pre-#130 databases default to 'single' so historical data behaves as before.
+ *
+ * SQLite's `ALTER TABLE ADD COLUMN` is cheap (schema-only metadata change);
+ * no row rewrite. The FTS triggers index `text` only, so the new column does
+ * not affect the FTS5 shadow tables.
+ */
+function ensureCueKindColumn(db: Database): void {
+  const columns = db.query("PRAGMA table_info(subtitle_cues)").all() as Array<{ name: string }>;
+  if (columns.some((c) => c.name === "kind")) return;
+  db.exec("ALTER TABLE subtitle_cues ADD COLUMN kind TEXT NOT NULL DEFAULT 'single'");
+  console.info(
+    JSON.stringify({
+      event: "subtitle_index.schema_migrated",
+      change: "added subtitle_cues.kind column",
+      issue: "#130",
+    }),
+  );
 }
 
 function ensureUnicode61Fts(db: Database): void {

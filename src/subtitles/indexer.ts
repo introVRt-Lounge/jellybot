@@ -159,15 +159,26 @@ async function indexOneItem(
   if (!stream) return 0;
 
   const raw = await jellyfin.fetchSubtitleText(item.id, item.mediaSource.id, stream.index, stream.codec);
-  const cues = parseSubtitleContent(raw.content, raw.format).map(
+  const singleCues = parseSubtitleContent(raw.content, raw.format).map(
     (cue): IndexedCue => ({
       startMs: Math.round(cue.startSeconds * 1000),
       endMs: Math.round(cue.endSeconds * 1000),
       text: cue.text,
+      kind: "single",
     }),
   );
 
-  if (cues.length === 0) return 0;
+  if (singleCues.length === 0) return 0;
+
+  // Issue #130: also emit a "merged window" row for each adjacent cue pair so
+  // dialogue split across two SRT cues (very common - "Harry," / "It's an
+  // inanimate fucking object.") matches the FTS query as one document. Renderer
+  // uses startMs of cue_n, endMs of cue_{n+1}, which is the natural span the
+  // user wanted clipped. The single-cue rows still exist with their tighter
+  // spans, so single-cue matches keep their better bm25 ranking and shorter
+  // clip durations.
+  const mergedCues = buildMergedWindowCues(singleCues);
+  const cues: IndexedCue[] = singleCues.concat(mergedCues);
 
   const indexedItem: IndexedMediaItem = {
     itemId: item.id,
@@ -186,6 +197,37 @@ async function indexOneItem(
   };
 
   return index.replaceItem(indexedItem, cues);
+}
+
+/**
+ * Emit one merged-window cue per adjacent pair (cue_n, cue_{n+1}) so the FTS
+ * matcher can find user quotes that span a cue boundary. See issue #130.
+ *
+ * The merged row's text is the two source texts joined with a single space.
+ * Whitespace inside each source text is normalised so the joined document is
+ * treated as one continuous sentence by the tokenizer (and so a search like
+ * "harry it's an inanimate object" matches without caring about the SRT line
+ * break Bazarr inserted).
+ *
+ * The last cue has no successor and contributes nothing to the merged window.
+ */
+export function buildMergedWindowCues(singleCues: IndexedCue[]): IndexedCue[] {
+  if (singleCues.length < 2) return [];
+  const merged: IndexedCue[] = [];
+  for (let i = 0; i < singleCues.length - 1; i += 1) {
+    const current = singleCues[i];
+    const next = singleCues[i + 1];
+    if (!current || !next) continue;
+    const combinedText = `${current.text} ${next.text}`.replace(/\s+/g, " ").trim();
+    if (!combinedText) continue;
+    merged.push({
+      startMs: current.startMs,
+      endMs: next.endMs,
+      text: combinedText,
+      kind: "merged",
+    });
+  }
+  return merged;
 }
 
 async function mapWithConcurrency<T>(
