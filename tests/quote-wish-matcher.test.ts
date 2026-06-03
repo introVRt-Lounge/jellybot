@@ -249,3 +249,203 @@ describe("findQuoteRequestMatch relaxed fallback", () => {
     expect(result).toBeNull();
   });
 });
+
+// #136: short user input vs long indexed series name should match.
+// The matcher previously rejected "Buffy" against series_name="Buffy the
+// Vampire Slayer" because the character ratio (5/20 = 0.25) sits below the
+// 0.55 threshold even though the user input is a strict subset of the
+// series tokens.
+describe("findQuoteRequestMatch substring containment (#136)", () => {
+  const buffyCue: QuoteSearchResult = {
+    itemId: "11111111111111111111111111111111",
+    itemType: "Episode",
+    title: "The Harsh Light of Day",
+    seriesName: "Buffy the Vampire Slayer",
+    seasonNumber: 4,
+    episodeNumber: 3,
+    startMs: 1_166_041,
+    endMs: 1_167_835,
+    text: "you're funny, and you're nicely shaped",
+    rank: -7.2,
+  };
+
+  test("Buffy (5 chars) matches series_name Buffy the Vampire Slayer (24)", () => {
+    const result = findQuoteRequestMatch(
+      searchIndex([buffyCue]),
+      "Buffy",
+      "you're funny, and you're nicely shaped",
+    );
+    expect(result).not.toBeNull();
+    expect(["medium", "high"]).toContain(result!.confidence);
+    expect(result!.candidate.itemId).toBe(buffyCue.itemId);
+  });
+
+  test("does not lift unrelated single-word matches", () => {
+    // "you" is in the cue and shows up in lots of titles, but it's only 3
+    // chars (no distinctive anchor) so the substring floor must NOT fire.
+    const cue: QuoteSearchResult = {
+      itemId: "22222222222222222222222222222222",
+      itemType: "Movie",
+      title: "You've Got Mail",
+      productionYear: 1998,
+      startMs: 0,
+      endMs: 1_000,
+      text: "you've got mail",
+      rank: -5,
+    };
+    const result = findQuoteRequestMatch(searchIndex([cue]), "you", "got mail");
+    // "you" has no >=4-char distinctive token; substring floor must not
+    // engage. Without the floor the score is 3/14 = 0.21, below threshold.
+    expect(result).toBeNull();
+  });
+
+  test("a different show name still gets rejected", () => {
+    // "Angel" (the spinoff) shouldn't claim Buffy episodes via tokens.
+    const result = findQuoteRequestMatch(
+      searchIndex([buffyCue]),
+      "Angel",
+      "you're funny, and you're nicely shaped",
+    );
+    expect(result).toBeNull();
+  });
+});
+
+// #137: long monologues split across 3+ SRT cues. The merged-window from
+// #130 only joins adjacent pairs, so a 5-cue Spike monologue can't match
+// via either strict or relaxed FTS. Anchor fallback uses the first 4
+// distinctive tokens to find where the dialogue starts.
+describe("findQuoteRequestMatch anchor fallback (#137)", () => {
+  function tieredIndex(
+    cue: QuoteSearchResult,
+    distinctiveSubset: string[],
+    anchorSubset: string[],
+  ) {
+    return {
+      searchQuotes: (query: string): QuoteSearchResult[] => {
+        const tokens = query
+          .toLowerCase()
+          .split(/[^a-z0-9]+/)
+          .filter(Boolean);
+        const cueText = cue.text.toLowerCase();
+        const matchesEveryToken = tokens.every((t) => cueText.includes(t));
+        const matchesDistinctive =
+          tokens.length === distinctiveSubset.length &&
+          tokens.every((t) => distinctiveSubset.includes(t));
+        const matchesAnchor =
+          tokens.length === anchorSubset.length &&
+          tokens.every((t) => anchorSubset.includes(t));
+        if (matchesEveryToken || matchesDistinctive || matchesAnchor) {
+          return [cue];
+        }
+        return [];
+      },
+    };
+  }
+
+  test("matches the Buffy monologue when only the first 4 distinctive tokens hit a cue", () => {
+    // The cue holds the 2-cue merged window for "I like you. You're funny,
+    // and you're nicely shaped," but the user's full quote spans 5 cues
+    // including "Please remove your clothing now." that no merged row has.
+    // Strict and relaxed both empty; anchor on the first 4 distinctive
+    // tokens of the user's quote ("like", "your", "funny", "nicely") hits.
+    const monologueCue: QuoteSearchResult = {
+      itemId: "33333333333333333333333333333333",
+      itemType: "Episode",
+      title: "The Harsh Light of Day",
+      seriesName: "Buffy the Vampire Slayer",
+      seasonNumber: 4,
+      episodeNumber: 3,
+      startMs: 1_164_414,
+      endMs: 1_167_835,
+      text: "I like you. You're funny, and you're nicely shaped,",
+      rank: -6.0,
+    };
+
+    const result = findQuoteRequestMatch(
+      tieredIndex(
+        monologueCue,
+        // distinctive >=4-char tokens of the quote (relaxed tier)
+        [
+          "like",
+          "your",
+          "funny",
+          "nicely",
+          "shaped",
+          "frankly",
+          "ludicrous",
+          "have",
+          "these",
+          "interlocking",
+          "bodies",
+          "interlock",
+          "please",
+          "remove",
+          "clothing",
+        ],
+        // first 4 distinctive tokens (anchor tier)
+        ["like", "your", "funny", "nicely"],
+      ),
+      "Buffy",
+      "I like you. You're funny, and you're nicely shaped, and frankly, it's ludicrous to have these interlocking bodies and not... interlock... Please remove your clothing now.",
+    );
+
+    expect(result).not.toBeNull();
+    expect(result!.candidate.itemId).toBe(monologueCue.itemId);
+    // Anchor fallback must never claim "high" confidence.
+    expect(result!.confidence).toBe("medium");
+  });
+
+  test("does not return anything when even the anchor doesn't match", () => {
+    const cue: QuoteSearchResult = {
+      itemId: "44444444444444444444444444444444",
+      itemType: "Movie",
+      title: "Some Movie",
+      productionYear: 2020,
+      startMs: 0,
+      endMs: 1_000,
+      text: "completely unrelated dialogue",
+      rank: -3,
+    };
+    // None of the search tiers hit. Anchor must still bail to null.
+    const result = findQuoteRequestMatch(
+      {
+        searchQuotes: () => [],
+      },
+      "Some Movie",
+      "interlocking bodies clothing remove",
+    );
+    expect(result).toBeNull();
+    void cue;
+  });
+
+  test("anchor does not fire when distinctive token count is at or below the anchor count", () => {
+    // distinctive.length must be STRICTLY GREATER THAN ANCHOR_TOKEN_COUNT
+    // (4) for the anchor tier to run. With exactly 4 distinctive tokens,
+    // anchor would just duplicate the relaxed query so it skips.
+    const calls: string[] = [];
+    const cue: QuoteSearchResult = {
+      itemId: "55555555555555555555555555555555",
+      itemType: "Movie",
+      title: "Some Movie",
+      productionYear: 2020,
+      startMs: 0,
+      endMs: 1_000,
+      text: "no overlap text",
+      rank: -3,
+    };
+    const result = findQuoteRequestMatch(
+      {
+        searchQuotes: (q: string) => {
+          calls.push(q);
+          return [];
+        },
+      },
+      "Some Movie",
+      "alpha beta gamma delta", // exactly 4 distinctive tokens
+    );
+    expect(result).toBeNull();
+    // Strict (the full quote) + relaxed (the 4 distinctive tokens). NOT 3.
+    expect(calls).toHaveLength(2);
+    void cue;
+  });
+});
