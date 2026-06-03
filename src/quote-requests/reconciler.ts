@@ -200,6 +200,7 @@ function pickRenderConfig(
     config.subtitleLanguages,
     config.subtitleDefaultClipSeconds,
     config.subtitleQuotePaddingSeconds,
+    config.subtitleDbPath,
   ];
   if (required.some((value) => value === undefined || value === null)) return null;
   return {
@@ -210,6 +211,7 @@ function pickRenderConfig(
     subtitleLanguages: config.subtitleLanguages as string,
     subtitleDefaultClipSeconds: config.subtitleDefaultClipSeconds as number,
     subtitleQuotePaddingSeconds: config.subtitleQuotePaddingSeconds as number,
+    subtitleDbPath: config.subtitleDbPath as string,
   };
 }
 

@@ -3,10 +3,11 @@ import { AttachmentBuilder, MessageFlags, type InteractionEditReplyOptions } fro
 import type { AppConfig } from "../config.ts";
 import { formatDiscordUploadLimit, maxClipMbForDiscordUpload } from "../discord-upload.ts";
 import type { JellyfinClient } from "../jellyfin.ts";
+import { openSubtitleIndexForResolver } from "../services/clip-item-resolver.ts";
 import {
   buildClipArtifact,
   renderClip,
-  validateClipItem,
+  resolveAndValidateClipItem,
   type ClipArtifact,
 } from "../services/clip-service.ts";
 import type { ClipPlan } from "../services/clip-request.ts";
@@ -25,7 +26,10 @@ export type PreviewReplyTarget = {
 export type DeliverClipPreviewInput = {
   interaction: PreviewReplyTarget & { id: string; attachmentSizeLimit: number };
   jellyfin: JellyfinClient;
-  config: Pick<AppConfig, "clipTempDir" | "maxClipMb" | "maxClipSeconds" | "audioLanguages" | "subtitleLanguages">;
+  config: Pick<
+    AppConfig,
+    "clipTempDir" | "maxClipMb" | "maxClipSeconds" | "audioLanguages" | "subtitleLanguages" | "subtitleDbPath"
+  >;
   command: ClipPreviewCommand;
   plan: ClipPlan;
   previewLines: string[];
@@ -38,8 +42,8 @@ export async function deliverClipPreview(input: DeliverClipPreviewInput): Promis
   const { interaction, jellyfin, config, plan } = input;
 
   const maxClipMb = maxClipMbForDiscordUpload(interaction.attachmentSizeLimit, config.maxClipMb);
-  const item = await jellyfin.getItem(plan.itemId);
-  const validated = validateClipItem(item, plan);
+  const subtitleIndex = openSubtitleIndexForResolver(config.subtitleDbPath);
+  const validated = await resolveAndValidateClipItem({ jellyfin, subtitleIndex, plan });
   if (!validated.ok) {
     await interaction.editReply(validated.message);
     return;

@@ -11,7 +11,9 @@ import { displayTitle } from "../display-title.ts";
 import type { JellyfinClient, JellyfinItem, MediaKind } from "../jellyfin.ts";
 import { formatTimestamp } from "../time.ts";
 import { prepareClipSubtitleFile } from "../subtitles/burn-in.ts";
+import type { SubtitleIndex } from "../subtitles/index-db.ts";
 import { expectedItemType, type ClipPlan } from "./clip-request.ts";
+import { resolveClipItem } from "./clip-item-resolver.ts";
 
 export type ClipValidationResult =
   | { ok: true; item: JellyfinItem }
@@ -23,6 +25,34 @@ export type ClipArtifact = {
   label: string;
   summaryLine: string;
 };
+
+/**
+ * Resolve a Jellyfin item for the clip plan and validate it against the
+ * plan (kind / runtime). When the original item id is gone (Jellyfin
+ * reissued an id after a file replace), `resolveClipItem` falls back to
+ * looking the item up by stable subtitle-index metadata. Issue #118.
+ */
+export async function resolveAndValidateClipItem(deps: {
+  jellyfin: JellyfinClient;
+  subtitleIndex: SubtitleIndex | null;
+  plan: ClipPlan;
+}): Promise<ClipValidationResult> {
+  const resolved = await resolveClipItem({
+    jellyfin: deps.jellyfin,
+    subtitleIndex: deps.subtitleIndex,
+    itemId: deps.plan.itemId,
+  });
+
+  if (!resolved.ok) {
+    return {
+      ok: false,
+      message:
+        "That Jellyfin item no longer exists, and I couldn't relocate it from the indexed metadata. Try `/quote` or `/clip` again - the next index pass will catch up.",
+    };
+  }
+
+  return validateClipItem(resolved.item, deps.plan);
+}
 
 export function validateClipItem(
   item: JellyfinItem | null,

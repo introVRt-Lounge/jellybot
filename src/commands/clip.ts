@@ -151,7 +151,10 @@ function formatDurationOption(seconds: number): string {
 export async function handleClipCommand(
   interaction: ChatInputCommandInteraction,
   jellyfin: JellyfinClient,
-  config: Pick<AppConfig, "clipTempDir" | "maxClipMb" | "maxClipSeconds" | "audioLanguages" | "subtitleLanguages">,
+  config: Pick<
+    AppConfig,
+    "clipTempDir" | "maxClipMb" | "maxClipSeconds" | "audioLanguages" | "subtitleLanguages" | "subtitleDbPath"
+  >,
 ): Promise<void> {
   const startRaw = interaction.options.getString("start");
   const endRaw = interaction.options.getString("end");

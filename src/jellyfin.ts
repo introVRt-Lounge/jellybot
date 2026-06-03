@@ -715,6 +715,85 @@ export class JellyfinClient {
     return match ? this.mapItem(match) : null;
   }
 
+  /**
+   * Find a Movie by title (and optionally production year) when we don't have
+   * a TMDB id handy. Used as a recovery hop in the clip pipeline (issue #118)
+   * when an indexed item id no longer resolves and we want to re-locate the
+   * "same" content under whatever id Jellyfin re-issued after a file replace.
+   */
+  async findMovieByTitle(
+    title: string,
+    productionYear?: number,
+    signal?: AbortSignal,
+  ): Promise<JellyfinItem | null> {
+    if (!title || title.trim().length < 2) return null;
+    const candidates = await this.searchItems({
+      query: title.trim(),
+      includeItemTypes: "Movie",
+      parentId: this.moviesLibraryId,
+      limit: 10,
+      signal,
+    });
+
+    if (productionYear != null) {
+      const yearMatch = candidates.find((c) => c.productionYear === productionYear);
+      if (yearMatch) return yearMatch;
+    }
+    // No year provided or no exact-year hit: take the first search result so
+    // the caller still gets a candidate. The clip pipeline validates against
+    // the requested kind/runtime before using it.
+    return candidates[0] ?? null;
+  }
+
+  /**
+   * Find an Episode by series title + S/E numbers when we don't have a TVDB
+   * id. Recovery hop for the clip pipeline (issue #118): the indexed
+   * episode id may be stale, but `media_items.series_name` and the S/E
+   * numbers are stable across Jellyfin file replaces.
+   */
+  async findEpisodeBySeriesTitleAndNumbers(
+    seriesTitle: string,
+    seasonNumber: number,
+    episodeNumber: number,
+    signal?: AbortSignal,
+  ): Promise<JellyfinItem | null> {
+    if (!seriesTitle || seriesTitle.trim().length < 2) return null;
+
+    const seriesCandidates = await this.searchItems({
+      query: seriesTitle.trim(),
+      includeItemTypes: "Series",
+      parentId: this.tvLibraryId,
+      limit: 5,
+      signal,
+    });
+    const series = seriesCandidates[0];
+    if (!series) return null;
+
+    const { userId } = this.requireAuth();
+    const params = new URLSearchParams({
+      UserId: userId,
+      ParentId: series.id,
+      IncludeItemTypes: "Episode",
+      Recursive: "true",
+      ParentIndexNumber: String(seasonNumber),
+      IndexNumber: String(episodeNumber),
+      Limit: "2",
+      Fields: ITEM_FIELDS,
+    });
+    const response = await this.fetchAuthed(`${this.baseUrl}/Items?${params}`, { signal });
+    if (!response.ok) {
+      throw new Error(`Jellyfin episode lookup (S/E by series title) failed (${response.status}).`);
+    }
+    const data = (await response.json()) as JellyfinSearchResponse;
+    const match = (data.Items ?? []).find(
+      (raw) =>
+        raw.Type === "Episode" &&
+        raw.ParentIndexNumber === seasonNumber &&
+        raw.IndexNumber === episodeNumber,
+    );
+    return match ? this.mapItem(match) : null;
+  }
+
   async searchSeries(query: string, limit = 25, signal?: AbortSignal): Promise<JellyfinItem[]> {
     return this.searchItems({
       query,

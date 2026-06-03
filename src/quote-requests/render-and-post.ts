@@ -3,10 +3,11 @@ import { randomUUID } from "node:crypto";
 import type { AppConfig } from "../config.ts";
 import { cleanup } from "../ffmpeg.ts";
 import type { JellyfinClient } from "../jellyfin.ts";
+import { openSubtitleIndexForResolver } from "../services/clip-item-resolver.ts";
 import {
   buildClipArtifact,
   renderClip as defaultRenderClip,
-  validateClipItem,
+  resolveAndValidateClipItem,
 } from "../services/clip-service.ts";
 import { planQuoteClip } from "../services/quote-request.ts";
 import { encodeQuoteMatchToken } from "../subtitles/match-token.ts";
@@ -23,6 +24,7 @@ export type RenderAndPostConfig = Pick<
   | "subtitleLanguages"
   | "subtitleDefaultClipSeconds"
   | "subtitleQuotePaddingSeconds"
+  | "subtitleDbPath"
 >;
 
 export type RenderAndPostResult =
@@ -58,8 +60,12 @@ export async function renderAndPostFulfillmentClip(input: {
     return { posted: false, reason: `plan: ${planResult.message}` };
   }
 
-  const item = await jellyfin.getItem(planResult.plan.itemId).catch(() => null);
-  const validated = validateClipItem(item, planResult.plan);
+  const subtitleIndex = openSubtitleIndexForResolver(config.subtitleDbPath);
+  const validated = await resolveAndValidateClipItem({
+    jellyfin,
+    subtitleIndex,
+    plan: planResult.plan,
+  });
   if (!validated.ok) {
     return { posted: false, reason: `validate: ${validated.message}` };
   }
