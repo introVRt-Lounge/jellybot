@@ -7,8 +7,13 @@ type IndexerCall = { itemId: string };
 
 function makeDeps(opts: {
   config?: Partial<DispatchConfig>;
-  findItemByTmdbId?: (id: number) => Promise<JellyfinItem | null>;
-  findEpisodeByTvdb?: (tvdbId: number, s: number, e: number) => Promise<JellyfinItem | null>;
+  findItemByTmdbId?: (id: number, hint?: { title?: string }) => Promise<JellyfinItem | null>;
+  findEpisodeByTvdb?: (
+    tvdbId: number,
+    s: number,
+    e: number,
+    hint?: { seriesTitle?: string },
+  ) => Promise<JellyfinItem | null>;
   triggerLibraryRefresh?: () => Promise<void>;
   refreshItem?: (id: string) => Promise<void>;
   indexer?: (j: JellyfinClient, o: { itemId: string }) => Promise<{ ok: true; itemId: string; cueCount: number } | { ok: false; itemId: string; reason: "missing" | "no_cues" | "error"; message?: string }>;
@@ -171,6 +176,44 @@ describe("WebhookDispatcher", () => {
     await fixture.dispatcher.drain();
 
     expect(fixture.indexerCalls).toEqual([{ itemId: "lob-id" }]);
+  });
+
+  test("forwards kick.title as a hint to findItemByTmdbId (#126)", async () => {
+    const movie: JellyfinItem = { id: "lob-id", name: "Life of Brian", type: "Movie" };
+    let receivedHint: { title?: string } | undefined;
+    const fixture = makeDeps({
+      findItemByTmdbId: async (_id, hint) => {
+        receivedHint = hint;
+        return movie;
+      },
+    });
+
+    fixture.dispatcher.enqueue(movieKick);
+    await fixture.dispatcher.drain();
+
+    expect(receivedHint?.title).toBe("Life of Brian");
+  });
+
+  test("forwards kick.title as a series-title hint to findEpisodeByTvdb (#126)", async () => {
+    const ep: JellyfinItem = {
+      id: "ep-id",
+      name: "Reptile Boy",
+      type: "Episode",
+      seasonNumber: 2,
+      episodeNumber: 5,
+    };
+    let receivedHint: { seriesTitle?: string } | undefined;
+    const fixture = makeDeps({
+      findEpisodeByTvdb: async (_tv, _s, _e, hint) => {
+        receivedHint = hint;
+        return ep;
+      },
+    });
+
+    fixture.dispatcher.enqueue(episodeKick);
+    await fixture.dispatcher.drain();
+
+    expect(receivedHint?.seriesTitle).toBe("Buffy");
   });
 
   test("logs but doesn't throw when the indexer call returns a failure result", async () => {

@@ -67,6 +67,7 @@ type JellyfinSearchResponse = {
     RunTimeTicks?: number;
     Path?: string;
     DateLastRefreshed?: string;
+    ProviderIds?: Record<string, string | undefined>;
     MediaSources?: Array<JellyfinMediaSourceResponse & { Path?: string }>;
   }>;
 };
@@ -95,6 +96,16 @@ const MEDIA_ITEM_FIELDS =
   "Path,ParentId,SeriesName,SeasonName,ParentIndexNumber,IndexNumber,ProductionYear,RunTimeTicks,DateLastRefreshed,MediaSources,OriginalTitle";
 const TV_SERIES_EXPAND_LIMIT = 3;
 const TV_EPISODES_PER_SERIES = 25;
+
+// Paged-fallback caps for the provider-id lookups (issue #126). The first
+// hop is a server-side `searchTerm=<title>` query and almost always lands the
+// item in one round-trip; these only kick in when the webhook payload didn't
+// carry a usable title. The cap on pages keeps us from walking a 5k-movie
+// library when the requested id genuinely isn't there.
+const MOVIE_PROVIDER_LOOKUP_PAGE_SIZE = 200;
+const MOVIE_PROVIDER_LOOKUP_MAX_PAGES = 30;
+const SERIES_PROVIDER_LOOKUP_PAGE_SIZE = 200;
+const SERIES_PROVIDER_LOOKUP_MAX_PAGES = 5;
 
 export type EpisodeListOptions = {
   limit: number;
@@ -468,24 +479,88 @@ export class JellyfinClient {
     return count > 0;
   }
 
-  /** Look up a Jellyfin item by TMDB id (used after Radarr drops a new movie). */
-  async findItemByTmdbId(tmdbId: number): Promise<JellyfinItem | null> {
+  /**
+   * Look up a Jellyfin movie item by TMDB id (used after Radarr drops a new
+   * movie). The optional `hint.title` skips the paged fallback and asks
+   * Jellyfin to do a server-side title search first - much cheaper for large
+   * libraries.
+   *
+   * Why this is shaped the way it is: Jellyfin 10.x silently ignores
+   * `AnyProviderIdEquals=tmdb.<id>` and `ProviderIds=Tmdb=<id>` query strings
+   * on the `/Items` endpoint - the server returns the entire library
+   * regardless of the filter. The original implementation used that filter
+   * and returned the first alphabetical movie in the library, which was
+   * never the requested one. See issue #126 for the live repro.
+   *
+   * Strategy:
+   * 1. If a title hint is provided, search by `searchTerm=<title>` (which
+   *    Jellyfin honours) and client-side filter by ProviderIds.Tmdb.
+   * 2. Otherwise (or as a backstop on miss), page through `HasTmdbId=true`
+   *    movie items in chunks and client-side filter. Capped at a small page
+   *    count to avoid library walks on truly missing entries.
+   */
+  async findItemByTmdbId(
+    tmdbId: number,
+    hint?: { title?: string },
+  ): Promise<JellyfinItem | null> {
+    const wantTmdb = String(tmdbId);
+
+    if (hint?.title && hint.title.trim().length >= 2) {
+      const matched = await this.findMovieByTitleSearch(hint.title.trim(), wantTmdb);
+      if (matched) return matched;
+    }
+
+    return this.findMovieByTmdbIdPaged(wantTmdb);
+  }
+
+  private async findMovieByTitleSearch(
+    title: string,
+    wantTmdb: string,
+  ): Promise<JellyfinItem | null> {
     const { userId } = this.requireAuth();
     const params = new URLSearchParams({
       UserId: userId,
       IncludeItemTypes: "Movie",
       Recursive: "true",
-      Limit: "1",
-      AnyProviderIdEquals: `tmdb.${tmdbId}`,
-      Fields: ITEM_FIELDS,
+      Limit: "20",
+      SearchTerm: title,
+      Fields: `${ITEM_FIELDS},ProviderIds`,
     });
     const response = await this.fetchAuthed(`${this.baseUrl}/Items?${params}`);
     if (!response.ok) {
-      throw new Error(`Jellyfin TMDB lookup failed (${response.status}).`);
+      throw new Error(`Jellyfin TMDB lookup (title) failed (${response.status}).`);
     }
     const data = (await response.json()) as JellyfinSearchResponse;
-    const items = this.mapItems(data);
-    return items[0] ?? null;
+    const match = (data.Items ?? []).find((raw) => raw.ProviderIds?.Tmdb === wantTmdb);
+    return match ? this.mapItem(match) : null;
+  }
+
+  private async findMovieByTmdbIdPaged(wantTmdb: string): Promise<JellyfinItem | null> {
+    const { userId } = this.requireAuth();
+    const pageSize = MOVIE_PROVIDER_LOOKUP_PAGE_SIZE;
+    const maxPages = MOVIE_PROVIDER_LOOKUP_MAX_PAGES;
+
+    for (let page = 0; page < maxPages; page += 1) {
+      const params = new URLSearchParams({
+        UserId: userId,
+        IncludeItemTypes: "Movie",
+        Recursive: "true",
+        HasTmdbId: "true",
+        StartIndex: String(page * pageSize),
+        Limit: String(pageSize),
+        Fields: `${ITEM_FIELDS},ProviderIds`,
+      });
+      const response = await this.fetchAuthed(`${this.baseUrl}/Items?${params}`);
+      if (!response.ok) {
+        throw new Error(`Jellyfin TMDB lookup (paged) failed (${response.status}).`);
+      }
+      const data = (await response.json()) as JellyfinSearchResponse;
+      const items = data.Items ?? [];
+      const match = items.find((raw) => raw.ProviderIds?.Tmdb === wantTmdb);
+      if (match) return this.mapItem(match);
+      if (items.length < pageSize) return null;
+    }
+    return null;
   }
 
   /** Tell Jellyfin to scan all libraries for new files. Idempotent / fire-and-forget. */
@@ -525,38 +600,119 @@ export class JellyfinClient {
     }
   }
 
-  /** Look up a Jellyfin episode by TVDB series id + season + episode numbers (used after Sonarr drops a new file). */
-  async findEpisodeByTvdb(
+  /**
+   * Look up a Jellyfin Series item by TVDB id. Same shape problem as
+   * `findItemByTmdbId` - the `AnyProviderIdEquals` filter is silently ignored
+   * by Jellyfin 10.x, so we search by title (when provided) and client-side
+   * filter on ProviderIds, falling back to a paged walk through
+   * `HasTvdbId=true` Series.
+   */
+  async findSeriesByTvdbId(
     tvdbId: number,
-    seasonNumber: number,
-    episodeNumber: number,
+    hint?: { seriesTitle?: string },
+  ): Promise<JellyfinItem | null> {
+    const wantTvdb = String(tvdbId);
+
+    if (hint?.seriesTitle && hint.seriesTitle.trim().length >= 2) {
+      const matched = await this.findSeriesByTitleSearch(hint.seriesTitle.trim(), wantTvdb);
+      if (matched) return matched;
+    }
+
+    return this.findSeriesByTvdbIdPaged(wantTvdb);
+  }
+
+  private async findSeriesByTitleSearch(
+    title: string,
+    wantTvdb: string,
   ): Promise<JellyfinItem | null> {
     const { userId } = this.requireAuth();
     const params = new URLSearchParams({
       UserId: userId,
+      IncludeItemTypes: "Series",
+      Recursive: "true",
+      Limit: "20",
+      SearchTerm: title,
+      Fields: `${ITEM_FIELDS},ProviderIds`,
+    });
+    const response = await this.fetchAuthed(`${this.baseUrl}/Items?${params}`);
+    if (!response.ok) {
+      throw new Error(`Jellyfin TVDB series lookup (title) failed (${response.status}).`);
+    }
+    const data = (await response.json()) as JellyfinSearchResponse;
+    const match = (data.Items ?? []).find((raw) => raw.ProviderIds?.Tvdb === wantTvdb);
+    return match ? this.mapItem(match) : null;
+  }
+
+  private async findSeriesByTvdbIdPaged(wantTvdb: string): Promise<JellyfinItem | null> {
+    const { userId } = this.requireAuth();
+    const pageSize = SERIES_PROVIDER_LOOKUP_PAGE_SIZE;
+    const maxPages = SERIES_PROVIDER_LOOKUP_MAX_PAGES;
+
+    for (let page = 0; page < maxPages; page += 1) {
+      const params = new URLSearchParams({
+        UserId: userId,
+        IncludeItemTypes: "Series",
+        Recursive: "true",
+        HasTvdbId: "true",
+        StartIndex: String(page * pageSize),
+        Limit: String(pageSize),
+        Fields: `${ITEM_FIELDS},ProviderIds`,
+      });
+      const response = await this.fetchAuthed(`${this.baseUrl}/Items?${params}`);
+      if (!response.ok) {
+        throw new Error(`Jellyfin TVDB series lookup (paged) failed (${response.status}).`);
+      }
+      const data = (await response.json()) as JellyfinSearchResponse;
+      const items = data.Items ?? [];
+      const match = items.find((raw) => raw.ProviderIds?.Tvdb === wantTvdb);
+      if (match) return this.mapItem(match);
+      if (items.length < pageSize) return null;
+    }
+    return null;
+  }
+
+  /**
+   * Look up a Jellyfin Episode by TVDB series id + season + episode numbers.
+   * Used after Sonarr drops a new file. Two-step:
+   *
+   * 1. Resolve the series (`findSeriesByTvdbId`) - works around the
+   *    `AnyProviderIdEquals` no-op filter in Jellyfin 10.x.
+   * 2. Query episodes scoped to that series with `ParentId=<seriesId>` plus
+   *    `ParentIndexNumber=<S>` and `IndexNumber=<E>` - those filters DO work
+   *    server-side, so we get the exact row.
+   */
+  async findEpisodeByTvdb(
+    tvdbId: number,
+    seasonNumber: number,
+    episodeNumber: number,
+    hint?: { seriesTitle?: string },
+  ): Promise<JellyfinItem | null> {
+    const series = await this.findSeriesByTvdbId(tvdbId, hint);
+    if (!series) return null;
+
+    const { userId } = this.requireAuth();
+    const params = new URLSearchParams({
+      UserId: userId,
+      ParentId: series.id,
       IncludeItemTypes: "Episode",
       Recursive: "true",
-      Limit: "50",
-      AnyProviderIdEquals: `tvdb.${tvdbId}`,
+      ParentIndexNumber: String(seasonNumber),
+      IndexNumber: String(episodeNumber),
+      Limit: "2",
       Fields: ITEM_FIELDS,
     });
     const response = await this.fetchAuthed(`${this.baseUrl}/Items?${params}`);
     if (!response.ok) {
-      throw new Error(`Jellyfin TVDB episode lookup failed (${response.status}).`);
+      throw new Error(`Jellyfin episode lookup (S/E) failed (${response.status}).`);
     }
     const data = (await response.json()) as JellyfinSearchResponse;
-    const items = this.mapItems(data);
-    // The series and the episodes can both reach this query (the AnyProviderId
-    // index on Jellyfin matches the series tvdb id on its episode rows). Match
-    // on episode + season explicitly so we don't index the wrong row.
-    return (
-      items.find(
-        (item) =>
-          item.type === "Episode" &&
-          item.seasonNumber === seasonNumber &&
-          item.episodeNumber === episodeNumber,
-      ) ?? null
+    const match = (data.Items ?? []).find(
+      (raw) =>
+        raw.Type === "Episode" &&
+        raw.ParentIndexNumber === seasonNumber &&
+        raw.IndexNumber === episodeNumber,
     );
+    return match ? this.mapItem(match) : null;
   }
 
   async searchSeries(query: string, limit = 25, signal?: AbortSignal): Promise<JellyfinItem[]> {

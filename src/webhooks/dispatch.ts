@@ -234,7 +234,7 @@ export class WebhookDispatcher {
   private async lookupItem(kick: WebhookKick): Promise<JellyfinItem | null> {
     if (kick.kind === "movie") {
       if (kick.tmdbId != null) {
-        return this.deps.jellyfin.findItemByTmdbId(kick.tmdbId);
+        return this.deps.jellyfin.findItemByTmdbId(kick.tmdbId, { title: kick.title });
       }
       return null;
     }
@@ -242,6 +242,7 @@ export class WebhookDispatcher {
       kick.tvdbId,
       kick.seasonNumber,
       kick.episodeNumber,
+      { seriesTitle: kick.title },
     );
   }
 }

@@ -366,7 +366,9 @@ async function pollRadarrAcquisitions(
         // so the FTS-match pass picks it up on this or a future tick.
         if (deps.jellyfin && previous !== "indexed") {
           try {
-            const jellyfinItem = await deps.jellyfin.findItemByTmdbId(movie.tmdbId);
+            const jellyfinItem = await deps.jellyfin.findItemByTmdbId(movie.tmdbId, {
+              title: movie.title,
+            });
             if (jellyfinItem) {
               store.setAcquisitionStatus({ id: row.id, status: "indexed" });
               console.info(
