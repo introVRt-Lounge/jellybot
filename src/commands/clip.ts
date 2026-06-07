@@ -156,6 +156,12 @@ export async function handleClipCommand(
     "clipTempDir" | "maxClipMb" | "maxClipSeconds" | "audioLanguages" | "subtitleLanguages" | "subtitleDbPath"
   >,
 ): Promise<void> {
+  // Issue #142: ack first, work later. See handleQuoteCommand for the full
+  // rationale. Defer ephemerally before any validation so the rejection
+  // branches use editReply (15-min budget) instead of reply (3-second
+  // budget that races with post-restart Discord/network blips).
+  await beginEphemeralClipPreview(interaction);
+
   const startRaw = interaction.options.getString("start");
   const endRaw = interaction.options.getString("end");
   const durationRaw = interaction.options.getString("duration");
@@ -185,7 +191,7 @@ export async function handleClipCommand(
         media: itemId,
       }),
     );
-    await interaction.reply({ content: planned.message, ephemeral: true });
+    await interaction.editReply(planned.message);
     return;
   }
 
@@ -201,8 +207,6 @@ export async function handleClipCommand(
       durationSeconds: planned.plan.durationSeconds,
     }),
   );
-
-  await beginEphemeralClipPreview(interaction);
 
   const item = await jellyfin.getItem(planned.plan.itemId);
   const label = item ? jellyfin.formatItemLabel(item, planned.plan.kind) : "Clip";
