@@ -21,8 +21,6 @@ import {
   QUOTE_REQUEST_AUTOCOMPLETE_TOKEN,
   QUOTE_REQUEST_MEDIA_TYPE_PROMPT,
 } from "../quote-requests/modal.ts";
-import { MessageFlags } from "discord.js";
-
 export { QUOTE_REQUEST_AUTOCOMPLETE_TOKEN } from "../quote-requests/modal.ts";
 
 const quoteAutocompleteInFlight = new Map<string, Promise<void>>();
@@ -199,31 +197,35 @@ export async function handleQuoteCommand(
     "clipTempDir" | "subtitleDbPath" | "maxClipMb" | "maxClipSeconds" | "subtitleDefaultClipSeconds" | "subtitleQuotePaddingSeconds" | "audioLanguages" | "subtitleLanguages"
   >,
 ): Promise<void> {
+  // Issue #142: ack first, work later. Discord gives us a 3-second budget
+  // from interaction receipt to ack (reply or deferReply) before the token
+  // is invalidated server-side. Anything we do before the ack is on a
+  // shrinking clock - the post-Watchtower-recreate window saw "Unknown
+  // interaction" failures because the rejection branches did
+  // `interaction.reply(...)` after a token parse + db open + planning.
+  // Defer immediately, then editReply for every outcome.
+  await beginEphemeralClipPreview(interaction);
+
   const matchRaw = interaction.options.getString("match", true);
   const durationRaw = interaction.options.getString("duration");
   const paddingRaw = interaction.options.getString("padding");
   const burnInSubtitles = interaction.options.getBoolean("subtitles") ?? false;
 
   if (matchRaw === QUOTE_REQUEST_AUTOCOMPLETE_TOKEN) {
-    // Reply with an ephemeral message that lets the user disambiguate Movie vs
-    // TV show. The downstream select-menu interaction calls showModal with the
-    // matching modal definition. Doing this server-side (instead of straight
-    // to a movie modal) lets V1 ship the TV path without a second slash command.
-    await interaction.reply({
+    // The deferred reply is already ephemeral, so editReply with the select
+    // menu still gates Movie/TV path selection behind the same private UX.
+    await interaction.editReply({
       content: QUOTE_REQUEST_MEDIA_TYPE_PROMPT,
       components: [buildMediaTypeSelectMenu()],
-      flags: MessageFlags.Ephemeral,
     });
     return;
   }
 
   const token = parseQuoteMatchToken(matchRaw);
   if (!token) {
-    await interaction.reply({
-      content:
-        "Pick a quote from the autocomplete list, or use the `Can't find it? Submit a request` option to ask the bot to fetch the movie.",
-      ephemeral: true,
-    });
+    await interaction.editReply(
+      "Pick a quote from the autocomplete list, or use the `Can't find it? Submit a request` option to ask the bot to fetch the movie.",
+    );
     return;
   }
 
@@ -236,10 +238,9 @@ export async function handleQuoteCommand(
   }
 
   if (!match) {
-    await interaction.reply({
-      content: "That quote match is no longer in the subtitle index. Run `make index-subtitles` and try again.",
-      ephemeral: true,
-    });
+    await interaction.editReply(
+      "That quote match is no longer in the subtitle index. Run `make index-subtitles` and try again.",
+    );
     return;
   }
 
@@ -253,7 +254,7 @@ export async function handleQuoteCommand(
   });
 
   if (!planned.ok) {
-    await interaction.reply({ content: planned.message, ephemeral: true });
+    await interaction.editReply(planned.message);
     return;
   }
 
@@ -267,8 +268,6 @@ export async function handleQuoteCommand(
       durationSeconds: planned.plan.durationSeconds,
     }),
   );
-
-  await beginEphemeralClipPreview(interaction);
 
   const item = await jellyfin.getItem(planned.plan.itemId);
   const label = item ? jellyfin.formatItemLabel(item, planned.plan.kind) : "Quote clip";

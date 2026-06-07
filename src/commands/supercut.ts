@@ -108,29 +108,31 @@ export async function handleSupercutCommand(
   jellyfin: JellyfinClient,
   config: SupercutConfig,
 ): Promise<void> {
+  // Issue #142: defer first to consume the 3-second ack budget immediately;
+  // every subsequent response uses editReply against the 15-min follow-up
+  // window. Public reply (not ephemeral) because the supercut is meant to be
+  // posted into the channel - rejection branches still go to editReply but
+  // are short-lived and the user invoked the command publicly anyway.
+  await interaction.deferReply();
+
   const phrase = interaction.options.getString("phrase", true).trim();
   const seriesName = interaction.options.getString("series", true).trim();
   const requestedClipCap = interaction.options.getInteger("max_clips") ?? config.supercutMaxClips;
   const maxClips = Math.min(requestedClipCap, config.supercutMaxClips);
 
   if (phrase.length < PHRASE_MIN_LENGTH) {
-    await interaction.reply({
-      content: `Phrase must be at least ${PHRASE_MIN_LENGTH} characters.`,
-      flags: MessageFlags.Ephemeral,
-    });
+    await interaction.editReply(`Phrase must be at least ${PHRASE_MIN_LENGTH} characters.`);
     return;
   }
 
   const guildId = interaction.guildId ?? "dm";
   if (inFlightRenders.has(guildId)) {
-    await interaction.reply({
-      content: "Another supercut is already rendering in this server. Try again in a minute.",
-      flags: MessageFlags.Ephemeral,
-    });
+    await interaction.editReply(
+      "Another supercut is already rendering in this server. Try again in a minute.",
+    );
     return;
   }
 
-  await interaction.deferReply();
   inFlightRenders.add(guildId);
 
   const interactionId = interaction.id;

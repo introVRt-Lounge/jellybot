@@ -127,18 +127,20 @@ export async function handleSubcoverageCommand(
   jellyfin: JellyfinClient,
   config: AppConfig,
 ): Promise<void> {
+  // Issue #142: ack first, work later. The validation reply for missing
+  // `media` previously raced the 3-second ack budget; defer immediately
+  // so all responses use the 15-min editReply window.
+  await interaction.deferReply();
+
   const kind = resolveKind(interaction);
   const mediaId = interaction.options.getString("media")?.trim();
 
   if (kind !== "library" && !mediaId) {
-    await interaction.reply({
-      content: "Pick a movie or series from autocomplete when checking a single title.",
-      ephemeral: true,
-    });
+    await interaction.editReply(
+      "Pick a movie or series from autocomplete when checking a single title.",
+    );
     return;
   }
-
-  await interaction.deferReply();
 
   try {
     if (kind === "library") {
