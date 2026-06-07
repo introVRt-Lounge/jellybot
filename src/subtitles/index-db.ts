@@ -277,6 +277,102 @@ export class SubtitleIndex {
       .all(ftsQuery, limit) as QuoteSearchResult[];
   }
 
+  /**
+   * Find every `kind='single'` cue matching the FTS query, returned in
+   * chronological order (series -> season -> episode -> startMs). Used by
+   * the supercut feature (#140) where ordering matters and merged-window
+   * rows would produce duplicate clips.
+   *
+   * `seriesName` filter is case-insensitive equals; pass it to keep results
+   * coherent for short common phrases that would otherwise span the whole
+   * library. `titleEquals` lets a caller pin to a single movie or episode
+   * (case-insensitive).
+   */
+  searchSupercutCues(opts: {
+    query: string;
+    seriesName?: string;
+    titleEquals?: string;
+    limit: number;
+  }): QuoteSearchResult[] {
+    const ftsQuery = prepareFtsQuery(opts.query);
+    if (!ftsQuery) return [];
+
+    const where: string[] = [
+      "subtitle_cues_fts MATCH ?",
+      "c.kind = 'single'",
+    ];
+    const params: (string | number)[] = [ftsQuery];
+
+    if (opts.seriesName) {
+      where.push("LOWER(m.series_name) = LOWER(?)");
+      params.push(opts.seriesName);
+    }
+    if (opts.titleEquals) {
+      where.push("LOWER(m.title) = LOWER(?)");
+      params.push(opts.titleEquals);
+    }
+
+    params.push(opts.limit);
+
+    return this.db
+      .query(
+        `SELECT
+          m.item_id AS itemId,
+          m.item_type AS itemType,
+          m.title AS title,
+          m.series_name AS seriesName,
+          m.season_number AS seasonNumber,
+          m.episode_number AS episodeNumber,
+          m.production_year AS productionYear,
+          m.runtime_ticks AS runtimeTicks,
+          c.start_ms AS startMs,
+          c.end_ms AS endMs,
+          c.text AS text,
+          0 AS rank
+        FROM subtitle_cues_fts
+        JOIN subtitle_cues c ON c.id = subtitle_cues_fts.rowid
+        JOIN media_items m ON m.item_id = c.item_id
+        WHERE ${where.join(" AND ")}
+        ORDER BY
+          COALESCE(m.series_name, '') ASC,
+          COALESCE(m.season_number, 0) ASC,
+          COALESCE(m.episode_number, 0) ASC,
+          c.start_ms ASC
+        LIMIT ?`,
+      )
+      .all(...params) as QuoteSearchResult[];
+  }
+
+  /**
+   * Distinct series names currently in the index. Used by the supercut
+   * autocomplete to suggest the `series` argument.
+   */
+  listSeriesNames(prefix: string, limit: number): string[] {
+    const trimmed = prefix.trim();
+    const rows = trimmed.length === 0
+      ? (this.db
+          .query(
+            `SELECT DISTINCT series_name AS name
+             FROM media_items
+             WHERE series_name IS NOT NULL AND series_name <> ''
+             ORDER BY series_name COLLATE NOCASE
+             LIMIT ?`,
+          )
+          .all(limit) as { name: string }[])
+      : (this.db
+          .query(
+            `SELECT DISTINCT series_name AS name
+             FROM media_items
+             WHERE series_name IS NOT NULL AND series_name <> ''
+               AND LOWER(series_name) LIKE LOWER(?)
+             ORDER BY series_name COLLATE NOCASE
+             LIMIT ?`,
+          )
+          .all(`%${trimmed}%`, limit) as { name: string }[]);
+
+    return rows.map((r) => r.name);
+  }
+
   getCueMatch(itemId: string, startMs: number, endMs: number): QuoteSearchResult | null {
     const row = this.db
       .query(

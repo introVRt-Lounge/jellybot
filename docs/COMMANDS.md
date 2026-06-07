@@ -150,6 +150,47 @@ If `SONARR_URL`/`SONARR_API_KEY` are unset, the TV path falls back to a passive 
 - **Already added.** Movie path: falls back to passive watch against the existing Radarr movie. TV path: skips the add and only monitors+searches the requested episode.
 - **Pending cap.** Each user can have up to 10 pending requests at once across both paths.
 
+## `/supercut`
+
+Concatenate every clip of a phrase from a single series into one supercut video. Useful for the obvious meme cases ("MAWP" in Archer, "Bazinga" in Big Bang Theory) but limited by hard caps so it can't melt the box.
+
+### Options
+
+| Option | Required | Type | Notes |
+| --- | --- | --- | --- |
+| `phrase` | Yes | String | The phrase to find. Must be at least 3 characters. |
+| `series` | Yes | Autocomplete string | The series title (case insensitive). Required to keep results coherent for short common phrases. |
+| `max_clips` | No | Integer | Override on the clip count. Defaults to and is clamped at `SUPERCUT_MAX_CLIPS` (30 by default). |
+
+The subtitle index must exist first. Run `make index-subtitles` on the host/container before expecting matches.
+
+### Examples
+
+```text
+/supercut phrase:mawp series:Archer
+/supercut phrase:engage series:Star Trek: The Next Generation max_clips:10
+```
+
+### Caps and limits
+
+| Knob | Default | Env var |
+| --- | --- | --- |
+| Max clips per supercut | 30 | `SUPERCUT_MAX_CLIPS` |
+| Max aggregate runtime | 90s | `SUPERCUT_MAX_DURATION_SECONDS` |
+| Padding around each cue | 400ms each side | `SUPERCUT_PADDING_MS` |
+| Adjacent-cue merge window | 1500ms | `SUPERCUT_COALESCE_GAP_MS` |
+| Final mp4 size cap | 24 MB | `SUPERCUT_MAX_MB` |
+
+Only one supercut can render per guild at a time; concurrent requests are rejected with a "try again in a minute" message. Cues from the same item that are within the coalesce window get merged into a single span so adjacent SRT cues don't render as flickers.
+
+### Failure cases
+
+- fewer than 3 hits after coalesce + caps (use `/quote` instead)
+- another supercut is already in flight for this guild
+- subtitle index missing or stale
+- rendered file above the upload cap
+- ffmpeg/Jellyfin stream failure on any clip
+
 ## `/subcoverage`
 
 Report how much of your Jellyfin library has subtitles, or check a single movie or TV series.

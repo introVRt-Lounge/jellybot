@@ -4,6 +4,7 @@ import { clipCommand } from "./commands/clip.ts";
 import { featureCommand } from "./commands/feature.ts";
 import { quoteCommand } from "./commands/quote.ts";
 import { subcoverageCommand } from "./commands/subcoverage.ts";
+import { buildSupercutCommand } from "./commands/supercut.ts";
 import { loadConfig } from "./config.ts";
 import {
   createRestCommandRegistry,
@@ -18,6 +19,7 @@ const body = [
   quoteCommand.toJSON(),
   featureCommand.toJSON(),
   subcoverageCommand.toJSON(),
+  buildSupercutCommand(config.supercutMaxClips).toJSON(),
 ];
 const plan = planCommandSync(config.discordGuildIds);
 const registry = createRestCommandRegistry(rest, config.discordClientId);
