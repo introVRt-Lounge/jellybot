@@ -64,6 +64,16 @@ export type AppConfig = {
   webhookPollIntervalMs: number;
   /** Pause after Jellyfin per-item refresh before reading media streams (ms). */
   webhookPostRefreshSettleMs: number;
+  /** Hard ceiling on clips per supercut (#140). Applied even when the user requests more. */
+  supercutMaxClips: number;
+  /** Hard ceiling on aggregate supercut runtime in seconds (post-padding). */
+  supercutMaxDurationSeconds: number;
+  /** Padding (in ms) added either side of each cue when rendering a supercut clip. */
+  supercutPaddingMs: number;
+  /** Adjacent-cue merge window (ms) inside the same item. */
+  supercutCoalesceGapMs: number;
+  /** Hard ceiling on the final supercut mp4 size (MB) before Discord upload. */
+  supercutMaxMb: number;
 };
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
@@ -116,6 +126,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     webhookPollMaxAttempts: Number(env.WEBHOOK_POLL_MAX_ATTEMPTS ?? 12),
     webhookPollIntervalMs: Number(env.WEBHOOK_POLL_INTERVAL_SECONDS ?? 10) * 1000,
     webhookPostRefreshSettleMs: Number(env.WEBHOOK_POST_REFRESH_SETTLE_MS ?? 1500),
+    supercutMaxClips: Number(env.SUPERCUT_MAX_CLIPS ?? 30),
+    supercutMaxDurationSeconds: Number(env.SUPERCUT_MAX_DURATION_SECONDS ?? 90),
+    supercutPaddingMs: Number(env.SUPERCUT_PADDING_MS ?? 400),
+    supercutCoalesceGapMs: Number(env.SUPERCUT_COALESCE_GAP_MS ?? 1500),
+    supercutMaxMb: Number(env.SUPERCUT_MAX_MB ?? 24),
   };
 }
 

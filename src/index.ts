@@ -27,6 +27,11 @@ import {
   handleSubcoverageCommand,
   subcoverageCommand,
 } from "./commands/subcoverage.ts";
+import {
+  buildSupercutCommand,
+  handleSupercutAutocomplete,
+  handleSupercutCommand,
+} from "./commands/supercut.ts";
 import { startQuoteRequestReconcileLoop } from "./quote-requests/reconciler.ts";
 import { loadConfig } from "./config.ts";
 import {
@@ -181,6 +186,7 @@ client.once(Events.ClientReady, async (readyClient) => {
       quoteCommand.toJSON(),
       featureCommand.toJSON(),
       subcoverageCommand.toJSON(),
+      buildSupercutCommand(config.supercutMaxClips).toJSON(),
     ];
     const syncStateStore = new BotStateStore(config.botStateDbPath);
     try {
@@ -308,6 +314,20 @@ client.on(Events.InteractionCreate, async (interaction) => {
       } catch (error) {
         if (!isBenignAutocompleteError(error)) {
           console.error("Subcoverage autocomplete error:", error);
+        }
+        if (!interaction.responded) {
+          await interaction.respond([]).catch(() => undefined);
+        }
+      }
+      return;
+    }
+
+    if (interaction.commandName === "supercut") {
+      try {
+        await handleSupercutAutocomplete(interaction, config);
+      } catch (error) {
+        if (!isBenignAutocompleteError(error)) {
+          console.error("Supercut autocomplete error:", error);
         }
         if (!interaction.responded) {
           await interaction.respond([]).catch(() => undefined);
@@ -522,6 +542,34 @@ client.on(Events.InteractionCreate, async (interaction) => {
         JSON.stringify({
           event: "feature.error",
           command: "feature",
+          userId: interaction.user.id,
+          error: error instanceof Error ? error.message : "unknown error",
+        }),
+      );
+
+      if (interaction.deferred || interaction.replied) {
+        await interaction.editReply("Something went wrong while handling that command.").catch(() => undefined);
+        return;
+      }
+
+      await interaction
+        .reply({
+          content: "Something went wrong while handling that command.",
+          ephemeral: true,
+        })
+        .catch(() => undefined);
+    }
+    return;
+  }
+
+  if (interaction.commandName === "supercut") {
+    try {
+      await handleSupercutCommand(interaction, jellyfin, config);
+    } catch (error) {
+      console.error(
+        JSON.stringify({
+          event: "supercut.error",
+          command: "supercut",
           userId: interaction.user.id,
           error: error instanceof Error ? error.message : "unknown error",
         }),
