@@ -95,6 +95,8 @@ describe("runQuoteRequestReconcile", () => {
     expect(fake.sent[0]?.content).toContain("<@user-7>");
     expect(fake.sent[0]?.content).toContain("Happy Gilmore");
     expect(fake.sent[0]?.content).toContain("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:60000:65000");
+    // Issue #144: title + clip-instructions render as Discord subtext (small text).
+    expect(fake.sent[0]?.content).toMatch(/^-# .*Happy Gilmore.*Clip it with/m);
 
     const verify = new QuoteRequestStore(botStateDbPath);
     expect(verify.listPending()).toHaveLength(0);
