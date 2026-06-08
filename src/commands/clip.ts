@@ -218,8 +218,7 @@ export async function handleClipCommand(
     command: "clip",
     plan: planned.plan,
     previewLines: [
-      `**${label}**`,
-      `Clip: ${formatTimestamp(planned.plan.startSeconds)} -> ${formatTimestamp(planned.plan.endSeconds)} (${Math.round(planned.plan.durationSeconds)}s)`,
+      `-# **${label}** | ${formatTimestamp(planned.plan.startSeconds)} -> ${formatTimestamp(planned.plan.endSeconds)} (${Math.round(planned.plan.durationSeconds)}s)`,
     ],
     burnInSubtitles,
     clipParams: {

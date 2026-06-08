@@ -274,11 +274,8 @@ export function formatFulfillmentMessage(
 
   return [
     `<@${request.requesterDiscordId}> your wish is granted.`,
-    "",
-    `**${title}** @ ${timestamp}`,
     `> ${truncate(cue, 240)}`,
-    "",
-    `${confidenceNote} Clip it with \`/quote match:\` and pick this line, or paste the token below.`,
+    `-# **${title}** @ ${timestamp} - ${confidenceNote} Clip it with \`/quote match:\` and pick this line, or paste the token below.`,
     "```",
     matchToken,
     "```",

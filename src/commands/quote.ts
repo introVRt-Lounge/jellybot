@@ -279,8 +279,8 @@ export async function handleQuoteCommand(
     command: "quote",
     plan: planned.plan,
     previewLines: [
-      `**${label}**`,
-      `"${planned.plan.quoteText}" @ ${formatTimestamp(planned.plan.cueStartSeconds)}`,
+      `> ${planned.plan.quoteText}`,
+      `-# **${label}** @ ${formatTimestamp(planned.plan.cueStartSeconds)}`,
     ],
     burnInSubtitles,
     quoteParams: {

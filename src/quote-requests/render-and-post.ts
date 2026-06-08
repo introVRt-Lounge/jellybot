@@ -108,9 +108,8 @@ export async function renderAndPostFulfillmentClip(input: {
         : "your wish is granted (best guess - might not be exactly the line)";
     const content = [
       `<@${request.requesterDiscordId}> ${heading}`,
-      `**${artifact.label}** @ ${formatTimestamp(planResult.plan.cueStartSeconds)}`,
       `> ${truncate(cue, 240)}`,
-      `Want a different range? \`/quote match:\` and pick this line, or paste this token:`,
+      `-# **${artifact.label}** @ ${formatTimestamp(planResult.plan.cueStartSeconds)} - want a different range? \`/quote match:\` and pick this line, or paste this token:`,
       "```",
       matchToken,
       "```",

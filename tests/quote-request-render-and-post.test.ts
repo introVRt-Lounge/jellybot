@@ -112,6 +112,8 @@ describe("renderAndPostFulfillmentClip", () => {
     expect(payload.content).toContain("<@user-1>");
     expect(payload.content).toContain("your wish is granted");
     expect(payload.content).toContain("I am a leaf");
+    // Issue #144: title + "want a different range" must render as Discord subtext (small text).
+    expect(payload.content).toMatch(/^-# .*Serenity.*@.*want a different range/m);
     expect(payload.files).toHaveLength(1);
   });
 

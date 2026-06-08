@@ -143,7 +143,7 @@ export async function handleClipPreviewButton(
       name: session.attachmentName,
     });
 
-    const publicContent = [...session.previewLines, `Requested by <@${session.ownerUserId}>`].join("\n");
+    const publicContent = [...session.previewLines, `-# Requested by <@${session.ownerUserId}>`].join("\n");
 
     await (channel as TextChannel).send({
       content: publicContent,
@@ -263,8 +263,7 @@ export async function handleClipPreviewModal(
 
     plan = planned.plan;
     previewLines = [
-      `**${session.label}**`,
-      `Clip: ${formatTimestamp(plan.startSeconds)} -> ${formatTimestamp(plan.endSeconds)} (${Math.round(plan.durationSeconds)}s)`,
+      `-# **${session.label}** | ${formatTimestamp(plan.startSeconds)} -> ${formatTimestamp(plan.endSeconds)} (${Math.round(plan.durationSeconds)}s)`,
     ];
   } else if (session.command === "quote" && session.quoteParams) {
     const durationRaw = interaction.fields.getTextInputValue("duration");
@@ -320,8 +319,8 @@ export async function handleClipPreviewModal(
 
     plan = planned.plan;
     previewLines = [
-      `**${session.label}**`,
-      `"${planned.plan.quoteText}" @ ${formatTimestamp(planned.plan.cueStartSeconds)}`,
+      `> ${planned.plan.quoteText}`,
+      `-# **${session.label}** @ ${formatTimestamp(planned.plan.cueStartSeconds)}`,
     ];
   } else {
     await interaction.editReply({
