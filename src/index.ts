@@ -268,6 +268,38 @@ client.once(Events.ClientReady, async (readyClient) => {
   startQuoteRequestReconcileLoop({ client, config, jellyfin });
 });
 
+/**
+ * Issue #147: log how long it took the dispatcher to hand off to a slash
+ * command handler and what state the interaction is in by the time we exit.
+ *
+ * Two timings:
+ *  - `dispatchMs` = wall-clock from this listener firing to handler return
+ *    (includes any deferReply round-trip).
+ *  - `tokenAgeMs` = ms since Discord created the interaction. If this trends
+ *    over ~2500ms regularly we are losing the 3-second defer budget to
+ *    event-loop contention (the in-process FTS5 indexer is the prime suspect).
+ *
+ * `deferred` / `replied` flags let us tell, in the log, whether the handler
+ * managed to ack the interaction at all before exiting.
+ */
+function logCommandTiming(
+  name: string,
+  interaction: { createdTimestamp: number; deferred: boolean; replied: boolean },
+  t0: number,
+): void {
+  const now = Date.now();
+  console.info(
+    JSON.stringify({
+      event: "command.timing",
+      command: name,
+      dispatchMs: now - t0,
+      tokenAgeMs: now - interaction.createdTimestamp,
+      deferred: interaction.deferred,
+      replied: interaction.replied,
+    }),
+  );
+}
+
 client.on(Events.InteractionCreate, async (interaction) => {
   if (interaction.isAutocomplete()) {
     if (interaction.commandName === "clip") {
@@ -448,6 +480,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
   }
 
   if (interaction.commandName === "clip") {
+    const t0 = Date.now();
     try {
       await handleClipCommand(interaction, jellyfin, config);
     } catch (error) {
@@ -465,20 +498,22 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
       if (interaction.deferred || interaction.replied) {
         await interaction.editReply("Something went wrong while handling that command.").catch(() => undefined);
-        return;
+      } else {
+        await interaction
+          .reply({
+            content: "Something went wrong while handling that command.",
+            flags: MessageFlags.Ephemeral,
+          })
+          .catch(() => undefined);
       }
-
-      await interaction
-        .reply({
-          content: "Something went wrong while handling that command.",
-          flags: MessageFlags.Ephemeral,
-        })
-        .catch(() => undefined);
+    } finally {
+      logCommandTiming("clip", interaction, t0);
     }
     return;
   }
 
   if (interaction.commandName === "quote") {
+    const t0 = Date.now();
     try {
       await handleQuoteCommand(interaction, jellyfin, config);
     } catch (error) {
@@ -493,20 +528,22 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
       if (interaction.deferred || interaction.replied) {
         await interaction.editReply("Something went wrong while handling that command.").catch(() => undefined);
-        return;
+      } else {
+        await interaction
+          .reply({
+            content: "Something went wrong while handling that command.",
+            flags: MessageFlags.Ephemeral,
+          })
+          .catch(() => undefined);
       }
-
-      await interaction
-        .reply({
-          content: "Something went wrong while handling that command.",
-          flags: MessageFlags.Ephemeral,
-        })
-        .catch(() => undefined);
+    } finally {
+      logCommandTiming("quote", interaction, t0);
     }
     return;
   }
 
   if (interaction.commandName === "subcoverage") {
+    const t0 = Date.now();
     try {
       await handleSubcoverageCommand(interaction, jellyfin, config);
     } catch (error) {
@@ -521,20 +558,22 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
       if (interaction.deferred || interaction.replied) {
         await interaction.editReply("Something went wrong while handling that command.").catch(() => undefined);
-        return;
+      } else {
+        await interaction
+          .reply({
+            content: "Something went wrong while handling that command.",
+            flags: MessageFlags.Ephemeral,
+          })
+          .catch(() => undefined);
       }
-
-      await interaction
-        .reply({
-          content: "Something went wrong while handling that command.",
-          flags: MessageFlags.Ephemeral,
-        })
-        .catch(() => undefined);
+    } finally {
+      logCommandTiming("subcoverage", interaction, t0);
     }
     return;
   }
 
   if (interaction.commandName === "feature") {
+    const t0 = Date.now();
     try {
       await handleFeatureCommand(interaction, config, client);
     } catch (error) {
@@ -549,20 +588,22 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
       if (interaction.deferred || interaction.replied) {
         await interaction.editReply("Something went wrong while handling that command.").catch(() => undefined);
-        return;
+      } else {
+        await interaction
+          .reply({
+            content: "Something went wrong while handling that command.",
+            flags: MessageFlags.Ephemeral,
+          })
+          .catch(() => undefined);
       }
-
-      await interaction
-        .reply({
-          content: "Something went wrong while handling that command.",
-          flags: MessageFlags.Ephemeral,
-        })
-        .catch(() => undefined);
+    } finally {
+      logCommandTiming("feature", interaction, t0);
     }
     return;
   }
 
   if (interaction.commandName === "supercut") {
+    const t0 = Date.now();
     try {
       await handleSupercutCommand(interaction, jellyfin, config);
     } catch (error) {
@@ -577,15 +618,16 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
       if (interaction.deferred || interaction.replied) {
         await interaction.editReply("Something went wrong while handling that command.").catch(() => undefined);
-        return;
+      } else {
+        await interaction
+          .reply({
+            content: "Something went wrong while handling that command.",
+            flags: MessageFlags.Ephemeral,
+          })
+          .catch(() => undefined);
       }
-
-      await interaction
-        .reply({
-          content: "Something went wrong while handling that command.",
-          flags: MessageFlags.Ephemeral,
-        })
-        .catch(() => undefined);
+    } finally {
+      logCommandTiming("supercut", interaction, t0);
     }
   }
 });

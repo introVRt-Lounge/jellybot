@@ -244,6 +244,15 @@ async function mapWithConcurrency<T>(
       cursor += 1;
       if (current === undefined) return;
       await worker(current);
+      // Issue #147: each `worker` call ends with a synchronous SQLite write
+      // (FTS5 + media_items insert) that can block the event loop for tens to
+      // hundreds of ms on items with thousands of cues. Without this yield,
+      // the Discord gateway's INTERACTION_CREATE delivery can be starved long
+      // enough to blow the 3-second defer budget, surfacing as
+      // "Unknown interaction" on /quote, /clip, etc. while the post-restart
+      // incremental pass is hot. The setImmediate callback fires after I/O
+      // events, giving the gateway a turn between items.
+      await new Promise<void>((resolve) => setImmediate(resolve));
     }
   }
 
