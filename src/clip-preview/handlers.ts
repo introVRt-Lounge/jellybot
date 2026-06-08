@@ -1,5 +1,6 @@
 import {
   AttachmentBuilder,
+  MessageFlags,
   type ButtonInteraction,
   type ModalSubmitInteraction,
   type TextChannel,
@@ -43,10 +44,10 @@ async function replyPreviewError(
   message: string,
 ): Promise<void> {
   if (interaction.deferred || interaction.replied) {
-    await interaction.followUp({ content: message, ephemeral: true }).catch(() => undefined);
+    await interaction.followUp({ content: message, flags: MessageFlags.Ephemeral }).catch(() => undefined);
     return;
   }
-  await interaction.reply({ content: message, ephemeral: true }).catch(() => undefined);
+  await interaction.reply({ content: message, flags: MessageFlags.Ephemeral }).catch(() => undefined);
 }
 
 function formatDurationRaw(seconds: number): string {

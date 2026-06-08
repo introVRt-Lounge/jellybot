@@ -132,14 +132,14 @@ export async function handleFeatureCommand(
 ): Promise<void> {
   const guildId = interaction.guildId;
   if (!guildId) {
-    await interaction.reply({ content: "Use feature commands inside a guild.", ephemeral: true });
+    await interaction.reply({ content: "Use feature commands inside a guild.", flags: MessageFlags.Ephemeral });
     return;
   }
 
   if (!config.featureSuggestionsChannelId) {
     await interaction.reply({
       content: "Feature suggestions are not configured on this bot (`FEATURE_SUGGESTIONS_CHANNEL_ID`).",
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
     return;
   }
@@ -175,7 +175,7 @@ async function handleFeatureSuggest(
   guildId: string,
 ): Promise<void> {
   const description = interaction.options.getString("description", true).trim();
-  await interaction.deferReply({ ephemeral: true });
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
   const gate = await evaluateSuggestionScope(description, config.openaiApiKey);
   if (!gate.ok) {
@@ -242,7 +242,7 @@ async function handleFeatureChoose(
   guildId: string,
 ): Promise<void> {
   if (!isFeatureTriageUser(config, interaction.user.id)) {
-    await interaction.reply({ content: "Only feature triage maintainers can bless suggestions.", ephemeral: true });
+    await interaction.reply({ content: "Only feature triage maintainers can bless suggestions.", flags: MessageFlags.Ephemeral });
     return;
   }
 
@@ -251,17 +251,17 @@ async function handleFeatureChoose(
   if (!suggestion || suggestion.guildId !== guildId) {
     await interaction.reply({
       content: `Issue #${issueNumber} is not an open guild suggestion here.`,
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
     return;
   }
 
   if (!config.githubToken) {
-    await interaction.reply({ content: "GitHub integration is not configured (`GITHUB_TOKEN` missing).", ephemeral: true });
+    await interaction.reply({ content: "GitHub integration is not configured (`GITHUB_TOKEN` missing).", flags: MessageFlags.Ephemeral });
     return;
   }
 
-  await interaction.deferReply({ ephemeral: true });
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
   const issue = await fetchIssue(
     config.releaseRepoOwner,
@@ -302,16 +302,16 @@ async function handleFeatureStatus(
   guildId: string,
 ): Promise<void> {
   if (!isFeatureTriageUser(config, interaction.user.id)) {
-    await interaction.reply({ content: "Only feature triage maintainers can view pipeline status.", ephemeral: true });
+    await interaction.reply({ content: "Only feature triage maintainers can view pipeline status.", flags: MessageFlags.Ephemeral });
     return;
   }
 
   if (!config.githubToken) {
-    await interaction.reply({ content: "GitHub integration is not configured (`GITHUB_TOKEN` missing).", ephemeral: true });
+    await interaction.reply({ content: "GitHub integration is not configured (`GITHUB_TOKEN` missing).", flags: MessageFlags.Ephemeral });
     return;
   }
 
-  await interaction.deferReply({ ephemeral: true });
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
   const issueNumber = interaction.options.getInteger("issue");
   if (issueNumber !== null) {
