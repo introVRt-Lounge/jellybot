@@ -1,7 +1,7 @@
 import "dotenv/config";
 import { hostname } from "node:os";
 import { randomUUID } from "node:crypto";
-import { Client, Events, GatewayIntentBits, REST } from "discord.js";
+import { Client, Events, GatewayIntentBits, MessageFlags, REST } from "discord.js";
 import {
   handleClipPreviewButton,
   handleClipPreviewModal,
@@ -350,7 +350,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
       );
       if (!interaction.replied && !interaction.deferred) {
         await interaction
-          .reply({ content: "Something went wrong opening that form.", ephemeral: true })
+          .reply({ content: "Something went wrong opening that form.", flags: MessageFlags.Ephemeral })
           .catch(() => undefined);
       }
     }
@@ -375,7 +375,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
         }),
       );
       if (!interaction.replied && !interaction.deferred) {
-        await interaction.reply({ content: "Something went wrong while saving your rank.", ephemeral: true }).catch(() => undefined);
+        await interaction.reply({ content: "Something went wrong while saving your rank.", flags: MessageFlags.Ephemeral }).catch(() => undefined);
       } else {
         await interaction
           .editReply({ content: "Something went wrong while saving your rank.", components: [] })
@@ -398,7 +398,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
         }),
       );
       if (!interaction.replied && !interaction.deferred) {
-        await interaction.reply({ content: "Something went wrong with that action.", ephemeral: true }).catch(() => undefined);
+        await interaction.reply({ content: "Something went wrong with that action.", flags: MessageFlags.Ephemeral }).catch(() => undefined);
       }
     }
     return;
@@ -417,7 +417,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
       );
       if (!interaction.replied && !interaction.deferred) {
         await interaction
-          .reply({ content: "Something went wrong handling that request.", ephemeral: true })
+          .reply({ content: "Something went wrong handling that request.", flags: MessageFlags.Ephemeral })
           .catch(() => undefined);
       }
     }
@@ -437,7 +437,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
         }),
       );
       if (!interaction.replied && !interaction.deferred) {
-        await interaction.reply({ content: "Something went wrong while re-rendering.", ephemeral: true }).catch(() => undefined);
+        await interaction.reply({ content: "Something went wrong while re-rendering.", flags: MessageFlags.Ephemeral }).catch(() => undefined);
       }
     }
     return;
@@ -471,7 +471,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
       await interaction
         .reply({
           content: "Something went wrong while handling that command.",
-          ephemeral: true,
+          flags: MessageFlags.Ephemeral,
         })
         .catch(() => undefined);
     }
@@ -499,7 +499,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
       await interaction
         .reply({
           content: "Something went wrong while handling that command.",
-          ephemeral: true,
+          flags: MessageFlags.Ephemeral,
         })
         .catch(() => undefined);
     }
@@ -527,7 +527,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
       await interaction
         .reply({
           content: "Something went wrong while handling that command.",
-          ephemeral: true,
+          flags: MessageFlags.Ephemeral,
         })
         .catch(() => undefined);
     }
@@ -555,7 +555,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
       await interaction
         .reply({
           content: "Something went wrong while handling that command.",
-          ephemeral: true,
+          flags: MessageFlags.Ephemeral,
         })
         .catch(() => undefined);
     }
@@ -583,7 +583,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
       await interaction
         .reply({
           content: "Something went wrong while handling that command.",
-          ephemeral: true,
+          flags: MessageFlags.Ephemeral,
         })
         .catch(() => undefined);
     }
