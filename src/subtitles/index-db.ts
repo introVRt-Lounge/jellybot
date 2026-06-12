@@ -65,6 +65,34 @@ export type SubtitleIndexStats = {
 
 const FTS_TOKENIZER = "unicode61 remove_diacritics 2";
 
+/**
+ * SQL expression that produces the text fed to the FTS5 index for a given
+ * cue row. For cues that contain a hyphen we append a copy with hyphens
+ * stripped so the same cue is searchable under all three of:
+ *  - the original tokens (e.g. `heart`, `warming` from `heart-warming`)
+ *  - the de-hyphenated compound (e.g. `heartwarming`)
+ * This catches the common case where a writer hyphenates a compound word
+ * the user types as one word from memory. See issue #150.
+ *
+ * Cues without a hyphen are passed through unchanged so we don't inflate
+ * the FTS document for the 95%+ of rows that don't need it (which would
+ * skew bm25 ranking).
+ *
+ * The expression is used both inside the AFTER INSERT/UPDATE triggers and
+ * by the one-shot rebuild path that re-populates FTS from existing rows.
+ */
+const FTS_TEXT_EXPR = `CASE WHEN INSTR(text, '-') > 0 THEN text || ' ' || REPLACE(text, '-', '') ELSE text END`;
+const FTS_NEW_TEXT_EXPR = FTS_TEXT_EXPR.replace(/text/g, "new.text");
+const FTS_OLD_TEXT_EXPR = FTS_TEXT_EXPR.replace(/text/g, "old.text");
+
+/**
+ * Schema version for the FTS document format. Bump when the contents fed
+ * to FTS5 change in a way that requires existing rows to be re-tokenized.
+ *  - "0" / unset: legacy, raw `subtitle_cues.text` only.
+ *  - "1": #150 hyphen-augmented (`text + ' ' + replace(text, '-', '')`).
+ */
+const FTS_NORMALIZE_VERSION = "1";
+
 const BASE_SCHEMA = `
 CREATE TABLE IF NOT EXISTS media_items (
   item_id TEXT PRIMARY KEY,
@@ -126,18 +154,18 @@ CREATE VIRTUAL TABLE subtitle_cues_fts USING fts5(
 
 const FTS_TRIGGERS = `
 CREATE TRIGGER IF NOT EXISTS subtitle_cues_ai AFTER INSERT ON subtitle_cues BEGIN
-  INSERT INTO subtitle_cues_fts(rowid, text, item_id) VALUES (new.id, new.text, new.item_id);
+  INSERT INTO subtitle_cues_fts(rowid, text, item_id) VALUES (new.id, ${FTS_NEW_TEXT_EXPR}, new.item_id);
 END;
 
 CREATE TRIGGER IF NOT EXISTS subtitle_cues_ad AFTER DELETE ON subtitle_cues BEGIN
   INSERT INTO subtitle_cues_fts(subtitle_cues_fts, rowid, text, item_id)
-  VALUES ('delete', old.id, old.text, old.item_id);
+  VALUES ('delete', old.id, ${FTS_OLD_TEXT_EXPR}, old.item_id);
 END;
 
 CREATE TRIGGER IF NOT EXISTS subtitle_cues_au AFTER UPDATE ON subtitle_cues BEGIN
   INSERT INTO subtitle_cues_fts(subtitle_cues_fts, rowid, text, item_id)
-  VALUES ('delete', old.id, old.text, old.item_id);
-  INSERT INTO subtitle_cues_fts(rowid, text, item_id) VALUES (new.id, new.text, new.item_id);
+  VALUES ('delete', old.id, ${FTS_OLD_TEXT_EXPR}, old.item_id);
+  INSERT INTO subtitle_cues_fts(rowid, text, item_id) VALUES (new.id, ${FTS_NEW_TEXT_EXPR}, new.item_id);
 END;
 `;
 
@@ -160,6 +188,7 @@ export class SubtitleIndex {
     ensureCueKindColumn(this.db);
     ensureUnicode61Fts(this.db);
     this.db.exec(FTS_TRIGGERS);
+    ensureFtsNormalizeVersion(this.db);
   }
 
   close(): void {
@@ -539,6 +568,60 @@ function setIndexMeta(db: Database, key: string, value: string): void {
     key,
     value,
   ]);
+}
+
+function getIndexMeta(db: Database, key: string): string | null {
+  const row = db.query("SELECT value FROM index_meta WHERE key = ?").get(key) as { value: string } | null;
+  return row?.value ?? null;
+}
+
+/**
+ * Ensure the FTS5 index uses the current document-augmentation rules.
+ * If the on-disk database was written by a pre-#150 build, drop the FTS
+ * table + triggers, recreate them with the hyphen-augmented format, and
+ * repopulate from `subtitle_cues` in a single bulk insert.
+ *
+ * Idempotent: a no-op once `index_meta.fts_normalize_version` matches the
+ * current `FTS_NORMALIZE_VERSION` constant.
+ */
+function ensureFtsNormalizeVersion(db: Database): void {
+  const current = getIndexMeta(db, "fts_normalize_version");
+  if (current === FTS_NORMALIZE_VERSION) return;
+
+  const cueCount = (db.query("SELECT COUNT(*) AS count FROM subtitle_cues").get() as { count: number }).count;
+
+  // Fresh database: triggers and FTS table were just created with the
+  // current format and there's no existing data to re-tokenize. Stamp the
+  // version and skip the drop/rebuild dance.
+  if (current === null && cueCount === 0) {
+    setIndexMeta(db, "fts_normalize_version", FTS_NORMALIZE_VERSION);
+    return;
+  }
+
+  db.exec(`
+    DROP TRIGGER IF EXISTS subtitle_cues_ai;
+    DROP TRIGGER IF EXISTS subtitle_cues_ad;
+    DROP TRIGGER IF EXISTS subtitle_cues_au;
+    DROP TABLE IF EXISTS subtitle_cues_fts;
+  `);
+  db.exec(CREATE_FTS_UNICODE61);
+  db.exec(FTS_TRIGGERS);
+  db.run(
+    `INSERT INTO subtitle_cues_fts(rowid, text, item_id)
+     SELECT id, ${FTS_TEXT_EXPR}, item_id FROM subtitle_cues`,
+  );
+  setIndexMeta(db, "fts_normalize_version", FTS_NORMALIZE_VERSION);
+  setIndexMeta(db, "fts_tokenizer", FTS_TOKENIZER);
+
+  console.info(
+    JSON.stringify({
+      event: "subtitle_index.fts_renormalized",
+      issue: "#150",
+      version: FTS_NORMALIZE_VERSION,
+      cueCount,
+      previousVersion: current ?? "unset",
+    }),
+  );
 }
 
 export function openSubtitleIndex(dbPath: string, options: SubtitleIndexOpenOptions = {}): SubtitleIndex {
