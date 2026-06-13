@@ -48,6 +48,58 @@ describe("SubtitleIndex", () => {
     }
   });
 
+  test("scopes searchQuotes to a series when seriesName is supplied (issue #152)", () => {
+    const index = openSubtitleIndex(dbPath);
+    try {
+      // Two cues with the same word in different series. Bare query returns
+      // both; series-scoped query returns only the requested one.
+      index.replaceItem(
+        {
+          itemId: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          itemType: "Episode",
+          title: "Aunt Irma Visits",
+          seriesName: "The IT Crowd",
+          seasonNumber: 1,
+          episodeNumber: 6,
+          mediaSourceId: "src-itc",
+          subtitleIndex: 0,
+        },
+        [{ startMs: 1234000, endMs: 1235500, text: "No! It was heart-warming." }],
+      );
+
+      index.replaceItem(
+        {
+          itemId: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          itemType: "Movie",
+          title: "Heartwarming",
+          productionYear: 2020,
+          mediaSourceId: "src-hw",
+          subtitleIndex: 0,
+        },
+        [{ startMs: 60000, endMs: 62000, text: "Heartwarming." }],
+      );
+
+      // No filter: both surface (current global behaviour).
+      const unscoped = index.searchQuotes("heartwarming", 10);
+      expect(unscoped.length).toBeGreaterThanOrEqual(2);
+
+      // Series filter (case-insensitive) keeps only the IT Crowd cue.
+      const scoped = index.searchQuotes("heartwarming", 10, "the it crowd");
+      expect(scoped).toHaveLength(1);
+      expect(scoped[0]?.seriesName).toBe("The IT Crowd");
+      expect(scoped[0]?.text).toBe("No! It was heart-warming.");
+
+      // Movies (NULL series_name) never satisfy a series filter.
+      const moviesOnly = index.searchQuotes("heartwarming", 10, "Heartwarming");
+      expect(moviesOnly).toHaveLength(0);
+
+      // Unknown series returns nothing without throwing.
+      expect(index.searchQuotes("heartwarming", 10, "Nonexistent Show")).toHaveLength(0);
+    } finally {
+      index.close();
+    }
+  });
+
   test("indexes hyphenated compounds so all forms match (issue #150)", () => {
     const index = openSubtitleIndex(dbPath);
     try {

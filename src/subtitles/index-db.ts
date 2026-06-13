@@ -277,9 +277,28 @@ export class SubtitleIndex {
     return singleCount;
   }
 
-  searchQuotes(query: string, limit = 25): QuoteSearchResult[] {
+  /**
+   * Search subtitle cues by FTS5 ranked by bm25.
+   *
+   * `seriesName` (case-insensitive equals) narrows results to a single TV
+   * show. Used by `/quote series:` (#152) so common-noun queries like
+   * `heartwarming` aren't drowned out by short-cue movies elsewhere in the
+   * catalogue. Movies have a NULL `series_name`; passing a series filter
+   * naturally excludes them.
+   */
+  searchQuotes(query: string, limit = 25, seriesName?: string): QuoteSearchResult[] {
     const ftsQuery = prepareFtsQuery(query);
     if (!ftsQuery) return [];
+
+    const where: string[] = ["subtitle_cues_fts MATCH ?"];
+    const params: (string | number)[] = [ftsQuery];
+
+    if (seriesName) {
+      where.push("LOWER(m.series_name) = LOWER(?)");
+      params.push(seriesName);
+    }
+
+    params.push(limit);
 
     return this.db
       .query(
@@ -299,11 +318,11 @@ export class SubtitleIndex {
         FROM subtitle_cues_fts
         JOIN subtitle_cues c ON c.id = subtitle_cues_fts.rowid
         JOIN media_items m ON m.item_id = c.item_id
-        WHERE subtitle_cues_fts MATCH ?
+        WHERE ${where.join(" AND ")}
         ORDER BY rank
         LIMIT ?`,
       )
-      .all(ftsQuery, limit) as QuoteSearchResult[];
+      .all(...params) as QuoteSearchResult[];
   }
 
   /**

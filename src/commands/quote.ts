@@ -25,9 +25,13 @@ export { QUOTE_REQUEST_AUTOCOMPLETE_TOKEN } from "../quote-requests/modal.ts";
 
 const quoteAutocompleteInFlight = new Map<string, Promise<void>>();
 const quoteMatchAutocompleteGuard = new AutocompleteSessionGuard();
+const quoteSeriesAutocompleteGuard = new AutocompleteSessionGuard();
 const QUOTE_MATCH_AUTOCOMPLETE_KEY = (interaction: AutocompleteInteraction) =>
   `${interaction.user.id}:${interaction.guildId ?? "dm"}:quote:match`;
+const QUOTE_SERIES_AUTOCOMPLETE_KEY = (interaction: AutocompleteInteraction) =>
+  `${interaction.user.id}:${interaction.guildId ?? "dm"}:quote:series`;
 const QUOTE_AUTOCOMPLETE_TIMEOUT_MS = 2500;
+const QUOTE_SERIES_AUTOCOMPLETE_LIMIT = 25;
 
 export const quoteCommand = new SlashCommandBuilder()
   .setName("quote")
@@ -37,6 +41,13 @@ export const quoteCommand = new SlashCommandBuilder()
       .setName("match")
       .setDescription("Search quote text, then pick a match from autocomplete")
       .setRequired(true)
+      .setAutocomplete(true),
+  )
+  .addStringOption((option) =>
+    option
+      .setName("series")
+      .setDescription("Narrow to a TV series (autocomplete). Useful when bare keywords surface other shows.")
+      .setRequired(false)
       .setAutocomplete(true),
   )
   .addStringOption((option) =>
@@ -137,6 +148,12 @@ async function handleQuoteAutocompleteOnce(
   config: Pick<AppConfig, "subtitleDbPath">,
 ): Promise<void> {
   const focused = interaction.options.getFocused(true);
+
+  if (focused.name === "series") {
+    await respondSeriesAutocomplete(interaction, config);
+    return;
+  }
+
   if (focused.name !== "match") {
     await safeAutocompleteRespond(interaction, [], { query: "", resultCount: 0 });
     return;
@@ -148,10 +165,18 @@ async function handleQuoteAutocompleteOnce(
     return;
   }
 
+  // Pick up the optional series filter alongside the focused `match` value
+  // so cue autocomplete narrows to the chosen show before bm25 ranks it.
+  const seriesFilterRaw = interaction.options.getString("series");
+  const seriesFilter = seriesFilterRaw && seriesFilterRaw.trim().length > 0 ? seriesFilterRaw.trim() : undefined;
+
   try {
     const { isCurrent } = quoteMatchAutocompleteGuard.beginCancellable(QUOTE_MATCH_AUTOCOMPLETE_KEY(interaction));
     const index = getSubtitleSearchIndex(config.subtitleDbPath);
-    const results = await withTimeout(Promise.resolve(index.searchQuotes(query, 24)), QUOTE_AUTOCOMPLETE_TIMEOUT_MS);
+    const results = await withTimeout(
+      Promise.resolve(index.searchQuotes(query, 24, seriesFilter)),
+      QUOTE_AUTOCOMPLETE_TIMEOUT_MS,
+    );
     const choices: ApplicationCommandOptionChoiceData[] = quoteSearchChoices(results);
     choices.push({
       name: QUOTE_REQUEST_AUTOCOMPLETE_LABEL,
@@ -163,6 +188,7 @@ async function handleQuoteAutocompleteOnce(
         event: "quote.autocomplete",
         interactionId: interaction.id,
         query,
+        seriesFilter: seriesFilter ?? null,
         resultCount: choices.length,
       }),
     );
@@ -181,11 +207,52 @@ async function handleQuoteAutocompleteOnce(
       JSON.stringify({
         event: "quote.autocomplete_failed",
         query,
+        seriesFilter: seriesFilter ?? null,
         error: error instanceof Error ? error.message : "unknown error",
       }),
     );
 
     await safeAutocompleteRespond(interaction, [], { query, resultCount: 0 });
+  }
+}
+
+async function respondSeriesAutocomplete(
+  interaction: AutocompleteInteraction,
+  config: Pick<AppConfig, "subtitleDbPath">,
+): Promise<void> {
+  const focused = interaction.options.getFocused(true);
+  const prefix = focused.value.trim();
+
+  try {
+    const { isCurrent } = quoteSeriesAutocompleteGuard.beginCancellable(QUOTE_SERIES_AUTOCOMPLETE_KEY(interaction));
+    const index = openSubtitleIndex(config.subtitleDbPath, { readonly: true });
+    let names: string[];
+    try {
+      names = index.listSeriesNames(prefix, QUOTE_SERIES_AUTOCOMPLETE_LIMIT);
+    } finally {
+      index.close();
+    }
+
+    if (!isCurrent() || interaction.responded) return;
+
+    const choices: ApplicationCommandOptionChoiceData[] = names.map((name) => ({
+      name: name.slice(0, 100),
+      value: name,
+    }));
+
+    await safeAutocompleteRespond(interaction, choices, { query: prefix, resultCount: choices.length });
+  } catch (error) {
+    if (isBenignAutocompleteError(error)) return;
+
+    console.error(
+      JSON.stringify({
+        event: "quote.series_autocomplete_failed",
+        query: prefix,
+        error: error instanceof Error ? error.message : "unknown error",
+      }),
+    );
+
+    await safeAutocompleteRespond(interaction, [], { query: prefix, resultCount: 0 });
   }
 }
 
@@ -207,6 +274,8 @@ export async function handleQuoteCommand(
   await beginEphemeralClipPreview(interaction);
 
   const matchRaw = interaction.options.getString("match", true);
+  const seriesRaw = interaction.options.getString("series");
+  const seriesFilter = seriesRaw && seriesRaw.trim().length > 0 ? seriesRaw.trim() : undefined;
   const durationRaw = interaction.options.getString("duration");
   const paddingRaw = interaction.options.getString("padding");
   const burnInSubtitles = interaction.options.getBoolean("subtitles") ?? false;
@@ -242,6 +311,20 @@ export async function handleQuoteCommand(
       "That quote match is no longer in the subtitle index. Run `make index-subtitles` and try again.",
     );
     return;
+  }
+
+  // Defence against autocomplete-then-change-series: if the user picked a
+  // cue, then narrowed `series:` to a different show before submitting,
+  // refuse rather than fetching a clip from the wrong show. Movies (NULL
+  // series_name) never satisfy a series filter.
+  if (seriesFilter) {
+    const matchSeries = match.seriesName ?? null;
+    if (!matchSeries || matchSeries.toLowerCase() !== seriesFilter.toLowerCase()) {
+      await interaction.editReply(
+        `That quote isn't from **${seriesFilter}**. Re-run \`/quote\` with the matching series, or clear the \`series\` option.`,
+      );
+      return;
+    }
   }
 
   const planned = planQuoteClip({
