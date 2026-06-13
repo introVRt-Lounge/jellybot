@@ -160,15 +160,22 @@ async function handleQuoteAutocompleteOnce(
   }
 
   const query = focused.value.trim();
-  if (query.length < 3) {
-    await safeAutocompleteRespond(interaction, [], { query, resultCount: 0 });
-    return;
-  }
 
   // Pick up the optional series filter alongside the focused `match` value
   // so cue autocomplete narrows to the chosen show before bm25 ranks it.
   const seriesFilterRaw = interaction.options.getString("series");
   const seriesFilter = seriesFilterRaw && seriesFilterRaw.trim().length > 0 ? seriesFilterRaw.trim() : undefined;
+
+  // Issue #154: with a series filter active, the FTS search space is
+  // already narrowed to one show, so a 1-char prefix is tractable and
+  // replaces any stale cached list the moment the user types after
+  // setting `series:`. Without a filter the 3-char minimum stays (the
+  // 17.7M-cue global catalogue is too noisy for shorter prefixes).
+  const minQueryLength = seriesFilter ? 1 : 3;
+  if (query.length < minQueryLength) {
+    await safeAutocompleteRespond(interaction, [], { query, resultCount: 0 });
+    return;
+  }
 
   try {
     const { isCurrent } = quoteMatchAutocompleteGuard.beginCancellable(QUOTE_MATCH_AUTOCOMPLETE_KEY(interaction));
@@ -189,6 +196,7 @@ async function handleQuoteAutocompleteOnce(
         interactionId: interaction.id,
         query,
         seriesFilter: seriesFilter ?? null,
+        minQueryLength,
         resultCount: choices.length,
       }),
     );
