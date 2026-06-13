@@ -74,17 +74,21 @@ Search indexed subtitles and clip the scene around a matched quote. Uses the sam
 | Option | Required | Type | Notes |
 | --- | --- | --- | --- |
 | `match` | Yes | Autocomplete string | Type at least 3 characters, then pick a quote match |
+| `series` | No | Autocomplete string | Narrow autocomplete + the chosen match to a single TV series. Useful when bare keywords surface other shows ahead of yours. |
 | `duration` | No | String | Clip length from the quote (default `15s`) |
 | `padding` | No | String | Seconds before the quote (default `2s`) |
 | `subtitles` | No | Boolean | When `true`, burns the preferred Jellyfin subtitle track into the clip video |
 
 The subtitle index must exist first. Run `make index-subtitles` on the host/container before expecting matches.
 
+When `series` is set the autocomplete and final selection are scoped to that show; selecting a quote token from another series triggers a friendly rejection rather than fetching the wrong clip. Movies have no series name and are always excluded when a series filter is in play.
+
 ### Examples
 
 ```text
 /quote match:love finds its way
 /quote match:does love happen duration:20 padding:3 subtitles:True
+/quote series:"The IT Crowd" match:heartwarming
 ```
 
 ### Failure cases
