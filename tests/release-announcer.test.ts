@@ -3,11 +3,23 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import type { Client, TextChannel } from "discord.js";
+import { BotStateStore } from "../src/release/bot-state.ts";
 import { ReleaseAnnouncer } from "../src/release/release-announcer.ts";
+import type { GitHubRelease } from "../src/release/github-releases.ts";
 
 function tempDbPath(): string {
   const dir = mkdtempSync(join(tmpdir(), "jellybot-release-"));
   return join(dir, "bot-state.db");
+}
+
+function fakeRelease(tag: string, body = `notes for ${tag}`): GitHubRelease {
+  return {
+    tag_name: tag,
+    name: tag,
+    body,
+    html_url: `https://example.com/${tag}`,
+    published_at: "2026-01-01T00:00:00Z",
+  };
 }
 
 function makeAnnouncer(dbPath: string): ReleaseAnnouncer {
@@ -39,20 +51,19 @@ describe("ReleaseAnnouncer", () => {
   test("patch release updates DB silently without posting", async () => {
     const dbPath = tempDbPath();
     tempDirs.push(join(dbPath, ".."));
+    // Seed lastAnnounced=v1.0.0 so v1.0.1 is the only thing in the gap.
+    const seed = new BotStateStore(dbPath);
+    seed.setLastAnnouncedRelease("v1.0.0");
+    seed.close();
+
     const announcer = makeAnnouncer(dbPath);
-    announcer.getLatestRelease = mock(async () => ({
-      tag_name: "v1.0.1",
-      name: "v1.0.1",
-      body: "fix stuff",
-      html_url: "https://example.com",
-      published_at: "2026-01-01T00:00:00Z",
-    }));
+    announcer.listReleases = mock(async () => [fakeRelease("v1.0.1", "fix stuff"), fakeRelease("v1.0.0")]);
 
     const client = { channels: { cache: new Map(), fetch: mock(async () => null) } } as unknown as Client;
     await announcer.checkAndAnnounceNewRelease(client);
 
     const reopened = makeAnnouncer(dbPath);
-    reopened.getLatestRelease = announcer.getLatestRelease;
+    reopened.listReleases = announcer.listReleases;
     const tag = await reopened.checkAndAnnounceNewRelease(client);
     expect(tag).toBe("v1.0.1");
     expect(client.channels.fetch).not.toHaveBeenCalled();
@@ -62,13 +73,7 @@ describe("ReleaseAnnouncer", () => {
     const dbPath = tempDbPath();
     tempDirs.push(join(dbPath, ".."));
     const announcer = makeAnnouncer(dbPath);
-    announcer.getLatestRelease = mock(async () => ({
-      tag_name: "v2.0.0",
-      name: "v2.0.0",
-      body: "big release",
-      html_url: "https://example.com",
-      published_at: "2026-01-01T00:00:00Z",
-    }));
+    announcer.listReleases = mock(async () => [fakeRelease("v2.0.0", "big release")]);
 
     const send = mock(async () => undefined);
     const channel = { isTextBased: () => true, send } as unknown as TextChannel;
@@ -89,15 +94,11 @@ describe("ReleaseAnnouncer", () => {
     const dbPath = tempDbPath();
     tempDirs.push(join(dbPath, ".."));
     const announcer = makeAnnouncer(dbPath);
-    announcer.getLatestRelease = mock(async () => ({
-      tag_name: "v1.1.0",
-      name: "Feature drop",
-      body: "- added quotes",
-      html_url: "https://example.com/release",
-      published_at: "2026-01-01T00:00:00Z",
-    }));
+    announcer.listReleases = mock(async () => [
+      Object.assign(fakeRelease("v1.1.0", "- added quotes"), { name: "Feature drop", html_url: "https://example.com/release" }),
+    ]);
     announcer.summarizeReleaseNotes = mock(async (notes: string) => notes);
-    announcer.getFeatureCredits = mock(async () => "- clip preview — HeavyGee (@heavygee)");
+    announcer.getFeatureCredits = mock(async () => "- clip preview - HeavyGee (@heavygee)");
 
     const send = mock(async () => undefined);
     const channel = { isTextBased: () => true, send } as unknown as TextChannel;
@@ -119,13 +120,7 @@ describe("ReleaseAnnouncer", () => {
     const dbPath = tempDbPath();
     tempDirs.push(join(dbPath, ".."));
     const announcer = makeAnnouncer(dbPath);
-    announcer.getLatestRelease = mock(async () => ({
-      tag_name: "v2.0.0",
-      name: "Broken channel",
-      body: "notes",
-      html_url: "https://example.com",
-      published_at: "2026-01-01T00:00:00Z",
-    }));
+    announcer.listReleases = mock(async () => [fakeRelease("v2.0.0", "notes")]);
 
     const client = {
       channels: {
@@ -137,7 +132,7 @@ describe("ReleaseAnnouncer", () => {
     await announcer.checkAndAnnounceNewRelease(client);
 
     const retry = makeAnnouncer(dbPath);
-    retry.getLatestRelease = announcer.getLatestRelease;
+    retry.listReleases = announcer.listReleases;
     const send = mock(async () => undefined);
     const channel = { isTextBased: () => true, send } as unknown as TextChannel;
     const retryClient = {
@@ -149,5 +144,104 @@ describe("ReleaseAnnouncer", () => {
 
     await retry.checkAndAnnounceNewRelease(retryClient);
     expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  test("walks gap and announces the highest non-patch when latest is a patch (issue #156)", async () => {
+    const dbPath = tempDbPath();
+    tempDirs.push(join(dbPath, ".."));
+
+    // Reproduces the v1.16.1 → v1.17.1 incident: feat in gap, patch on top.
+    const seed = new BotStateStore(dbPath);
+    seed.setLastAnnouncedRelease("v1.16.1");
+    seed.close();
+
+    const announcer = makeAnnouncer(dbPath);
+    announcer.listReleases = mock(async () => [
+      fakeRelease("v1.17.1", "fix follow-up"),
+      fakeRelease("v1.17.0", "feat: /quote series: param"),
+      fakeRelease("v1.16.2", "fix: hyphen tokenization"),
+      fakeRelease("v1.16.1"),
+    ]);
+    announcer.summarizeReleaseNotes = mock(async (notes: string) => notes);
+
+    const send = mock(async () => undefined);
+    const channel = { isTextBased: () => true, send } as unknown as TextChannel;
+    const client = {
+      channels: {
+        cache: new Map([["1159798255295660103", channel]]),
+        fetch: mock(async () => channel),
+      },
+    } as unknown as Client;
+
+    const tag = await announcer.checkAndAnnounceNewRelease(client);
+    expect(tag).toBe("v1.17.1");
+    expect(send).toHaveBeenCalledTimes(1);
+
+    const payload = send.mock.calls[0]?.[0] as { embeds: Array<{ data: { title?: string } }> };
+    expect(payload.embeds[0]?.data.title).toContain("v1.17.0");
+
+    // Subsequent run is a no-op even though latest is still v1.17.1.
+    const followUp = makeAnnouncer(dbPath);
+    followUp.listReleases = announcer.listReleases;
+    await followUp.checkAndAnnounceNewRelease(client);
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  test("gap with only patches marks silent and does not post (issue #156)", async () => {
+    const dbPath = tempDbPath();
+    tempDirs.push(join(dbPath, ".."));
+    const seed = new BotStateStore(dbPath);
+    seed.setLastAnnouncedRelease("v2.0.0");
+    seed.close();
+
+    const announcer = makeAnnouncer(dbPath);
+    announcer.listReleases = mock(async () => [
+      fakeRelease("v2.0.2"),
+      fakeRelease("v2.0.1"),
+      fakeRelease("v2.0.0"),
+    ]);
+
+    const send = mock(async () => undefined);
+    const channel = { isTextBased: () => true, send } as unknown as TextChannel;
+    const client = {
+      channels: {
+        cache: new Map([["1159798255295660103", channel]]),
+        fetch: mock(async () => channel),
+      },
+    } as unknown as Client;
+
+    const tag = await announcer.checkAndAnnounceNewRelease(client);
+    expect(tag).toBe("v2.0.2");
+    expect(send).not.toHaveBeenCalled();
+
+    // DB is now stamped at v2.0.2 so the next run is a clean no-op.
+    const next = makeAnnouncer(dbPath);
+    next.listReleases = mock(async () => [fakeRelease("v2.0.2"), fakeRelease("v2.0.1"), fakeRelease("v2.0.0")]);
+    const tag2 = await next.checkAndAnnounceNewRelease(client);
+    expect(tag2).toBe("v2.0.2");
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  test("first run with no last-announced tag treats every visible release as the gap", async () => {
+    const dbPath = tempDbPath();
+    tempDirs.push(join(dbPath, ".."));
+    const announcer = makeAnnouncer(dbPath);
+    announcer.listReleases = mock(async () => [fakeRelease("v1.0.1"), fakeRelease("v1.0.0")]);
+    announcer.summarizeReleaseNotes = mock(async (notes: string) => notes);
+
+    const send = mock(async () => undefined);
+    const channel = { isTextBased: () => true, send } as unknown as TextChannel;
+    const client = {
+      channels: {
+        cache: new Map([["1159798255295660103", channel]]),
+        fetch: mock(async () => channel),
+      },
+    } as unknown as Client;
+
+    const tag = await announcer.checkAndAnnounceNewRelease(client);
+    expect(tag).toBe("v1.0.1");
+    // v1.0.0 is the highest non-patch in the gap; it gets announced.
+    const payload = send.mock.calls[0]?.[0] as { embeds: Array<{ data: { title?: string } }> };
+    expect(payload.embeds[0]?.data.title).toContain("v1.0.0");
   });
 });

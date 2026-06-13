@@ -1,10 +1,10 @@
 import type { Client, TextChannel } from "discord.js";
 import { EmbedBuilder } from "discord.js";
 import { BotStateStore } from "./bot-state.ts";
-import { fetchLatestRelease, type GitHubRelease } from "./github-releases.ts";
+import { fetchLatestRelease, listReleases, type GitHubRelease } from "./github-releases.ts";
 import { buildCommunityCreditsForRelease } from "./build-community-credits.ts";
 import { buildFeatureCreditsForRelease } from "./release-feature-credits.ts";
-import { isPatchRelease } from "./semver.ts";
+import { compareReleaseTags, isPatchRelease } from "./semver.ts";
 
 export type ReleaseAnnouncerConfig = {
   githubToken: string;
@@ -79,6 +79,10 @@ export class ReleaseAnnouncer {
     return fetchLatestRelease(this.config.repoOwner, this.config.repoName, this.config.githubToken);
   }
 
+  async listReleases(): Promise<GitHubRelease[]> {
+    return listReleases(this.config.repoOwner, this.config.repoName, this.config.githubToken);
+  }
+
   async getFeatureCredits(releaseTag: string): Promise<string | null> {
     return buildFeatureCreditsForRelease({
       repoOwner: this.config.repoOwner,
@@ -97,64 +101,117 @@ export class ReleaseAnnouncer {
     });
   }
 
+  /**
+   * Walk every release published since the last successfully announced
+   * tag and decide whether to post. Issue #156: prior logic only inspected
+   * the latest release, so a feat that landed in a window followed by a
+   * patch was permanently leapfrogged - the patch-silent branch would mark
+   * the patch announced and skip the feat between them.
+   *
+   * New behaviour:
+   *  - Fetch the most recent N releases (drafts/prereleases excluded).
+   *  - Sort by semver ascending; identify the gap above `lastAnnouncedTag`.
+   *  - If the gap is empty, no-op.
+   *  - If the gap contains only patches, mark the latest as announced
+   *    silently (preserves the original "patches are silent" intent).
+   *  - Otherwise, announce the highest non-patch tag in the gap and mark
+   *    every walked tag as announced. Multiple feats in one gap collapse
+   *    to a single announcement (the latest); rare and out of scope.
+   */
   async checkAndAnnounceNewRelease(client: Client): Promise<string | null> {
     console.info(JSON.stringify({ event: "release_announcer.check_start" }));
 
-    const latestRelease = await this.getLatestRelease();
-    if (!latestRelease) {
-      console.warn(JSON.stringify({ event: "release_announcer.no_latest_release" }));
+    let releases: GitHubRelease[];
+    try {
+      releases = await this.listReleases();
+    } catch (error) {
+      console.error(
+        JSON.stringify({
+          event: "release_announcer.list_failed",
+          error: error instanceof Error ? error.message : "unknown error",
+        }),
+      );
       return null;
     }
 
-    const latestTag = latestRelease.tag_name;
+    if (releases.length === 0) {
+      console.warn(JSON.stringify({ event: "release_announcer.no_releases" }));
+      return null;
+    }
+
+    const sorted = [...releases].sort((a, b) => compareReleaseTags(a.tag_name, b.tag_name));
+    const latestTag = sorted[sorted.length - 1]!.tag_name;
+
     const store = new BotStateStore(this.config.botStateDbPath);
     try {
       const lastAnnouncedTag = store.getLastAnnouncedRelease();
+
+      const gap = lastAnnouncedTag
+        ? sorted.filter((r) => compareReleaseTags(r.tag_name, lastAnnouncedTag) > 0)
+        : sorted.slice(); // first run: walk everything visible
+
       console.info(
         JSON.stringify({
           event: "release_announcer.compare",
           latestTag,
           lastAnnouncedTag,
+          gapSize: gap.length,
         }),
       );
 
-      if (latestTag === lastAnnouncedTag) {
+      if (gap.length === 0) {
         console.info(JSON.stringify({ event: "release_announcer.already_announced", tag: latestTag }));
         return latestTag;
       }
 
-      if (isPatchRelease(latestTag)) {
-        console.info(JSON.stringify({ event: "release_announcer.patch_silent", tag: latestTag }));
+      const nonPatches = gap.filter((r) => !isPatchRelease(r.tag_name));
+      const toAnnounce = nonPatches[nonPatches.length - 1] ?? null;
+
+      if (!toAnnounce) {
+        // Gap exists but every release in it is a patch. Mark the highest
+        // as announced silently and move on (matches the original
+        // patch-silent contract).
+        console.info(
+          JSON.stringify({
+            event: "release_announcer.patch_silent",
+            tag: latestTag,
+            gapTags: gap.map((r) => r.tag_name),
+          }),
+        );
         store.setLastAnnouncedRelease(latestTag);
         return latestTag;
       }
 
       console.info(
         JSON.stringify({
-          event: "release_announcer.waiting_grace",
-          tag: latestTag,
+          event: "release_announcer.gap_walk",
+          lastAnnouncedTag,
+          latestTag,
+          gapTags: gap.map((r) => r.tag_name),
+          announcingTag: toAnnounce.tag_name,
           gracePeriodMs: this.config.gracePeriodMs,
         }),
       );
-      await Bun.sleep(this.config.gracePeriodMs);
 
-      const finalRelease = await this.getLatestRelease();
-      if (!finalRelease) {
-        console.error(JSON.stringify({ event: "release_announcer.refetch_failed", tag: latestTag }));
-        return null;
+      if (this.config.gracePeriodMs > 0) {
+        await Bun.sleep(this.config.gracePeriodMs);
       }
 
-      const announced = await this.announceRelease(client, finalRelease);
+      const announced = await this.announceRelease(client, toAnnounce, { allowPatch: false });
       if (announced) {
-        store.setLastAnnouncedRelease(finalRelease.tag_name);
+        // Marking the latest tag in the visible window covers everything
+        // we walked plus any patches that came AFTER the announced feat
+        // (e.g. announce v1.17.0, mark v1.17.1 as handled in the same go).
+        store.setLastAnnouncedRelease(latestTag);
         console.info(
           JSON.stringify({
             event: "release_announcer.announced",
-            tag: finalRelease.tag_name,
+            tag: toAnnounce.tag_name,
+            markedAs: latestTag,
           }),
         );
       }
-      return finalRelease.tag_name;
+      return latestTag;
     } finally {
       store.close();
     }
