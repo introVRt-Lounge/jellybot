@@ -47,3 +47,20 @@ export function isMajorOrMinorRelease(tag: string): boolean {
 export function looksLikeReleaseTag(value: string): boolean {
   return parseReleaseVersion(value) !== null;
 }
+
+/**
+ * Semver-aware tag comparator. Returns negative when `a < b`, zero when
+ * equal, positive when `a > b`. Tags that fail to parse fall back to
+ * lexical comparison and rank below valid semver tags so they never
+ * leapfrog real releases in a gap walk. Issue #156.
+ */
+export function compareReleaseTags(a: string, b: string): number {
+  const va = parseReleaseVersion(a);
+  const vb = parseReleaseVersion(b);
+  if (!va && !vb) return a.localeCompare(b);
+  if (!va) return -1;
+  if (!vb) return 1;
+  if (va.major !== vb.major) return va.major - vb.major;
+  if (va.minor !== vb.minor) return va.minor - vb.minor;
+  return va.patch - vb.patch;
+}
