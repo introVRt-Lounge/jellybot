@@ -1,7 +1,7 @@
 import type { Client, TextChannel } from "discord.js";
 import { EmbedBuilder } from "discord.js";
 import { BotStateStore } from "./bot-state.ts";
-import { fetchLatestRelease, listReleases, type GitHubRelease } from "./github-releases.ts";
+import { fetchLatestRelease, listReleases, type GitHubRelease, type ListReleasesResult } from "./github-releases.ts";
 import { buildCommunityCreditsForRelease } from "./build-community-credits.ts";
 import { buildFeatureCreditsForRelease } from "./release-feature-credits.ts";
 import { compareReleaseTags, isPatchRelease } from "./semver.ts";
@@ -79,8 +79,25 @@ export class ReleaseAnnouncer {
     return fetchLatestRelease(this.config.repoOwner, this.config.repoName, this.config.githubToken);
   }
 
-  async listReleases(): Promise<GitHubRelease[]> {
-    return listReleases(this.config.repoOwner, this.config.repoName, this.config.githubToken);
+  /**
+   * Walk releases newest-first across pages, stopping when `stopTag` is
+   * encountered or the page cap is hit. Issue #158: a single-page fetch
+   * silently leapfrogged feats whose tags fell off the first page when
+   * the announcer was broken across many releases.
+   *
+   * `maxPages: 50` × `perPage: 100` = 5000 releases of headroom. At this
+   * repo's cadence (~1 release/day), that's ~13 years - effectively
+   * infinite. If the cap is somehow still hit, the announcer refuses to
+   * stamp or post and surfaces a CRITICAL log line for operator triage,
+   * because attempting to advance past an unseen window risks silently
+   * leapfrogging feats (the original bug).
+   */
+  async listReleases(stopTag?: string): Promise<ListReleasesResult> {
+    return listReleases(this.config.repoOwner, this.config.repoName, this.config.githubToken, {
+      stopTag,
+      maxPages: 50,
+      perPage: 100,
+    });
   }
 
   async getFeatureCredits(releaseTag: string): Promise<string | null> {
@@ -121,30 +138,32 @@ export class ReleaseAnnouncer {
   async checkAndAnnounceNewRelease(client: Client): Promise<string | null> {
     console.info(JSON.stringify({ event: "release_announcer.check_start" }));
 
-    let releases: GitHubRelease[];
-    try {
-      releases = await this.listReleases();
-    } catch (error) {
-      console.error(
-        JSON.stringify({
-          event: "release_announcer.list_failed",
-          error: error instanceof Error ? error.message : "unknown error",
-        }),
-      );
-      return null;
-    }
-
-    if (releases.length === 0) {
-      console.warn(JSON.stringify({ event: "release_announcer.no_releases" }));
-      return null;
-    }
-
-    const sorted = [...releases].sort((a, b) => compareReleaseTags(a.tag_name, b.tag_name));
-    const latestTag = sorted[sorted.length - 1]!.tag_name;
-
     const store = new BotStateStore(this.config.botStateDbPath);
     try {
       const lastAnnouncedTag = store.getLastAnnouncedRelease();
+
+      let listing: ListReleasesResult;
+      try {
+        listing = await this.listReleases(lastAnnouncedTag ?? undefined);
+      } catch (error) {
+        console.error(
+          JSON.stringify({
+            event: "release_announcer.list_failed",
+            error: error instanceof Error ? error.message : "unknown error",
+          }),
+        );
+        return null;
+      }
+
+      const releases = listing.releases;
+      if (releases.length === 0) {
+        console.warn(JSON.stringify({ event: "release_announcer.no_releases" }));
+        return null;
+      }
+
+      const sorted = [...releases].sort((a, b) => compareReleaseTags(a.tag_name, b.tag_name));
+      const oldestVisibleTag = sorted[0]!.tag_name;
+      const latestTag = sorted[sorted.length - 1]!.tag_name;
 
       const gap = lastAnnouncedTag
         ? sorted.filter((r) => compareReleaseTags(r.tag_name, lastAnnouncedTag) > 0)
@@ -156,8 +175,33 @@ export class ReleaseAnnouncer {
           latestTag,
           lastAnnouncedTag,
           gapSize: gap.length,
+          pagesExhausted: listing.exhausted,
+          foundStopTag: listing.foundStopTag,
+          oldestVisibleTag,
         }),
       );
+
+      // Issue #158: when listReleases walked the full page cap (5000
+      // releases) without seeing lastAnnouncedTag, the gap is larger
+      // than our window. We cannot stamp `latestTag` (would silently
+      // leapfrog unseen feats - the original bug) and we cannot stamp
+      // `oldestVisibleTag` either (would re-announce the same visible
+      // non-patch on the next run). Bail and surface CRITICAL for
+      // operator triage; they can either trim the tag set or manually
+      // advance the bot-state stamp.
+      if (listing.exhausted && lastAnnouncedTag) {
+        console.error(
+          JSON.stringify({
+            event: "release_announcer.list_exhausted",
+            level: "CRITICAL",
+            lastAnnouncedTag,
+            oldestVisibleTag,
+            latestTag,
+            note: "stopTag not found within 5000-release window; refusing to post or stamp. Operator action required.",
+          }),
+        );
+        return null;
+      }
 
       if (gap.length === 0) {
         console.info(JSON.stringify({ event: "release_announcer.already_announced", tag: latestTag }));
@@ -168,9 +212,6 @@ export class ReleaseAnnouncer {
       const toAnnounce = nonPatches[nonPatches.length - 1] ?? null;
 
       if (!toAnnounce) {
-        // Gap exists but every release in it is a patch. Mark the highest
-        // as announced silently and move on (matches the original
-        // patch-silent contract).
         console.info(
           JSON.stringify({
             event: "release_announcer.patch_silent",
@@ -199,9 +240,6 @@ export class ReleaseAnnouncer {
 
       const announced = await this.announceRelease(client, toAnnounce, { allowPatch: false });
       if (announced) {
-        // Marking the latest tag in the visible window covers everything
-        // we walked plus any patches that came AFTER the announced feat
-        // (e.g. announce v1.17.0, mark v1.17.1 as handled in the same go).
         store.setLastAnnouncedRelease(latestTag);
         console.info(
           JSON.stringify({
