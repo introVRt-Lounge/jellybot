@@ -27,44 +27,102 @@ export async function fetchReleaseByTag(
   return fetchReleaseFromUrl(url, repoOwner, repoName, githubToken);
 }
 
+export type ListReleasesOptions = {
+  /**
+   * Stop fetching pages as soon as a release with this tag is encountered.
+   * The release with `stopTag` is included in the result. Used by the
+   * announcer to bound the walk to "everything since last announce".
+   */
+  stopTag?: string;
+  /** Hard cap on pages fetched. Default 5. Each page = `perPage` releases. */
+  maxPages?: number;
+  /** Page size, capped server-side at 100. Default 100. */
+  perPage?: number;
+};
+
+export type ListReleasesResult = {
+  /** Releases newest-first across all walked pages. Drafts and pre-releases excluded. */
+  releases: GitHubRelease[];
+  /**
+   * `true` when `stopTag` was found in the walked window (or no `stopTag`
+   * was requested and the API returned a final, partial page indicating
+   * the entire history fits in `releases`). Callers can safely advance
+   * their cursor past the most recent visible release.
+   *
+   * `false` when the walk hit `maxPages` without encountering `stopTag`.
+   * Callers MUST NOT mark anything past the oldest fetched release as
+   * handled, because earlier releases live beyond the walked window.
+   */
+  foundStopTag: boolean;
+  /** `true` when the walk stopped because it hit `maxPages`. Issue #158. */
+  exhausted: boolean;
+};
+
 /**
- * List releases newest-first. Drafts and pre-releases are excluded.
- * `perPage` defaults to 30 - more than enough for any gap the bot would
- * sanely walk on a Watchtower recreate; if the gap is larger than that
- * something else is wrong (announcer broken for weeks). Issue #156.
+ * Walk the releases endpoint newest-first across pages, stopping when
+ * `stopTag` is encountered or `maxPages` is exhausted. Drafts and
+ * pre-releases are filtered out. Issue #158: prior single-page fetch
+ * could silently leapfrog feats whose tags fell off the first page when
+ * the announcer was broken for many releases.
  */
 export async function listReleases(
   repoOwner: string,
   repoName: string,
   githubToken: string,
-  perPage = 30,
-): Promise<GitHubRelease[]> {
-  const url = `https://api.github.com/repos/${repoOwner}/${repoName}/releases?per_page=${perPage}`;
-  const response = await fetch(url, {
-    headers: {
-      Authorization: `Bearer ${githubToken}`,
-      Accept: "application/vnd.github+json",
-      "User-Agent": "jellybot-release-announcer",
-    },
-    signal: AbortSignal.timeout(20_000),
-  });
+  options: ListReleasesOptions = {},
+): Promise<ListReleasesResult> {
+  const perPage = Math.min(Math.max(options.perPage ?? 100, 1), 100);
+  const maxPages = Math.max(options.maxPages ?? 5, 1);
+  const stopTag = options.stopTag;
 
-  if (!response.ok) {
-    throw new Error(`GitHub releases list API failed: ${response.status} ${response.statusText}`);
+  const collected: GitHubRelease[] = [];
+  let foundStopTag = false;
+  let exhausted = false;
+
+  for (let page = 1; page <= maxPages; page += 1) {
+    const url = `https://api.github.com/repos/${repoOwner}/${repoName}/releases?per_page=${perPage}&page=${page}`;
+    const response = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${githubToken}`,
+        Accept: "application/vnd.github+json",
+        "User-Agent": "jellybot-release-announcer",
+      },
+      signal: AbortSignal.timeout(20_000),
+    });
+
+    if (!response.ok) {
+      throw new Error(`GitHub releases list API failed: ${response.status} ${response.statusText}`);
+    }
+
+    const payload = (await response.json()) as Array<Partial<GitHubRelease>>;
+    for (const r of payload) {
+      if (!r.tag_name || r.draft || r.prerelease) continue;
+      collected.push({
+        tag_name: r.tag_name,
+        name: r.name ?? r.tag_name,
+        body: r.body ?? "",
+        html_url: r.html_url ?? `https://github.com/${repoOwner}/${repoName}/releases/tag/${r.tag_name}`,
+        published_at: r.published_at ?? "",
+        draft: r.draft,
+        prerelease: r.prerelease,
+      });
+      if (stopTag && r.tag_name === stopTag) {
+        foundStopTag = true;
+        return { releases: collected, foundStopTag, exhausted };
+      }
+    }
+
+    // Short page (< perPage) means the API has exhausted history. The
+    // entire visible release set is in `collected`. Even if `stopTag`
+    // wasn't seen, it doesn't exist behind another page (deleted, never
+    // pushed, etc.) - it's safe to advance the caller's cursor.
+    if (payload.length < perPage) {
+      return { releases: collected, foundStopTag: true, exhausted };
+    }
   }
 
-  const payload = (await response.json()) as Array<Partial<GitHubRelease>>;
-  return payload
-    .filter((r) => Boolean(r.tag_name) && !r.draft && !r.prerelease)
-    .map((r) => ({
-      tag_name: r.tag_name as string,
-      name: r.name ?? (r.tag_name as string),
-      body: r.body ?? "",
-      html_url: r.html_url ?? `https://github.com/${repoOwner}/${repoName}/releases/tag/${r.tag_name}`,
-      published_at: r.published_at ?? "",
-      draft: r.draft,
-      prerelease: r.prerelease,
-    }));
+  exhausted = true;
+  return { releases: collected, foundStopTag, exhausted };
 }
 
 async function fetchReleaseFromUrl(
