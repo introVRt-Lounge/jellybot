@@ -1,6 +1,7 @@
 name: Ship main
 
-# GITHUB_TOKEN merges (auto-merge) do not emit push events. Trigger on merged PRs instead.
+# GITHUB_TOKEN / auto-merge merges do not emit push or pull_request workflow events.
+# pr-automerge.yml dispatches this workflow after merge; push covers human merges.
 on:
   pull_request:
     types: [closed]

@@ -129,7 +129,7 @@ Draft agent PRs are marked **ready for review** automatically. Issues labeled **
 
 ## Phase 4 — Ship (release + container image)
 
-> **Important:** Merges performed by GitHub Actions (`GITHUB_TOKEN`, including auto-merge) **do not emit `push` events**. [`.github/workflows/ship-main.yml`](../.github/workflows/ship-main.yml) therefore triggers on **`pull_request` closed** (merged) as well as human **`push`** to `main`.
+> **Important:** Merges performed via **PR auto-merge** (GitHub Actions enables `--auto`, GitHub squash-merges when CI is green) **do not emit `push` or `pull_request` workflow events** — so [`ship-main.yml`](../.github/workflows/ship-main.yml) will not start from its `on:` triggers alone. [`.github/workflows/pr-automerge.yml`](../.github/workflows/pr-automerge.yml) **polls until the PR is merged, then `workflow_dispatch`es Ship main**. Human squash merges via the GitHub UI still emit `push` and run Ship main directly.
 
 When a PR merges to `main`, **Ship main**:
 

@@ -22,6 +22,9 @@ permissions:
 
 jobs:
   automerge:
+    outputs:
+      pr_number: ${{ steps.pr.outputs.number }}
+      should_watch: ${{ steps.automerge.outputs.should_watch }}
     if: |
       github.event_name == 'pull_request' ||
       (
@@ -56,6 +59,7 @@ jobs:
           fi
 
       - name: Enable squash auto-merge when CI is green
+        id: automerge
         if: steps.pr.outputs.number != ''
         env:
           GH_TOKEN: ${{ github.token }}
@@ -68,6 +72,11 @@ jobs:
             number,title,state,isDraft,mergeable,headRefName,body,labels,baseRefName,headRepositoryOwner,isCrossRepository)"
 
           state="$(echo "${pr_json}" | jq -r '.state')"
+          if [ "${state}" = "MERGED" ]; then
+            echo "PR #${PR_NUMBER} already merged; will dispatch Ship main."
+            echo "should_watch=true" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
           if [ "${state}" != "OPEN" ]; then
             echo "PR #${PR_NUMBER} is ${state}; skipping."
             exit 0
@@ -142,10 +151,48 @@ jobs:
 
           auto_merge="$(gh pr view "${PR_NUMBER}" --repo "${REPOSITORY}" --json autoMergeRequest -q '.autoMergeRequest.enabledAt // empty')"
           if [ -n "${auto_merge}" ]; then
-            echo "Auto-merge already enabled on PR #${PR_NUMBER}."
+            echo "Auto-merge already enabled on PR #${PR_NUMBER}; waiting for merge to dispatch Ship main."
+            echo "should_watch=true" >> "${GITHUB_OUTPUT}"
             exit 0
           fi
 
           head_ref="$(echo "${pr_json}" | jq -r '.headRefName')"
           echo "Enabling squash auto-merge on PR #${PR_NUMBER} (${head_ref})."
           gh pr merge "${PR_NUMBER}" --repo "${REPOSITORY}" --auto --squash
+          echo "should_watch=true" >> "${GITHUB_OUTPUT}"
+
+  dispatch-ship:
+    needs: automerge
+    if: needs.automerge.outputs.should_watch == 'true' && needs.automerge.outputs.pr_number != ''
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: read
+      pull-requests: read
+
+    steps:
+      - name: Wait for merge and dispatch Ship main
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ needs.automerge.outputs.pr_number }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          # GitHub Actions auto-merge does not emit push/pull_request workflow events.
+          # workflow_dispatch is the supported way to chain Ship main after merge.
+          for attempt in $(seq 1 36); do
+            state="$(gh pr view "${PR_NUMBER}" --repo "${REPOSITORY}" --json state -q '.state')"
+            if [ "${state}" = "MERGED" ]; then
+              echo "PR #${PR_NUMBER} merged; dispatching Ship main."
+              gh workflow run ship-main.yml --repo "${REPOSITORY}" --ref main
+              exit 0
+            fi
+            if [ "${state}" != "OPEN" ]; then
+              echo "PR #${PR_NUMBER} is ${state}; not dispatching Ship main."
+              exit 0
+            fi
+            sleep 5
+          done
+
+          echo "::warning::Timed out waiting for PR #${PR_NUMBER} to merge; Ship main not dispatched."
