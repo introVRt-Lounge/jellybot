@@ -63,6 +63,44 @@ export function uniqueChoiceName(name: string, seenNames: Set<string>): string {
   return name;
 }
 
+/** Lets other interaction handlers (e.g. `/quote series:`) run between keystrokes. */
+export function yieldToEventLoop(): Promise<void> {
+  return new Promise((resolve) => setImmediate(resolve));
+}
+
+/**
+ * Run synchronous work on a later turn so callers can interleave and
+ * `withTimeout` can fire while earlier handlers yield. The work function
+ * must not run at argument-evaluation time (see issue #147 / quote autocomplete).
+ */
+export async function runDeferredSyncWithTimeout<T>(
+  work: () => T,
+  ms: number,
+  signal?: AbortSignal,
+): Promise<T> {
+  if (signal?.aborted) {
+    throw signal.reason ?? new DOMException("The operation was aborted.", "AbortError");
+  }
+
+  return withTimeout(
+    new Promise<T>((resolve, reject) => {
+      setImmediate(() => {
+        if (signal?.aborted) {
+          reject(signal.reason ?? new DOMException("The operation was aborted.", "AbortError"));
+          return;
+        }
+        try {
+          resolve(work());
+        } catch (error) {
+          reject(error);
+        }
+      });
+    }),
+    ms,
+    signal,
+  );
+}
+
 export async function withTimeout<T>(promise: Promise<T>, ms: number, signal?: AbortSignal): Promise<T> {
   if (signal?.aborted) {
     throw signal.reason ?? new DOMException("The operation was aborted.", "AbortError");
