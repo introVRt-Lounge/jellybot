@@ -5,7 +5,7 @@ import {
   type ApplicationCommandOptionChoiceData,
 } from "discord.js";
 import type { AppConfig } from "../config.ts";
-import { withTimeout } from "../autocomplete.ts";
+import { runDeferredSyncWithTimeout, yieldToEventLoop } from "../autocomplete.ts";
 import { AutocompleteSessionGuard, isBenignAutocompleteError } from "../autocomplete-guard.ts";
 import { beginEphemeralClipPreview, deliverClipPreview } from "../clip-preview/pipeline.ts";
 import type { JellyfinClient } from "../jellyfin.ts";
@@ -112,6 +112,33 @@ async function safeAutocompleteRespond(
   }
 }
 
+async function dropStaleQuoteAutocomplete(
+  interaction: AutocompleteInteraction,
+  isCurrent: () => boolean,
+  query: string,
+): Promise<boolean> {
+  if (isCurrent() || interaction.responded) {
+    return false;
+  }
+  await safeAutocompleteRespond(interaction, [], { query, resultCount: 0 });
+  return true;
+}
+
+async function finishQuoteAutocomplete(
+  interaction: AutocompleteInteraction,
+  isCurrent: () => boolean,
+  choices: ApplicationCommandOptionChoiceData[],
+  query: string,
+): Promise<void> {
+  if (await dropStaleQuoteAutocomplete(interaction, isCurrent, query)) {
+    return;
+  }
+  if (interaction.responded) {
+    return;
+  }
+  await safeAutocompleteRespond(interaction, choices, { query, resultCount: choices.length });
+}
+
 export async function handleQuoteAutocomplete(
   interaction: AutocompleteInteraction,
   _jellyfin: JellyfinClient,
@@ -178,11 +205,20 @@ async function handleQuoteAutocompleteOnce(
   }
 
   try {
-    const { isCurrent } = quoteMatchAutocompleteGuard.beginCancellable(QUOTE_MATCH_AUTOCOMPLETE_KEY(interaction));
+    const { isCurrent, signal } = quoteMatchAutocompleteGuard.beginCancellable(
+      QUOTE_MATCH_AUTOCOMPLETE_KEY(interaction),
+    );
+
+    await yieldToEventLoop();
+    if (await dropStaleQuoteAutocomplete(interaction, isCurrent, query)) {
+      return;
+    }
+
     const index = getSubtitleSearchIndex(config.subtitleDbPath);
-    const results = await withTimeout(
-      Promise.resolve(index.searchQuotes(query, 24, seriesFilter)),
+    const results = await runDeferredSyncWithTimeout(
+      () => index.searchQuotes(query, 24, seriesFilter),
       QUOTE_AUTOCOMPLETE_TIMEOUT_MS,
+      signal,
     );
     const choices: ApplicationCommandOptionChoiceData[] = quoteSearchChoices(results);
     choices.push({
@@ -201,13 +237,10 @@ async function handleQuoteAutocompleteOnce(
       }),
     );
 
-    if (!isCurrent() || interaction.responded) {
-      return;
-    }
-
-    await safeAutocompleteRespond(interaction, choices, { query, resultCount: choices.length });
+    await finishQuoteAutocomplete(interaction, isCurrent, choices, query);
   } catch (error) {
     if (isBenignAutocompleteError(error)) {
+      await safeAutocompleteRespond(interaction, [], { query, resultCount: 0 });
       return;
     }
 
@@ -232,25 +265,42 @@ async function respondSeriesAutocomplete(
   const prefix = focused.value.trim();
 
   try {
-    const { isCurrent } = quoteSeriesAutocompleteGuard.beginCancellable(QUOTE_SERIES_AUTOCOMPLETE_KEY(interaction));
-    const index = openSubtitleIndex(config.subtitleDbPath, { readonly: true });
-    let names: string[];
-    try {
-      names = index.listSeriesNames(prefix, QUOTE_SERIES_AUTOCOMPLETE_LIMIT);
-    } finally {
-      index.close();
+    const { isCurrent, signal } = quoteSeriesAutocompleteGuard.beginCancellable(
+      QUOTE_SERIES_AUTOCOMPLETE_KEY(interaction),
+    );
+
+    await yieldToEventLoop();
+    if (await dropStaleQuoteAutocomplete(interaction, isCurrent, prefix)) {
+      return;
     }
 
-    if (!isCurrent() || interaction.responded) return;
+    const index = getSubtitleSearchIndex(config.subtitleDbPath);
+    const names = await runDeferredSyncWithTimeout(
+      () => index.listSeriesNames(prefix, QUOTE_SERIES_AUTOCOMPLETE_LIMIT),
+      QUOTE_AUTOCOMPLETE_TIMEOUT_MS,
+      signal,
+    );
 
     const choices: ApplicationCommandOptionChoiceData[] = names.map((name) => ({
       name: name.slice(0, 100),
       value: name,
     }));
 
-    await safeAutocompleteRespond(interaction, choices, { query: prefix, resultCount: choices.length });
+    console.info(
+      JSON.stringify({
+        event: "quote.series_autocomplete",
+        interactionId: interaction.id,
+        query: prefix,
+        resultCount: choices.length,
+      }),
+    );
+
+    await finishQuoteAutocomplete(interaction, isCurrent, choices, prefix);
   } catch (error) {
-    if (isBenignAutocompleteError(error)) return;
+    if (isBenignAutocompleteError(error)) {
+      await safeAutocompleteRespond(interaction, [], { query: prefix, resultCount: 0 });
+      return;
+    }
 
     console.error(
       JSON.stringify({
