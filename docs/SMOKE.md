@@ -51,6 +51,10 @@ make smoke-discord-quote   # single /quote match check
 
 Extended slash checks (`/clip`, `/supercut`, …): `JELLYBOT_SMOKE_EXTENDED=1 make smoke`.
 
+## Host networking (self-hosted only)
+
+CI symlinks `~/coding/jellybot-dev/docker-compose.override.yml` when present (typically `traefik_net` + `JELLYFIN_URL=http://jellyfin:8096`) so the ephemeral smoke container reaches Jellyfin the same way as persistent `jellybot-dev`.
+
 ## Credentials
 
 Host files only — no GitHub Secrets:

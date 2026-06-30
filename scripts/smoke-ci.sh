@@ -17,6 +17,13 @@ if [ ! -f .env ]; then
   ln -sf "$HOST_ENV" .env
 fi
 
+HOST_DEV="$(dirname "$HOST_ENV")"
+HOST_OVERRIDE="${HOST_DEV}/docker-compose.override.yml"
+if [ -f "$HOST_OVERRIDE" ] && [ ! -f docker-compose.override.yml ]; then
+  ln -sf "$HOST_OVERRIDE" docker-compose.override.yml
+  echo "smoke-ci: using host override ${HOST_OVERRIDE} (Jellyfin on traefik_net)"
+fi
+
 SMOKE_ID="${GITHUB_RUN_ID:-local$$}"
 export COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-jellybot-smoke-${SMOKE_ID}}"
 export JELLYBOT_CONTAINER_NAME="${JELLYBOT_CONTAINER_NAME:-jellybot-smoke-${SMOKE_ID}}"
