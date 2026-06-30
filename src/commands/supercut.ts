@@ -84,6 +84,14 @@ export async function handleSupercutAutocomplete(
     if (!isCurrent() || interaction.responded) return;
 
     const choices = names.map((name) => ({ name: name.slice(0, 100), value: name }));
+    console.info(
+      JSON.stringify({
+        event: "supercut.autocomplete",
+        field: "series",
+        query,
+        resultCount: choices.length,
+      }),
+    );
     await interaction.respond(choices);
   } catch (error) {
     if (isBenignAutocompleteError(error)) return;

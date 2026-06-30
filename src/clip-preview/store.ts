@@ -84,6 +84,29 @@ export class ClipPreviewStore {
     return session;
   }
 
+  tryClaimPost(sessionId: string): ClipPreviewSession | undefined {
+    this.purgeExpired();
+    const session = this.sessions.get(sessionId);
+    if (!session || this.isExpired(session)) {
+      return undefined;
+    }
+    if (session.state !== "awaiting_approval") {
+      return undefined;
+    }
+    session.state = "posting";
+    this.sessions.set(sessionId, session);
+    return session;
+  }
+
+  releasePost(sessionId: string): void {
+    const session = this.sessions.get(sessionId);
+    if (!session || session.state !== "posting") {
+      return;
+    }
+    session.state = "awaiting_approval";
+    this.sessions.set(sessionId, session);
+  }
+
   delete(sessionId: string): void {
     this.sessions.delete(sessionId);
   }

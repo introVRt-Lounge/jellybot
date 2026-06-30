@@ -92,6 +92,10 @@ export async function reconcileBuildingSuggestions(
           detail: inspection.prUrl,
         });
       }
+
+      if (inspection.stage === "failed") {
+        store.setStatus(suggestion.id, "rejected");
+      }
     } catch (error) {
       console.error(
         JSON.stringify({

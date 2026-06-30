@@ -90,6 +90,14 @@ export async function handleSubcoverageAutocomplete(
         ? await jellyfin.search(query, "movie", 25)
         : await jellyfin.searchSeries(query, 25);
     const choices = toAutocompleteChoices(items, mediaKind, jellyfin.formatItemLabel.bind(jellyfin));
+    console.info(
+      JSON.stringify({
+        event: "subcoverage.autocomplete",
+        kind,
+        query,
+        resultCount: choices.length,
+      }),
+    );
     await interaction.respond(choices);
   } catch (error) {
     if (!isBenignAutocompleteError(error)) {
@@ -144,6 +152,7 @@ export async function handleSubcoverageCommand(
 
   try {
     if (kind === "library") {
+      console.info(JSON.stringify({ event: "subcoverage.requested", kind }));
       const report = await buildLibrarySubtitleCoverage(jellyfin, readQuoteIndexStats(config));
       await interaction.editReply(formatSubtitleCoverageMessage(report));
       return;

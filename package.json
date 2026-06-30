@@ -15,6 +15,9 @@
     "smoke:discord": "PYTHONPATH=${DISCORD_PY_SELF_ROOT:?Set DISCORD_PY_SELF_ROOT to discord.py-self checkout} python3 scripts/discord-clip-smoke.py",
     "smoke:discord:quote": "PYTHONPATH=${DISCORD_PY_SELF_ROOT:?Set DISCORD_PY_SELF_ROOT to discord.py-self checkout} python3 scripts/discord-quote-autocomplete-smoke.py",
     "smoke:discord:all": "bun run smoke:discord:quote && bun run smoke:discord",
+    "smoke": "python3 scripts/smoke-dev-bot.py",
+    "smoke:live": "docker compose --profile app exec -T jellybot bun run src/cli/smoke-live.ts",
+    "smoke:ci": "bash scripts/smoke-ci.sh",
     "announce:release": "bun run scripts/post-release-announce.ts",
     "secrets:staged": "./scripts/gitleaks-staged.sh",
     "prepare": "husky || true"

@@ -1,6 +1,8 @@
 # Discord user-token smoke testing (jellybot)
 
-Optional live checks using a **dedicated test user account** and the local [`discord.py-self`](../../discord.py-self) checkout. These smokes are **not CI gates** — they require secrets and a running bot container.
+**Full dev-bot smoke suite:** [SMOKE.md](SMOKE.md) (`make smoke`, `make smoke-ci`, GitHub `Smoke` workflow on self-hosted runner).
+
+Optional **individual** live checks using a **dedicated test user account** and the local [`discord.py-self`](../../discord.py-self) checkout.
 
 Skill reference: `discord-user-token-smoke-testing` (`~/coding/skills/discord-user-token-smoke-testing/SKILL.md`).
 
@@ -12,7 +14,7 @@ Skill reference: `discord-user-token-smoke-testing` (`~/coding/skills/discord-us
 | User token (throwaway test account) | `~/coding/discord.py-self/.env` → `DISCORD_USER_TOKEN` |
 | Test channel | `DISCORD_TEST_CHANNEL_ID` in `discord.py-self/.env` |
 | Bot application id | `jellybot/.env` → `DISCORD_CLIENT_ID` |
-| Running prod (or dev) bot | default log source: `docker logs jellybot` |
+| Running prod (or dev) bot | default log source: `docker logs jellybot-dev` (override `JELLYBOT_SMOKE_LOG_CMD`) |
 
 ## Commands
 

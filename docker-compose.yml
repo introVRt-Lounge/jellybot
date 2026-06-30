@@ -16,6 +16,7 @@ services:
     env_file: .env
     environment:
       HEALTH_PORT: 8080
+      SUBTITLE_INDEX_ON_STARTUP: ${SUBTITLE_INDEX_ON_STARTUP:-incremental}
     ports:
       - "${HEALTH_PORT:-8080}:8080"
     volumes:

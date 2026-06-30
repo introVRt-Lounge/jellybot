@@ -1,4 +1,4 @@
-export type ClipPreviewState = "awaiting_approval" | "posted" | "cancelled";
+export type ClipPreviewState = "awaiting_approval" | "posting" | "posted" | "cancelled";
 
 export type ClipPreviewAction = "post" | "cancel" | "retry";
 
@@ -21,7 +21,7 @@ export function applyPreviewAction(
     return {
       ok: false,
       message:
-        state === "posted"
+        state === "posted" || state === "posting"
           ? "That clip was already posted."
           : state === "cancelled"
             ? "That preview was cancelled."
@@ -30,7 +30,7 @@ export function applyPreviewAction(
   }
 
   if (action === "post") {
-    return { ok: true, state: "posted" };
+    return { ok: true, state: "posting" };
   }
 
   if (action === "cancel") {

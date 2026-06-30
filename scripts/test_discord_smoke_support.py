@@ -10,7 +10,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from discord_smoke_support import assess_quote_autocomplete_logs, parse_json_log_events
+from discord_smoke_support import (
+    assess_quote_autocomplete_logs,
+    assess_quote_series_autocomplete_logs,
+    parse_json_log_events,
+)
 
 
 class QuoteAutocompleteLogAssessmentTests(unittest.TestCase):
@@ -70,6 +74,24 @@ class QuoteAutocompleteLogAssessmentTests(unittest.TestCase):
         events = parse_json_log_events(log_text, event_prefix="quote.autocomplete")
         self.assertEqual(len(events), 1)
         self.assertEqual(events[0]["interactionId"], "333")
+
+    def test_series_passes_when_responded_follows_series_search(self) -> None:
+        events = [
+            {
+                "event": "quote.series_autocomplete",
+                "interactionId": "444",
+                "query": "Red",
+                "resultCount": 3,
+            },
+            {
+                "event": "quote.autocomplete.responded",
+                "query": "Red",
+                "resultCount": 3,
+                "responded": True,
+            },
+        ]
+        result = assess_quote_series_autocomplete_logs("444", "Red", events)
+        self.assertTrue(result.ok)
 
 
 if __name__ == "__main__":

@@ -26,7 +26,17 @@ export async function fetchGitHubJson<T>(options: GitHubRequestOptions): Promise
     throw new Error(`GitHub API failed (${options.path}): ${response.status} ${response.statusText}`);
   }
 
-  return (await response.json()) as T;
+  const text = await response.text();
+  if (!text.trim()) {
+    throw new Error(`GitHub API empty response (${options.path}): ${response.status}`);
+  }
+
+  try {
+    return JSON.parse(text) as T;
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : "invalid JSON";
+    throw new Error(`GitHub API invalid JSON (${options.path}): ${detail}`);
+  }
 }
 
 export type GitHubCompareCommit = {

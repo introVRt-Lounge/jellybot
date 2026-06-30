@@ -1,0 +1,27 @@
+name: Smoke
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: jellybot-dev-smoke-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, jellybot-live]
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Live smoke (dev bot + Jellyfin)
+        env:
+          DISCORD_PY_SELF_ROOT: /home/heavygee/coding/discord.py-self
+          JELLYBOT_SMOKE_HOST_PORT: "8093"
+          JELLYBOT_SMOKE_HEALTH_URL: http://127.0.0.1:8093/healthz
+          JELLYBOT_SMOKE_LOG_CMD: docker logs jellybot-dev
+        run: bash scripts/smoke-ci.sh
