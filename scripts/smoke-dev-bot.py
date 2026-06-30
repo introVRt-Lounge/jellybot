@@ -86,13 +86,18 @@ async def run_discord_smokes() -> list[str]:
 
         async def autocomplete_quote(option: str, query: str, assess) -> None:
             last_detail = "no attempts"
+            recover_sec = int(env("JELLYBOT_SMOKE_HEALTH_RECOVER_SEC", "45"))
             for attempt in range(1, retry_count + 2):
                 try:
+                    wait_for_health(smoke_health_url(), timeout_sec=recover_sec)
                     assert_health_responsive(smoke_health_url(), timeout_sec=2.0)
                 except TimeoutError as exc:
                     last_detail = str(exc)
                     if attempt <= retry_count:
-                        print(f"[smoke] health wedged before /quote {option}, retry {attempt}/{retry_count}")
+                        print(
+                            f"[smoke] health wedged before /quote {option}, "
+                            f"retry {attempt}/{retry_count} (recover window {recover_sec}s)"
+                        )
                         await asyncio.sleep(retry_gap_sec)
                         continue
                     await check(f"quote.{option}_autocomplete", False, last_detail)
@@ -133,17 +138,18 @@ async def run_discord_smokes() -> list[str]:
                 return
 
         # --- Required: the latency class that broke prod UX ---
-        try:
-            await autocomplete_quote("match", quote_query, assess_quote_autocomplete_logs)
-        except Exception as exc:  # noqa: BLE001
-            await check("quote.match_autocomplete", False, f"{type(exc).__name__}: {exc}")
-
-        await asyncio.sleep(1)
-
+        # Series first — lighter than FTS match search; match can wedge the loop briefly.
         try:
             await autocomplete_quote("series", series_query, assess_quote_series_autocomplete_logs)
         except Exception as exc:  # noqa: BLE001
             await check("quote.series_autocomplete", False, f"{type(exc).__name__}: {exc}")
+
+        await asyncio.sleep(float(env("JELLYBOT_SMOKE_BETWEEN_QUOTE_SEC", "3")))
+
+        try:
+            await autocomplete_quote("match", quote_query, assess_quote_autocomplete_logs)
+        except Exception as exc:  # noqa: BLE001
+            await check("quote.match_autocomplete", False, f"{type(exc).__name__}: {exc}")
 
         if extended_smoke_enabled():
             clip_media_query = env("JELLYBOT_SMOKE_CLIP_MEDIA_QUERY", "Red")

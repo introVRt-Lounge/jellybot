@@ -39,7 +39,7 @@ If smoke passes on the selfbot path, you have a reproducible pre-prod gate that 
 - **CI recreates** an ephemeral `jellybot-smoke-<run>` on **8094** with `SUBTITLE_INDEX_ON_STARTUP=off` — leaves long-lived `jellybot-dev` on **8093** alone.
 - **Health must answer in &lt;2s** before each attempt; if not, check the ephemeral container logs (`docker logs jellybot-smoke-<run>`).
 
-Tune with `JELLYBOT_SMOKE_LOG_POLL_SEC` (default 45), `JELLYBOT_SMOKE_RETRY_COUNT` (default 2).
+Tune with `JELLYBOT_SMOKE_LOG_POLL_SEC` (default 45), `JELLYBOT_SMOKE_RETRY_COUNT` (default 2), `JELLYBOT_SMOKE_HEALTH_RECOVER_SEC` (default 45 — wait for health after heavy autocomplete).
 
 ## Commands
 
