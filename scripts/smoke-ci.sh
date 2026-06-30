@@ -7,6 +7,15 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
+HOST_ENV="${JELLYBOT_ENV_FILE:-$HOME/coding/jellybot-dev/.env}"
+if [ ! -f .env ]; then
+  if [ ! -f "$HOST_ENV" ]; then
+    echo "smoke-ci: missing ./.env and ${HOST_ENV} — copy dev bot secrets to the host checkout" >&2
+    exit 1
+  fi
+  ln -sf "$HOST_ENV" .env
+fi
+
 export HEALTH_PORT="${JELLYBOT_SMOKE_HOST_PORT:-8093}"
 export SUBTITLE_INDEX_ON_STARTUP=off
 export JELLYBOT_SMOKE_HEALTH_URL="${JELLYBOT_SMOKE_HEALTH_URL:-http://127.0.0.1:${HEALTH_PORT}/healthz}"

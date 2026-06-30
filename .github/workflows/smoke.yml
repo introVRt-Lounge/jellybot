@@ -20,6 +20,7 @@ jobs:
 
       - name: Live smoke (dev bot + Jellyfin)
         env:
+          JELLYBOT_ENV_FILE: /home/heavygee/coding/jellybot-dev/.env
           DISCORD_PY_SELF_ROOT: /home/heavygee/coding/discord.py-self
           JELLYBOT_SMOKE_HOST_PORT: "8093"
           JELLYBOT_SMOKE_HEALTH_URL: http://127.0.0.1:8093/healthz
