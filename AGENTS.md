@@ -49,6 +49,17 @@ When a feature is **complete and tests pass**, the default next action is **comm
 - One-line typos the operator wants directly on `main`.
 - Operator explicitly says "don't commit yet" or "local only."
 
+### Never stash
+
+**Do not use `git stash` to manage work.** A stash means one of two things:
+
+1. **In-progress work that is not finished** — finish it on a feature branch, or discard it explicitly.
+2. **An accident** — wrong branch, messy tree — fix the tree (commit, move commits, or `git restore`), do not hide it in a stash.
+
+If you need a clean checkout, the correct moves are: commit on the topic branch, open a draft PR, or ask the operator. Stashes left behind become orphan landmines for the next agent.
+
+When switching branches mid-task, **commit or branch** the work — never stash-and-forget.
+
 ### Deploy
 
 After merge to `main`, **prod** updates via **Ship main** → GHCR `:latest` → Watchtower recreates `~/docker/jellybot` (no manual pull in normal ops). Slash commands now **auto-register on startup** when the command body hash differs from the last applied hash (stored in `bot-state.db.command_sync_state`); empty bodies are refused defensively. The first restart after a command change emits `discord.commands.synced`; subsequent restarts log `discord.commands.already_synced` and make no Discord API calls.
@@ -141,6 +152,10 @@ Key env vars for a live run: `DISCORD_TOKEN`, `DISCORD_CLIENT_ID`, `JELLYFIN_USE
 ### Pre-commit hook
 
 Husky runs `bun run secrets:staged` (gitleaks) on commit. If gitleaks is not installed locally, the script falls back to the `zricethezav/gitleaks:v8.30.1` Docker image. In Cloud Agent VMs without Docker, the hook may fail - this is non-blocking for development but worth noting.
+
+### Git push from agents (GitHub PAT)
+
+Fine-grained PATs can pass `GET /repos/...` permission checks while still lacking **Contents: Read and write** for `git push` over HTTPS. If `gh api` shows `push: true` but `git push` returns 403, the token is wrong for git operations — use a classic `ghp_` token (or equivalent) with full repo **Contents** scope. OpenACP-jelly uses the host push-capable token for in-container git; see `.env.example` if documented there.
 
 ## Cursor Cloud Agents (GitHub)
 
