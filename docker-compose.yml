@@ -11,8 +11,8 @@ services:
   jellybot:
     <<: *jellybot-runtime
     profiles: [app]
-    container_name: jellybot-dev
-    restart: unless-stopped
+    container_name: ${JELLYBOT_CONTAINER_NAME:-jellybot-dev}
+    restart: ${JELLYBOT_RESTART_POLICY:-unless-stopped}
     env_file: .env
     environment:
       HEALTH_PORT: 8080

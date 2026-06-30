@@ -8,8 +8,9 @@ That catches the prod UX bug class — autocomplete that searches fine but respo
 
 ## Where it runs
 
-- **Host:** proxmox (`proxmox-heavygee` self-hosted runner)
-- **Container:** `jellybot-dev` on port **8093** — dev Discord app, prod Jellyfin + shared subtitle DB
+- **Host:** proxmox self-hosted runner (`runs-on: [self-hosted, jellybot-live]`) — **not** GitHub-hosted ubuntu.
+- **Ephemeral CI container:** `jellybot-smoke-<run>` on port **8094** (PR image under test). Does not replace long-lived `jellybot-dev` on **8093**.
+- **Persistent dev:** `jellybot-dev` on **8093** for manual `make smoke` / `make dev-refresh`.
 - **Discord:** smoke user (`DISCORD_USER_TOKEN` in `discord.py-self/.env`) in a **Bottitesto guild channel** (`JELLYBOT_SMOKE_CHANNEL_ID` or `DISCORD_TEST_CHANNEL_ID` — must match `DISCORD_GUILD_ID` in jellybot `.env`)
 
 You should see activity in that channel when extended smoke is on; **required gate** is log-correlated autocomplete (no visible dropdown in channel — the user client fires autocomplete programmatically).
@@ -35,8 +36,8 @@ If smoke passes on the selfbot path, you have a reproducible pre-prod gate that 
 
 - **Log correlation** uses `docker logs --since` (not line counts) so buffered container output is not missed.
 - **Default queries** are `arrested` / `Simp` — avoid `the` on a 9M-cue FTS index (slow enough to miss the 3s window).
-- **CI recreates** the dev container with `SUBTITLE_INDEX_ON_STARTUP=off` so background indexing does not block autocomplete.
-- **Health must answer in &lt;2s** before each attempt; if not, recreate `jellybot-dev` and retry.
+- **CI recreates** an ephemeral `jellybot-smoke-<run>` on **8094** with `SUBTITLE_INDEX_ON_STARTUP=off` — leaves long-lived `jellybot-dev` on **8093** alone.
+- **Health must answer in &lt;2s** before each attempt; if not, check the ephemeral container logs (`docker logs jellybot-smoke-<run>`).
 
 Tune with `JELLYBOT_SMOKE_LOG_POLL_SEC` (default 45), `JELLYBOT_SMOKE_RETRY_COUNT` (default 2).
 

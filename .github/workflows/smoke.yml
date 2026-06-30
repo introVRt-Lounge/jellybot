@@ -22,7 +22,7 @@ jobs:
         env:
           JELLYBOT_ENV_FILE: /home/heavygee/coding/jellybot-dev/.env
           DISCORD_PY_SELF_ROOT: /home/heavygee/coding/discord.py-self
-          JELLYBOT_SMOKE_HOST_PORT: "8093"
-          JELLYBOT_SMOKE_HEALTH_URL: http://127.0.0.1:8093/healthz
-          JELLYBOT_SMOKE_LOG_CMD: docker logs jellybot-dev
+          JELLYBOT_SMOKE_HOST_PORT: "8094"
+          JELLYBOT_SMOKE_HEALTH_URL: http://127.0.0.1:8094/healthz
+          JELLYBOT_DATA_HOST_DIR: /home/heavygee/docker/jellybot/data
         run: bash scripts/smoke-ci.sh
