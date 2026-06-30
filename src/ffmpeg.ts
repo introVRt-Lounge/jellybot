@@ -41,6 +41,8 @@ export type ClipOptions = {
   /** Resolved ffmpeg stream map (e.g. `0:3?` or `0:a:0?`). Overrides audioStreamIndex when set. */
   audioMapSpec?: string;
   subtitlePath?: string;
+  /** PNG overlay (second ffmpeg input); bottom-right with 10px margin. */
+  watermarkPath?: string;
 };
 
 /** Pick ffmpeg audio map: container index when present, else first audio (remuxed Jellyfin stream). */
@@ -73,7 +75,7 @@ function escapeFfmpegFilterPath(path: string): string {
   return `'${escaped}'`;
 }
 
-function buildVideoEncodeArgs(videoCodec: string, maxHeight: number, subtitlePath?: string): string[] {
+function buildVideoCodecArgs(videoCodec: string): string[] {
   const args = [
     "-c:v",
     videoCodec,
@@ -81,8 +83,6 @@ function buildVideoEncodeArgs(videoCodec: string, maxHeight: number, subtitlePat
     DEFAULT_VIDEO_PRESET,
     "-crf",
     DEFAULT_VIDEO_CRF,
-    "-vf",
-    buildVideoFilter(maxHeight, subtitlePath),
     "-pix_fmt",
     "yuv420p",
   ];
@@ -98,6 +98,15 @@ function buildVideoEncodeArgs(videoCodec: string, maxHeight: number, subtitlePat
   return args;
 }
 
+function buildVideoEncodeArgs(videoCodec: string, maxHeight: number, subtitlePath?: string): string[] {
+  return [...buildVideoCodecArgs(videoCodec), "-vf", buildVideoFilter(maxHeight, subtitlePath)];
+}
+
+function buildWatermarkFilterComplex(maxHeight: number, subtitlePath?: string): string {
+  const scale = buildVideoFilter(maxHeight, subtitlePath);
+  return `[0:v]${scale}[base];[base][1:v]overlay=main_w-overlay_w-10:10[outv]`;
+}
+
 export function buildClipFfmpegArgs(options: ClipOptions): string[] {
   const videoCodec = options.videoCodec ?? DEFAULT_VIDEO_CODEC;
   const maxHeight = options.maxHeight ?? DEFAULT_MAX_HEIGHT;
@@ -105,6 +114,33 @@ export function buildClipFfmpegArgs(options: ClipOptions): string[] {
     options.audioMapSpec ??
     (options.audioStreamIndex !== undefined ? `0:${options.audioStreamIndex}?` : "0:a:0?");
   const audioMap = ["-map", audioMapSpec];
+
+  if (options.watermarkPath) {
+    return [
+      "-hide_banner",
+      "-loglevel",
+      "error",
+      "-ss",
+      String(options.startSeconds),
+      "-i",
+      options.inputUrl,
+      "-i",
+      options.watermarkPath,
+      "-t",
+      String(options.durationSeconds),
+      "-filter_complex",
+      buildWatermarkFilterComplex(maxHeight, options.subtitlePath),
+      "-map",
+      "[outv]",
+      ...audioMap,
+      ...buildVideoCodecArgs(videoCodec),
+      ...buildAudioEncodeArgs(),
+      "-movflags",
+      "+faststart",
+      "-y",
+      options.outputPath,
+    ];
+  }
 
   return [
     "-hide_banner",

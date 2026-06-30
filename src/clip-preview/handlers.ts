@@ -37,6 +37,7 @@ type PreviewConfig = Pick<
   | "subtitleDbPath"
   | "subtitleDefaultClipSeconds"
   | "subtitleQuotePaddingSeconds"
+  | "watermarkPath"
 >;
 
 async function replyPreviewError(
@@ -379,6 +380,7 @@ export async function handleClipPreviewModal(
     burnInSubtitles,
     preferredSubtitleLanguages: config.subtitleLanguages,
     tempId: interaction.id,
+    watermarkPath: config.watermarkPath,
   });
 
   await cleanup(oldPath);

@@ -48,6 +48,7 @@ WORKDIR /app
 COPY --from=deps --chown=jellybot:jellybot /app/node_modules ./node_modules
 COPY --chown=jellybot:jellybot package.json bun.lock tsconfig.json ./
 COPY --chown=jellybot:jellybot src ./src
+COPY --chown=jellybot:jellybot assets ./assets
 
 USER jellybot
 

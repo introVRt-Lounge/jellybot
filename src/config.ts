@@ -1,3 +1,6 @@
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+
 export type AppConfig = {
   discordToken: string;
   discordClientId: string;
@@ -74,6 +77,8 @@ export type AppConfig = {
   supercutCoalesceGapMs: number;
   /** Hard ceiling on the final supercut mp4 size (MB) before Discord upload. */
   supercutMaxMb: number;
+  /** PNG burned into clip/quote renders; unset disables overlay. */
+  watermarkPath?: string;
 };
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
@@ -131,6 +136,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     supercutPaddingMs: Number(env.SUPERCUT_PADDING_MS ?? 400),
     supercutCoalesceGapMs: Number(env.SUPERCUT_COALESCE_GAP_MS ?? 1500),
     supercutMaxMb: Number(env.SUPERCUT_MAX_MB ?? 24),
+    watermarkPath: resolveWatermarkPath(env),
   };
 }
 
@@ -180,4 +186,19 @@ function parseReleaseRepo(env: NodeJS.ProcessEnv): { releaseRepoOwner: string; r
     releaseRepoOwner: env.RELEASE_REPO_OWNER?.trim() || "introVRt-Lounge",
     releaseRepoName: env.RELEASE_REPO_NAME?.trim() || "jellybot",
   };
+}
+
+function resolveWatermarkPath(env: NodeJS.ProcessEnv): string | undefined {
+  const mode = env.JELLYBOT_WATERMARK?.trim().toLowerCase();
+  if (mode === "off" || mode === "0" || mode === "false") {
+    return undefined;
+  }
+
+  const explicit = env.JELLYBOT_WATERMARK_PATH?.trim();
+  if (explicit) {
+    return explicit;
+  }
+
+  const bundled = join(import.meta.dir, "..", "assets", "introvrt-lounge-discord-watermark-transparent.png");
+  return existsSync(bundled) ? bundled : undefined;
 }

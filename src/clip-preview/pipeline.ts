@@ -28,7 +28,7 @@ export type DeliverClipPreviewInput = {
   jellyfin: JellyfinClient;
   config: Pick<
     AppConfig,
-    "clipTempDir" | "maxClipMb" | "maxClipSeconds" | "audioLanguages" | "subtitleLanguages" | "subtitleDbPath"
+    "clipTempDir" | "maxClipMb" | "maxClipSeconds" | "audioLanguages" | "subtitleLanguages" | "subtitleDbPath" | "watermarkPath"
   >;
   command: ClipPreviewCommand;
   plan: ClipPlan;
@@ -67,6 +67,7 @@ export async function deliverClipPreview(input: DeliverClipPreviewInput): Promis
     burnInSubtitles: input.burnInSubtitles,
     preferredSubtitleLanguages: config.subtitleLanguages,
     tempId: interaction.id,
+    watermarkPath: config.watermarkPath,
   });
 
   if (!rendered.ok) {
