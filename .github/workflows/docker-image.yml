@@ -73,7 +73,7 @@ jobs:
       - name: Extract metadata
         if: steps.release_scope.outputs.publish == 'true'
         id: meta
-        uses: docker/metadata-action@80c7e94dd9b9319bd5eb7a0e0fe9291e23a2e9 # v6
+        uses: docker/metadata-action@80c7e94dd9b9319bd5eb7a0e0fe9291e23a2e9
         with:
           images: ghcr.io/${{ github.repository }}
           tags: |
