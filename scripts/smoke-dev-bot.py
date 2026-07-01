@@ -34,7 +34,6 @@ from discord_smoke_support import (
     assess_quote_series_autocomplete_logs,
     assert_health_responsive,
     bot_log_line_count,
-    fetch_bot_logs,
     fetch_bot_logs_tail,
     load_smoke_env,
     log_has_event,
@@ -85,7 +84,6 @@ async def run_discord_smokes() -> list[str]:
                 failures.append(f"{name}: {detail}")
 
         async def autocomplete_quote(option: str, query: str, assess) -> None:
-            last_detail = "no attempts"
             recover_sec = int(env("JELLYBOT_SMOKE_HEALTH_RECOVER_SEC", "45"))
             for attempt in range(1, retry_count + 2):
                 try:
@@ -155,7 +153,6 @@ async def run_discord_smokes() -> list[str]:
             clip_media_query = env("JELLYBOT_SMOKE_CLIP_MEDIA_QUERY", "Red")
             clip_item_id = env("JELLYBOT_SMOKE_ITEM_ID", "6ef4f7234b7793e6788f1bf9ccc19b70")
             supercut_series_query = env("JELLYBOT_SMOKE_SUPERCUT_SERIES_QUERY", "Red")
-            subcoverage_query = env("JELLYBOT_SMOKE_SUBCOVERAGE_QUERY", "Red")
 
             try:
                 log_start = bot_log_line_count(log_cmd)
