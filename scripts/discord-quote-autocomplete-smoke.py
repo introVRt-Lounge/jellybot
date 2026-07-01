@@ -1,14 +1,10 @@
 #!/usr/bin/env python3
 """Live Discord smoke for jellybot /quote match autocomplete (user token).
 
-Canonical entry: `bun run smoke:discord:quote` (see docs/DISCORD_SMOKE_TESTING.md).
+Canonical entry: `bun run smoke:discord:quote` or `make smoke` (see docs/SMOKE.md).
 
-Loads:
-  - jellybot/.env for DISCORD_CLIENT_ID
-  - $DISCORD_PY_SELF_ROOT/.env for DISCORD_USER_TOKEN, DISCORD_TEST_CHANNEL_ID
-
-Pass/fail is determined by structured prod bot logs (quote.autocomplete.responded),
-not client-side choice payloads (discord.py-self often reports client_choices=0).
+Pass/fail: bot logs must show quote.autocomplete.responded — catches Unknown interaction
+(missed Discord autocomplete window) before users do.
 """
 
 from __future__ import annotations
@@ -52,7 +48,7 @@ async def main() -> int:
     app_id = int(os.environ.get("DISCORD_CLIENT_ID", "0"))
     channel_id = int(os.environ.get("DISCORD_TEST_CHANNEL_ID", "0"))
     query = os.environ.get("JELLYBOT_SMOKE_QUOTE_QUERY", "carrot").strip()
-    log_cmd = os.environ.get("JELLYBOT_SMOKE_LOG_CMD", "docker logs jellybot").strip()
+    log_cmd = os.environ.get("JELLYBOT_SMOKE_LOG_CMD", "docker logs jellybot-dev").strip()
 
     if not token or not app_id or not channel_id:
         print("Missing DISCORD_USER_TOKEN, DISCORD_CLIENT_ID, or DISCORD_TEST_CHANNEL_ID")
@@ -129,7 +125,9 @@ async def main() -> int:
 
         log_text = fetch_bot_logs(log_cmd)
         events = parse_json_log_events(log_text, event_prefix="quote.autocomplete")
-        assessment = assess_quote_autocomplete_logs(interaction_id, query, events)
+        assessment = assess_quote_autocomplete_logs(
+            interaction_id, query, events, match_query_only=True
+        )
 
         if assessment.search_line:
             print(f"  search: {assessment.search_line}")

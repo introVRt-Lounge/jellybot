@@ -1,0 +1,33 @@
+---
+description: Mandatory PR babysit gate — never declare done with unresolved review threads
+alwaysApply: true
+---
+
+# PR babysit gate (hard stop)
+
+When a PR exists for the current work, **do not tell the operator the task is done** until the babysit gate passes.
+
+## Required before "done" / "ready to merge" / "shipped"
+
+1. **`gh pr checks`** — required checks green or explicitly waived with reason.
+2. **Unresolved review threads = 0** — CodeQL, Code Quality, audit bots, humans. `gh pr checks` does **not** show these; use GraphQL `reviewThreads` (`isResolved == false`). See `AGENTS.md` probe or **github-operations** skill.
+3. **Latest bot review on current HEAD** — triaged after the last push (not a stale SHA).
+
+## Agent loop (babysit skill)
+
+```
+push → wait for checks + bot on HEAD → list unresolved threads → fix valid → resolve threads → repeat
+```
+
+## Forbidden
+
+- "Smoke is green" (or any single check) while inline review comments remain open and untriaged.
+- Skipping comment triage because automerge is enabled or one dimension is green.
+
+## Skills (read when babysitting)
+
+- **babysit** — merge-ready loop
+- **github-operations** — three-dimension clean check, GraphQL snippets
+- **receiving-code-review** — verify before implementing; reply in threads
+
+Snippet canon: **perfect-github-setup-and-operation** → `AGENTS.pr-babysit.snippet.md`

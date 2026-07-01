@@ -134,12 +134,19 @@ jobs:
           scope_review_conclusion="$(gh pr view "${PR_NUMBER}" --repo "${REPOSITORY}" \
             --json statusCheckRollup \
             -q '[.statusCheckRollup[] | select(.name == "scope-review") | .conclusion][0] // empty')"
+          smoke_conclusion="$(gh pr view "${PR_NUMBER}" --repo "${REPOSITORY}" \
+            --json statusCheckRollup \
+            -q '[.statusCheckRollup[] | select(.name == "smoke") | .conclusion][0] // empty')"
           if [ "${ci_conclusion}" != "SUCCESS" ]; then
             echo "Required check ci is '${ci_conclusion:-pending}'; waiting for green CI."
             exit 0
           fi
           if [ "${scope_review_conclusion}" != "SUCCESS" ]; then
             echo "Required check scope-review is '${scope_review_conclusion:-pending}'; waiting for scope review."
+            exit 0
+          fi
+          if [ "${smoke_conclusion}" != "SUCCESS" ]; then
+            echo "Required check smoke is '${smoke_conclusion:-pending}'; waiting for self-hosted Discord smoke."
             exit 0
           fi
 

@@ -37,6 +37,7 @@ type PreviewConfig = Pick<
   | "subtitleDbPath"
   | "subtitleDefaultClipSeconds"
   | "subtitleQuotePaddingSeconds"
+  | "watermarkPath"
 >;
 
 async function replyPreviewError(
@@ -127,72 +128,91 @@ export async function handleClipPreviewButton(
     return;
   }
 
-  await interaction.deferUpdate();
+  if (parsed.action === "post") {
+    const claimed = clipPreviewStore.tryClaimPost(parsed.sessionId);
+    if (!claimed) {
+      const current = clipPreviewStore.get(parsed.sessionId);
+      await replyPreviewError(
+        interaction,
+        !current
+          ? "That preview expired. Run the command again."
+          : current.state === "posting" || current.state === "posted"
+            ? "That clip is already being posted."
+            : "That preview is no longer available.",
+      );
+      return;
+    }
 
-  const channel = interaction.channel;
-  if (!channel || !channel.isTextBased()) {
-    await interaction.editReply({
-      content: "Could not post — channel is unavailable.",
-      components: [],
-      files: [],
-    });
-    return;
-  }
+    await interaction.deferUpdate();
 
-  try {
-    const attachment = new AttachmentBuilder(session.outputPath, {
-      name: session.attachmentName,
-    });
-
-    const publicContent = [...session.previewLines, `-# Requested by <@${session.ownerUserId}>`].join("\n");
-
-    await (channel as TextChannel).send({
-      content: publicContent,
-      files: [attachment],
-    });
-
-    clipPreviewStore.updateState(session.id, transition.state);
-    await cleanup(session.outputPath);
-    clipPreviewStore.delete(session.id);
-
-    await interaction.editReply({
-      content: "Posted to the channel.",
-      components: [],
-      files: [],
-    });
-
-    console.info(
-      JSON.stringify({
-        event: `${session.command}.preview_posted`,
-        command: session.command,
-        userId: interaction.user.id,
-        sessionId: session.id,
-        channelId: session.channelId,
-      }),
-    );
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "unknown error";
-    if (message.includes("entity too large") || message.includes("413")) {
+    const channel = interaction.channel;
+    if (!channel || !channel.isTextBased()) {
+      clipPreviewStore.releasePost(parsed.sessionId);
       await interaction.editReply({
-        content: `Discord rejected the upload (limit ${formatDiscordUploadLimit(interaction.attachmentSizeLimit)}). Try a shorter clip with **Try again**.`,
-        components: buildPreviewActionRows(session.id),
+        content: "Could not post — channel is unavailable.",
+        components: buildPreviewActionRows(parsed.sessionId),
+        files: [],
       });
       return;
     }
 
-    await interaction.editReply({
-      content: "Failed to post the clip to the channel.",
-      components: buildPreviewActionRows(session.id),
-    });
-    console.error(
-      JSON.stringify({
-        event: `${session.command}.preview_post_failed`,
-        command: session.command,
-        userId: interaction.user.id,
-        sessionId: session.id,
-        error: message,
-      }),
-    );
+    try {
+      const attachment = new AttachmentBuilder(claimed.outputPath, {
+        name: claimed.attachmentName,
+      });
+
+      const publicContent = [...claimed.previewLines, `-# Requested by <@${claimed.ownerUserId}>`].join("\n");
+
+      await (channel as TextChannel).send({
+        content: publicContent,
+        files: [attachment],
+      });
+
+      clipPreviewStore.updateState(claimed.id, "posted");
+      await cleanup(claimed.outputPath);
+      clipPreviewStore.delete(claimed.id);
+
+      await interaction.editReply({
+        content: "Posted to the channel.",
+        components: [],
+        files: [],
+      });
+
+      console.info(
+        JSON.stringify({
+          event: `${claimed.command}.preview_posted`,
+          command: claimed.command,
+          userId: interaction.user.id,
+          sessionId: claimed.id,
+          channelId: claimed.channelId,
+        }),
+      );
+    } catch (error) {
+      clipPreviewStore.releasePost(parsed.sessionId);
+      const message = error instanceof Error ? error.message : "unknown error";
+      if (message.includes("entity too large") || message.includes("413")) {
+        await interaction.editReply({
+          content: `Discord rejected the upload (limit ${formatDiscordUploadLimit(interaction.attachmentSizeLimit)}). Try a shorter clip with **Try again**.`,
+          components: buildPreviewActionRows(parsed.sessionId),
+        });
+        return;
+      }
+
+      await interaction.editReply({
+        content: "Failed to post the clip to the channel.",
+        components: buildPreviewActionRows(parsed.sessionId),
+      });
+      console.error(
+        JSON.stringify({
+          event: `${claimed.command}.preview_post_failed`,
+          command: claimed.command,
+          userId: interaction.user.id,
+          sessionId: claimed.id,
+          error: message,
+        }),
+      );
+    }
+    return;
   }
 }
 
@@ -360,6 +380,7 @@ export async function handleClipPreviewModal(
     burnInSubtitles,
     preferredSubtitleLanguages: config.subtitleLanguages,
     tempId: interaction.id,
+    watermarkPath: config.watermarkPath,
   });
 
   await cleanup(oldPath);

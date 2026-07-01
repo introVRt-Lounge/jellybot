@@ -111,6 +111,7 @@ export async function renderClip(params: {
   burnInSubtitles?: boolean;
   preferredSubtitleLanguages?: string;
   tempId: string;
+  watermarkPath?: string;
 }): Promise<
   | { ok: true; audioStreamIndex?: number; audioLanguage?: string; subtitlesBurnedIn: boolean }
   | { ok: false; message: string }
@@ -154,6 +155,7 @@ export async function renderClip(params: {
       outputPath: params.outputPath,
       audioStreamIndex: audio?.index,
       subtitlePath,
+      watermarkPath: params.watermarkPath,
     });
 
     const sizeMb = await fileSizeMb(params.outputPath);

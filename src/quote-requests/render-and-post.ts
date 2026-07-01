@@ -25,6 +25,7 @@ export type RenderAndPostConfig = Pick<
   | "subtitleDefaultClipSeconds"
   | "subtitleQuotePaddingSeconds"
   | "subtitleDbPath"
+  | "watermarkPath"
 >;
 
 export type RenderAndPostResult =
@@ -89,6 +90,7 @@ export async function renderAndPostFulfillmentClip(input: {
     preferredSubtitleLanguages: config.subtitleLanguages,
     burnInSubtitles: false,
     tempId,
+    watermarkPath: config.watermarkPath,
   });
 
   if (!rendered.ok) {

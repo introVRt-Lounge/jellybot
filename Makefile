@@ -1,4 +1,4 @@
-.PHONY: test register-commands index-subtitles dev-refresh up logs health build-runtime smoke-discord smoke-discord-quote smoke-discord-all smoke-discord-support-test
+.PHONY: test register-commands index-subtitles dev-refresh up logs health build-runtime smoke smoke-preflight smoke-ci smoke-discord smoke-discord-quote smoke-discord-all smoke-discord-support-test
 
 build-runtime:
 	docker compose --profile app build jellybot
@@ -26,7 +26,19 @@ logs:
 	docker logs -f jellybot-dev
 
 health:
-	curl -fsS http://127.0.0.1:8080/healthz | jq .
+	curl -fsS $${JELLYBOT_SMOKE_HEALTH_URL:-http://127.0.0.1:8093/healthz} | jq .
+
+smoke:
+	DISCORD_PY_SELF_ROOT=$${DISCORD_PY_SELF_ROOT:-$$HOME/coding/discord.py-self} \
+	JELLYBOT_SMOKE_LOG_CMD=$${JELLYBOT_SMOKE_LOG_CMD:-docker logs jellybot-dev} \
+	JELLYBOT_SMOKE_HEALTH_URL=$${JELLYBOT_SMOKE_HEALTH_URL:-http://127.0.0.1:8093/healthz} \
+	python3 scripts/smoke-dev-bot.py
+
+smoke-preflight:
+	docker compose --profile app exec -T jellybot bun run src/cli/smoke-live.ts
+
+smoke-ci:
+	bash scripts/smoke-ci.sh
 
 smoke-discord-support-test:
 	python3 scripts/test_discord_smoke_support.py

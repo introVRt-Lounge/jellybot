@@ -23,9 +23,15 @@ describe("clip preview state machine", () => {
     expect(applyPreviewAction("cancelled", "cancel").ok).toBe(false);
   });
 
-  test("post and cancel reach terminal states", () => {
-    expect(applyPreviewAction("awaiting_approval", "post")).toEqual({ ok: true, state: "posted" });
+  test("post enters posting state; cancel reaches cancelled", () => {
+    expect(applyPreviewAction("awaiting_approval", "post")).toEqual({ ok: true, state: "posting" });
     expect(applyPreviewAction("awaiting_approval", "cancel")).toEqual({ ok: true, state: "cancelled" });
+  });
+
+  test("rejects post while posting or posted", () => {
+    expect(canApplyPreviewAction("posting", "post")).toBe(false);
+    expect(canApplyPreviewAction("posted", "post")).toBe(false);
+    expect(applyPreviewAction("posting", "post").ok).toBe(false);
   });
 
   test("retry keeps awaiting approval", () => {
@@ -52,6 +58,28 @@ describe("clip preview custom ids", () => {
 });
 
 describe("ClipPreviewStore", () => {
+  test("tryClaimPost allows only one concurrent post", () => {
+    const store = new ClipPreviewStore(60_000);
+    store.create({
+      id: "sess-post",
+      ownerUserId: "user-1",
+      channelId: "chan-1",
+      command: "quote",
+      outputPath: "/tmp/x.mp4",
+      attachmentName: "x.mp4",
+      label: "Test",
+      previewLines: ["line"],
+    });
+
+    expect(store.tryClaimPost("sess-post")).toBeDefined();
+    expect(store.tryClaimPost("sess-post")).toBeUndefined();
+    expect(store.get("sess-post")?.state).toBe("posting");
+
+    store.releasePost("sess-post");
+    expect(store.get("sess-post")?.state).toBe("awaiting_approval");
+    expect(store.tryClaimPost("sess-post")).toBeDefined();
+  });
+
   test("expires sessions after ttl", async () => {
     const store = new ClipPreviewStore(10);
     store.create({

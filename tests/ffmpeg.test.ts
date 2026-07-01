@@ -62,4 +62,19 @@ describe("buildClipFfmpegArgs", () => {
     expect(args[vfIndex + 1]).toContain("subtitles=");
     expect(args[vfIndex + 1]).toContain("clip-subs.srt");
   });
+
+  test("adds watermark overlay filter when watermark PNG is provided", () => {
+    const args = buildClipFfmpegArgs({
+      inputUrl: "http://jellyfin/stream",
+      startSeconds: 0,
+      durationSeconds: 5,
+      outputPath: "/tmp/out.mp4",
+      watermarkPath: "/app/assets/introvrt-lounge-discord-watermark-transparent.png",
+    });
+
+    expect(args).toContain("-filter_complex");
+    expect(args.join(" ")).toContain("overlay=main_w-overlay_w-10:10");
+    expect(args).toContain("[outv]");
+    expect(args).toContain("/app/assets/introvrt-lounge-discord-watermark-transparent.png");
+  });
 });
