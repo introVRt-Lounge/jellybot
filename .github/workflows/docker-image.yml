@@ -72,7 +72,7 @@ jobs:
 
       - name: Extract metadata
         if: steps.release_scope.outputs.publish == 'true'
-        id: meta
+        id: image_meta
         uses: docker/metadata-action@80c7e94dd9b9319bd5eb7a0e0fe9291e23a2e9
         with:
           images: ghcr.io/${{ github.repository }}
@@ -89,8 +89,8 @@ jobs:
           context: .
           target: runtime
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          tags: ${{ steps.image_meta.outputs.tags }}
+          labels: ${{ steps.image_meta.outputs.labels }}
           build-args: |
             APP_VERSION=${{ github.ref_name }}
             GIT_SHA=${{ github.sha }}
