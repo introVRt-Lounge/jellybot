@@ -34,7 +34,24 @@ If the operator describes substantive work but no issue exists, **create the iss
 
 **All substantive work uses feature branches.** No long-lived uncommitted feature piles on `main`.
 
-Follow **`feature-branch-workflow`** (issue → branch from `main` → tests → implement → push → PR → green CI → merge → cleanup).
+Follow **`feature-branch-workflow`** (issue → branch from `main` → tests → implement → push → PR → **babysit** → green CI → merge → cleanup).
+
+### PR babysit gate (mandatory)
+
+**Never declare PR work "done", "ready to merge", or "shipped" while an open PR still has unresolved review feedback.**
+
+`gh pr checks` is **not enough**. CodeQL, Code Quality, audit bots, and humans post **inline review threads** that stay open across pushes until triaged.
+
+Before saying done on any open PR:
+
+1. Follow **`babysit`** + **`github-operations`** skills (three-dimension clean check).
+2. **Zero unresolved review threads** — GraphQL `reviewThreads` where `isResolved == false` (see snippet below).
+3. Triage **latest bot review on current `HEAD`** after every push; fix valid items, push back on wrong ones, **resolve threads** when fixed.
+4. Required checks green (smoke, `ci`, `scope-review`, etc. per automerge config) — a single green check does not satisfy the gate.
+
+Forbidden: celebrating smoke (or any one check) while CodeQL / Code Quality threads remain open.
+
+Full probe and loop: `docs/agent-snippets/AGENTS.pr-babysit.snippet.md`
 
 ### Bias: ship when green
 
@@ -151,7 +168,16 @@ Key env vars for a live run: `DISCORD_TOKEN`, `DISCORD_CLIENT_ID`, `JELLYFIN_USE
 
 ### Pre-commit hook
 
-Husky runs `bun run secrets:staged` (gitleaks) on commit. If gitleaks is not installed locally, the script falls back to the `zricethezav/gitleaks:v8.30.1` Docker image. In Cloud Agent VMs without Docker, the hook may fail - this is non-blocking for development but worth noting.
+Husky runs `bun run secrets:staged` (gitleaks) on commit. If gitleaks is not installed locally, the script falls back to the `zricethezav/gitleaks:v8.30.1` Docker image. In Cloud Agent VMs without Docker, the hook may fail - this is non-blocking for development but worth noting. The **openacp-jelly** container image bakes gitleaks v8.30.1 so Octobot commits do not need Docker.
+
+### OpenACP Octobot scope (mandatory)
+
+The Discord OpenACP bot (`openacp-jelly`) is **code + prod log review only**:
+
+- **In scope:** edit jellybot-dev, run tests, commit/push, triage PR review threads, read `/prod-logs` (prod jellybot export).
+- **Out of scope (GitHub runner / workflows):** smoke (`scripts/smoke-ci.sh` on self-hosted `jellybot-live`), Docker recreate, prod deploy, merge verification, `gh pr merge`.
+
+Do **not** mount `docker.sock` into OpenACP to "run smoke locally" — the self-hosted runner on this machine is the smoke harness. When the operator says **smoke**, they mean the GitHub Actions workflow, not an in-container docker command.
 
 ### Git push from agents (GitHub PAT)
 
