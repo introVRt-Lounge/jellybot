@@ -5,6 +5,9 @@ import { notifyPipelineOpsInBotspam } from "./pipeline-discord-notify.ts";
 import { inspectFeaturePipeline } from "./pipeline-tracker.ts";
 import type { PipelineStageId } from "./pipeline-stages.ts";
 
+/** After this many consecutive API failures, mark the suggestion as rejected. */
+export const MAX_RECONCILE_FAILURES = 10;
+
 function pipelineEventStatus(stage: PipelineStageId): "ok" | "pending" | "failed" | "stuck" | "warn" {
   if (stage === "shipped") {
     return "ok";
@@ -26,6 +29,7 @@ export async function reconcileBuildingSuggestions(
   config: AppConfig,
   store: FeatureStore,
   guildId: string,
+  failureCounts: Map<number, number> = new Map(),
 ): Promise<void> {
   if (!config.githubToken) {
     return;
@@ -40,6 +44,8 @@ export async function reconcileBuildingSuggestions(
         githubToken: config.githubToken,
         issueNumber: suggestion.githubIssueNumber,
       });
+
+      failureCounts.delete(suggestion.id);
 
       const previous = store.latestPipelineEvent(suggestion.id);
       const detail = inspection.blocker ?? inspection.stageLabel;
@@ -97,13 +103,36 @@ export async function reconcileBuildingSuggestions(
         store.setStatus(suggestion.id, "rejected");
       }
     } catch (error) {
+      const count = (failureCounts.get(suggestion.id) ?? 0) + 1;
+      failureCounts.set(suggestion.id, count);
+
       console.error(
         JSON.stringify({
           event: "feature.pipeline.reconcile_error",
           issueNumber: suggestion.githubIssueNumber,
+          consecutiveFailures: count,
           error: error instanceof Error ? error.message : "unknown error",
         }),
       );
+
+      if (count >= MAX_RECONCILE_FAILURES) {
+        store.setStatus(suggestion.id, "rejected");
+        store.recordPipelineEvent({
+          suggestionId: suggestion.id,
+          stage: "failed",
+          status: "failed",
+          detail: `Rejected after ${count} consecutive API failures: ${error instanceof Error ? error.message : "unknown"}`,
+        });
+        failureCounts.delete(suggestion.id);
+
+        console.warn(
+          JSON.stringify({
+            event: "feature.pipeline.reconcile_abandoned",
+            issueNumber: suggestion.githubIssueNumber,
+            consecutiveFailures: count,
+          }),
+        );
+      }
     }
   }
 }
@@ -114,9 +143,11 @@ export function startFeaturePipelineReconcileLoop(
   store: FeatureStore,
   intervalMs = 5 * 60_000,
 ): () => void {
+  const failureCounts = new Map<number, number>();
+
   const tick = () => {
     for (const guildId of store.listGuildIdsWithBuilding()) {
-      void reconcileBuildingSuggestions(client, config, store, guildId);
+      void reconcileBuildingSuggestions(client, config, store, guildId, failureCounts);
     }
   };
 
