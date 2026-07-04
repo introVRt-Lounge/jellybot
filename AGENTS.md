@@ -179,6 +179,17 @@ The Discord OpenACP bot (`openacp-jelly`) is **code + prod log review only**:
 
 Do **not** mount `docker.sock` into OpenACP to "run smoke locally" — the self-hosted runner on this machine is the smoke harness. When the operator says **smoke**, they mean the GitHub Actions workflow, not an in-container docker command.
 
+**`/prod-logs` layout** (host cron exports; no docker in the container):
+
+| Path | Use |
+| --- | --- |
+| `/prod-logs/healthz.json` | Version, discord status, index stats — check first |
+| `/prod-logs/jellybot.signals.log` | Errors + quote/clip/discord events — **diagnose here** |
+| `/prod-logs/jellybot.log` | Full rolling stdout (noisy; subtitle index bursts live here) |
+| `/prod-logs/export.cron.log` | Export bridge health (if "container not found", host export is broken) |
+
+Do not declare "logs are useless" from `jellybot.log` alone — always read `jellybot.signals.log` and `healthz.json` first.
+
 ### Git push from agents (GitHub PAT)
 
 Fine-grained PATs can pass `GET /repos/...` permission checks while still lacking **Contents: Read and write** for `git push` over HTTPS. If `gh api` shows `push: true` but `git push` returns 403, the token is wrong for git operations — use a classic `ghp_` token (or equivalent) with full repo **Contents** scope. OpenACP-jelly uses the host push-capable token for in-container git; see `.env.example` if documented there.
