@@ -23,6 +23,12 @@ import { QuoteRequestStore, type QuoteRequestRow } from "./store.ts";
 
 const DEFAULT_INTERVAL_MS = 5 * 60_000;
 
+/**
+ * After this many consecutive connectivity failures on the same acquisition
+ * row, mark it as failed rather than polling forever.
+ */
+export const MAX_POLL_FAILURES = 50;
+
 export type QuoteRequestReconcilerDeps = {
   client: Pick<Client, "channels">;
   config: Pick<
@@ -53,8 +59,10 @@ export function startQuoteRequestReconcileLoop(
   deps: QuoteRequestReconcilerDeps,
   intervalMs: number = DEFAULT_INTERVAL_MS,
 ): () => void {
+  const pollFailureCounts = new Map<number, number>();
+
   const tick = () => {
-    void runQuoteRequestReconcile(deps).catch((error) => {
+    void runQuoteRequestReconcile(deps, pollFailureCounts).catch((error) => {
       console.error(
         JSON.stringify({
           event: "quotewish.reconcile.error",
@@ -71,14 +79,17 @@ export function startQuoteRequestReconcileLoop(
   return () => clearInterval(timer);
 }
 
-export async function runQuoteRequestReconcile(deps: QuoteRequestReconcilerDeps): Promise<void> {
+export async function runQuoteRequestReconcile(
+  deps: QuoteRequestReconcilerDeps,
+  pollFailureCounts: Map<number, number> = new Map(),
+): Promise<void> {
   const store = new QuoteRequestStore(deps.config.botStateDbPath);
   let index: SubtitleIndex | null = null;
 
   try {
     await replayDeferredAcquisitions(deps, store);
-    await pollRadarrAcquisitions(deps, store);
-    await pollSonarrAcquisitions(deps, store);
+    await pollRadarrAcquisitions(deps, store, pollFailureCounts);
+    await pollSonarrAcquisitions(deps, store, pollFailureCounts);
 
     const pending = store.listPending();
     if (pending.length === 0) {
@@ -311,6 +322,7 @@ function truncate(value: string, max: number): string {
 async function pollRadarrAcquisitions(
   deps: QuoteRequestReconcilerDeps,
   store: QuoteRequestStore,
+  pollFailureCounts: Map<number, number> = new Map(),
 ): Promise<void> {
   if (!deps.config.radarrUrl || !deps.config.radarrApiKey) {
     return;
@@ -335,6 +347,7 @@ async function pollRadarrAcquisitions(
     if (row.acquisitionExternalId === null) continue;
     try {
       const movie = await client.getMovie(row.acquisitionExternalId);
+      pollFailureCounts.delete(row.id);
       const previous = row.acquisitionStatus;
 
       if (movie.hasFile) {
@@ -406,6 +419,7 @@ async function pollRadarrAcquisitions(
             failedAt: new Date().toISOString(),
           }),
         });
+        pollFailureCounts.delete(row.id);
         console.warn(
           JSON.stringify({
             event: "quote_request.radarr.gone",
@@ -415,15 +429,42 @@ async function pollRadarrAcquisitions(
         );
         continue;
       }
+
+      const failCount = (pollFailureCounts.get(row.id) ?? 0) + 1;
+      pollFailureCounts.set(row.id, failCount);
+
       console.error(
         JSON.stringify({
           event: "quote_request.radarr.poll_error",
           requestId: row.id,
           radarrMovieId: row.acquisitionExternalId,
+          consecutiveFailures: failCount,
           status,
           error: error instanceof Error ? error.message : "unknown error",
         }),
       );
+
+      if (failCount >= MAX_POLL_FAILURES) {
+        store.setAcquisitionStatus({
+          id: row.id,
+          status: "failed",
+          metadata: JSON.stringify({
+            ...safeJson(row.acquisitionMetadata),
+            failureReason: "radarr_unreachable",
+            consecutiveFailures: failCount,
+            failedAt: new Date().toISOString(),
+          }),
+        });
+        pollFailureCounts.delete(row.id);
+        console.warn(
+          JSON.stringify({
+            event: "quote_request.radarr.poll_abandoned",
+            requestId: row.id,
+            radarrMovieId: row.acquisitionExternalId,
+            consecutiveFailures: failCount,
+          }),
+        );
+      }
     }
   }
 
@@ -459,6 +500,7 @@ function safeJson(raw: string | null): Record<string, unknown> {
 async function pollSonarrAcquisitions(
   deps: QuoteRequestReconcilerDeps,
   store: QuoteRequestStore,
+  pollFailureCounts: Map<number, number> = new Map(),
 ): Promise<void> {
   if (!deps.config.sonarrUrl || !deps.config.sonarrApiKey) {
     return;
@@ -483,6 +525,7 @@ async function pollSonarrAcquisitions(
     if (row.acquisitionExternalId === null) continue;
     try {
       const episode = await client.getEpisode(row.acquisitionExternalId);
+      pollFailureCounts.delete(row.id);
       const previous = row.acquisitionStatus;
 
       if (episode.hasFile) {
@@ -528,6 +571,7 @@ async function pollSonarrAcquisitions(
             failedAt: new Date().toISOString(),
           }),
         });
+        pollFailureCounts.delete(row.id);
         console.warn(
           JSON.stringify({
             event: "quote_request.sonarr.gone",
@@ -537,15 +581,42 @@ async function pollSonarrAcquisitions(
         );
         continue;
       }
+
+      const failCount = (pollFailureCounts.get(row.id) ?? 0) + 1;
+      pollFailureCounts.set(row.id, failCount);
+
       console.error(
         JSON.stringify({
           event: "quote_request.sonarr.poll_error",
           requestId: row.id,
           sonarrEpisodeId: row.acquisitionExternalId,
+          consecutiveFailures: failCount,
           status,
           error: error instanceof Error ? error.message : "unknown error",
         }),
       );
+
+      if (failCount >= MAX_POLL_FAILURES) {
+        store.setAcquisitionStatus({
+          id: row.id,
+          status: "failed",
+          metadata: JSON.stringify({
+            ...safeJson(row.acquisitionMetadata),
+            failureReason: "sonarr_unreachable",
+            consecutiveFailures: failCount,
+            failedAt: new Date().toISOString(),
+          }),
+        });
+        pollFailureCounts.delete(row.id);
+        console.warn(
+          JSON.stringify({
+            event: "quote_request.sonarr.poll_abandoned",
+            requestId: row.id,
+            sonarrEpisodeId: row.acquisitionExternalId,
+            consecutiveFailures: failCount,
+          }),
+        );
+      }
     }
   }
 
