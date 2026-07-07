@@ -31,6 +31,11 @@ describe("shapeQuoteAutocompleteQuery", () => {
     expect(shapeQuoteAutocompleteQuery(long)).toBe("that baby fla");
   });
 
+  test("does not drop a short final token that is only a suffix of the last shaped word", () => {
+    const long = "alpha bravo charlie delta bathe he";
+    expect(shapeQuoteAutocompleteQuery(long)).toBe("alpha bravo charlie delta bathe he");
+  });
+
   test("keeps the last five distinctive tokens when many are present", () => {
     const long = "remember remember the fifth of november gunpowder treason and plot";
     expect(shapeQuoteAutocompleteQuery(long)).toBe("fifth november gunpowder treason plot");
@@ -105,6 +110,24 @@ describe("quote match prefix cache", () => {
 
     const filtered = tryQuoteMatchPrefixCache(cacheKey, "flau", "flau", "The Producers");
     expect(filtered?.map((r) => r.text)).toEqual(["If you've got it, flaunt it!"]);
+  });
+
+  test("returns null when shaped search terms change", () => {
+    rememberQuoteMatchSearchCache(
+      cacheKey,
+      "alpha bravo charlie delta echo fla",
+      "alpha bravo charlie delta echo fla",
+      [sampleResult("alpha bravo charlie delta echo flaunt")],
+      "The Producers",
+    );
+    expect(
+      tryQuoteMatchPrefixCache(
+        cacheKey,
+        "alpha bravo charlie delta echo flau",
+        "bravo charlie delta echo flau",
+        "The Producers",
+      ),
+    ).toBeNull();
   });
 
   test("returns null when a new token is added instead of extending the last one", () => {

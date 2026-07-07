@@ -60,7 +60,7 @@ export function shapeQuoteAutocompleteQuery(rawQuery: string): string {
   if (
     activeLastToken.length >= FTS_QUERY_TOKEN_MIN_LENGTH &&
     activeLastToken.length < DISTINCTIVE_TOKEN_MIN_LENGTH &&
-    !shaped.endsWith(activeLastToken) &&
+    !shapedIncludesActiveLastToken(shaped, activeLastToken) &&
     !lastTokenRepeatedEarlier
   ) {
     return `${shaped} ${activeLastToken}`.trim();
@@ -119,7 +119,7 @@ export function rememberQuoteMatchSearchCache(
 export function tryQuoteMatchPrefixCache(
   cacheKey: string,
   rawQuery: string,
-  _searchQuery: string,
+  searchQuery: string,
   seriesFilter?: string,
 ): QuoteSearchResult[] | null {
   const cached = quoteMatchSearchCache.get(cacheKey);
@@ -129,15 +129,27 @@ export function tryQuoteMatchPrefixCache(
   const activeSeries = seriesFilter?.toLowerCase() ?? "";
   if (cachedSeries !== activeSeries) return null;
 
-  // Only reuse cached rows while refining the final token. Adding a new token
-  // or changing series scope needs a fresh FTS pass (top-24 cap is not safe).
+  // Only reuse cached rows while refining the final token on both raw and
+  // shaped queries. A growing final token can shift the shaped window; if
+  // the FTS terms changed, re-query instead of filtering stale top-24 rows.
   if (!isLastTokenPrefixExtension(cached.rawQuery, rawQuery)) {
     return null;
   }
+  if (!isLastTokenPrefixExtension(cached.searchQuery, searchQuery)) {
+    return null;
+  }
 
-  const filterTokens = extractQueryTokens(rawQuery);
+  const filterTokens = extractQueryTokens(searchQuery);
   const filtered = cached.results.filter((result) => cueTextMatchesQueryTokens(result.text, filterTokens));
   return filtered.length > 0 ? filtered : null;
+}
+
+/** True when the shaped query's final token already covers `activeLastToken`. */
+export function shapedIncludesActiveLastToken(shaped: string, activeLastToken: string): boolean {
+  const shapedTokens = tokenizeQuote(shaped);
+  const lastShaped = shapedTokens[shapedTokens.length - 1] ?? "";
+  if (lastShaped === activeLastToken) return true;
+  return lastShaped.startsWith(activeLastToken) && lastShaped.length > activeLastToken.length;
 }
 
 function tokenizeQuote(quote: string): string[] {

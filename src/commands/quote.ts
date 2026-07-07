@@ -228,6 +228,8 @@ async function handleQuoteAutocompleteOnce(
   // 17.7M-cue global catalogue is too noisy for shorter prefixes).
   const minQueryLength = seriesFilter ? 1 : 3;
   if (query.length < minQueryLength) {
+    // Abort any in-flight debounced handler still waiting on a longer value.
+    quoteMatchAutocompleteGuard.beginCancellable(QUOTE_MATCH_AUTOCOMPLETE_KEY(interaction));
     await safeAutocompleteRespond(interaction, [], { query, resultCount: 0 });
     return;
   }
