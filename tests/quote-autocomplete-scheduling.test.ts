@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { runDeferredSyncWithTimeout, yieldToEventLoop } from "../src/autocomplete.ts";
+import { runDeferredSyncWithTimeout, waitDebounced, yieldToEventLoop } from "../src/autocomplete.ts";
+import { AutocompleteSessionGuard } from "../src/autocomplete-guard.ts";
 
 describe("yieldToEventLoop", () => {
   test("defers work to a later turn", async () => {
@@ -58,5 +59,29 @@ describe("runDeferredSyncWithTimeout", () => {
 
     expect(value).toBe("ok");
     expect(turn).toBe(2);
+  });
+});
+
+describe("waitDebounced", () => {
+  test("resolves after the debounce interval", async () => {
+    const controller = new AbortController();
+    const started = Date.now();
+    await waitDebounced(50, controller.signal);
+    expect(Date.now() - started).toBeGreaterThanOrEqual(45);
+  });
+
+  test("rejects when aborted before the debounce interval elapses", async () => {
+    const controller = new AbortController();
+    const pending = waitDebounced(200, controller.signal);
+    setTimeout(() => controller.abort(), 20);
+    await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+  });
+
+  test("aborts debounce wait when AutocompleteSessionGuard supersedes a keystroke", async () => {
+    const guard = new AutocompleteSessionGuard();
+    const first = guard.beginCancellable("user:quote:match");
+    const pending = waitDebounced(200, first.signal);
+    guard.beginCancellable("user:quote:match");
+    await expect(pending).rejects.toMatchObject({ name: "AbortError" });
   });
 });
