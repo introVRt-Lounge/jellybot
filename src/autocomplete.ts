@@ -75,6 +75,14 @@ export function autocompleteInteractionAgeMs(interaction: { createdTimestamp: nu
   return Date.now() - interaction.createdTimestamp;
 }
 
+export function remainingAutocompleteBudgetMs(
+  interaction: { createdTimestamp: number },
+  maxAgeMs: number,
+  floorMs = 50,
+): number {
+  return Math.max(floorMs, maxAgeMs - autocompleteInteractionAgeMs(interaction));
+}
+
 export function isAutocompleteInteractionExpired(
   interaction: { createdTimestamp: number },
   maxAgeMs = DISCORD_AUTOCOMPLETE_RESPONSE_DEADLINE_MS,

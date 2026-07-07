@@ -72,7 +72,7 @@ export function shapeQuoteAutocompleteQuery(rawQuery: string): string {
 export function cueTextMatchesQueryTokens(cueText: string, queryTokens: string[]): boolean {
   if (queryTokens.length === 0) return true;
 
-  const cueTokens = tokenizeQuote(cueText);
+  const cueTokens = expandCueTokensForFtsMatch(cueText);
   for (let index = 0; index < queryTokens.length; index += 1) {
     const queryToken = queryTokens[index]!;
     const isLastToken = index === queryTokens.length - 1;
@@ -144,12 +144,21 @@ export function tryQuoteMatchPrefixCache(
   return filtered.length > 0 ? filtered : null;
 }
 
-/** True when the shaped query's final token already covers `activeLastToken`. */
+/** True when the shaped query's final token exactly equals `activeLastToken`. */
 export function shapedIncludesActiveLastToken(shaped: string, activeLastToken: string): boolean {
   const shapedTokens = tokenizeQuote(shaped);
   const lastShaped = shapedTokens[shapedTokens.length - 1] ?? "";
-  if (lastShaped === activeLastToken) return true;
-  return lastShaped.startsWith(activeLastToken) && lastShaped.length > activeLastToken.length;
+  return lastShaped === activeLastToken;
+}
+
+/** Mirror subtitle FTS hyphen augmentation when filtering cached prefix hits. */
+function expandCueTokensForFtsMatch(cueText: string): string[] {
+  const tokens = new Set(tokenizeQuote(cueText));
+  const hyphenatedWords = cueText.toLowerCase().match(/[\p{L}\p{N}]+(?:-[\p{L}\p{N}]+)+/gu) ?? [];
+  for (const word of hyphenatedWords) {
+    tokens.add(word.replace(/-/g, ""));
+  }
+  return [...tokens];
 }
 
 function tokenizeQuote(quote: string): string[] {

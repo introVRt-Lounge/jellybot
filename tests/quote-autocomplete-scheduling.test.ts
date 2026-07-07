@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { runDeferredSyncWithTimeout, waitDebounced, yieldToEventLoop } from "../src/autocomplete.ts";
+import {
+  runDeferredSyncWithTimeout,
+  waitDebounced,
+  yieldToEventLoop,
+  remainingAutocompleteBudgetMs,
+} from "../src/autocomplete.ts";
 import { AutocompleteSessionGuard } from "../src/autocomplete-guard.ts";
 
 describe("yieldToEventLoop", () => {
@@ -59,6 +64,18 @@ describe("runDeferredSyncWithTimeout", () => {
 
     expect(value).toBe("ok");
     expect(turn).toBe(2);
+  });
+});
+
+describe("remainingAutocompleteBudgetMs", () => {
+  test("subtracts elapsed interaction age from the max budget", () => {
+    const interaction = { createdTimestamp: Date.now() - 700 };
+    expect(remainingAutocompleteBudgetMs(interaction, 2500)).toBe(1800);
+  });
+
+  test("never returns less than the floor", () => {
+    const interaction = { createdTimestamp: Date.now() - 3000 };
+    expect(remainingAutocompleteBudgetMs(interaction, 2500)).toBe(50);
   });
 });
 

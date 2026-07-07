@@ -5,7 +5,14 @@ import {
   type ApplicationCommandOptionChoiceData,
 } from "discord.js";
 import type { AppConfig } from "../config.ts";
-import { runDeferredSyncWithTimeout, waitDebounced, yieldToEventLoop, autocompleteInteractionAgeMs, isAutocompleteInteractionExpired } from "../autocomplete.ts";
+import {
+  runDeferredSyncWithTimeout,
+  waitDebounced,
+  yieldToEventLoop,
+  autocompleteInteractionAgeMs,
+  isAutocompleteInteractionExpired,
+  remainingAutocompleteBudgetMs,
+} from "../autocomplete.ts";
 import { AutocompleteSessionGuard, isBenignAutocompleteError } from "../autocomplete-guard.ts";
 import { beginEphemeralClipPreview, deliverClipPreview } from "../clip-preview/pipeline.ts";
 import type { JellyfinClient } from "../jellyfin.ts";
@@ -265,9 +272,13 @@ async function handleQuoteAutocompleteOnce(
     let usedPrefixCache = results !== null;
 
     if (!results) {
+      const ftsBudgetMs = remainingAutocompleteBudgetMs(
+        interaction,
+        QUOTE_MATCH_AUTOCOMPLETE_MAX_TOKEN_AGE_MS,
+      );
       results = await runDeferredSyncWithTimeout(
         () => index.searchQuotes(searchQuery, 24, seriesFilter),
-        QUOTE_AUTOCOMPLETE_TIMEOUT_MS,
+        ftsBudgetMs,
         signal,
       );
       rememberQuoteMatchSearchCache(cacheKey, query, searchQuery, results, seriesFilter);

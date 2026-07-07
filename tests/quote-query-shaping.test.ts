@@ -36,6 +36,11 @@ describe("shapeQuoteAutocompleteQuery", () => {
     expect(shapeQuoteAutocompleteQuery(long)).toBe("alpha bravo charlie delta bathe he");
   });
 
+  test("keeps a short final token that only prefixes the last shaped word", () => {
+    const long = "alpha bravo charlie delta echo foxtrot heart he";
+    expect(shapeQuoteAutocompleteQuery(long)).toBe("charlie delta echo foxtrot heart he");
+  });
+
   test("keeps the last five distinctive tokens when many are present", () => {
     const long = "remember remember the fifth of november gunpowder treason and plot";
     expect(shapeQuoteAutocompleteQuery(long)).toBe("fifth november gunpowder treason plot");
@@ -75,6 +80,11 @@ describe("cueTextMatchesQueryTokens", () => {
   test("allows prefix match on the final token only", () => {
     expect(cueTextMatchesQueryTokens("If you've got it, flaunt it!", ["flaunt", "baby"])).toBe(false);
     expect(cueTextMatchesQueryTokens("that's it baby, flaunt it!", ["baby", "fla"])).toBe(true);
+  });
+
+  test("matches hyphenated cues via de-hyphenated compound tokens", () => {
+    expect(cueTextMatchesQueryTokens("No! It was heart-warming.", ["heartwarm"])).toBe(true);
+    expect(cueTextMatchesQueryTokens("No! It was heart-warming.", ["heart", "warm"])).toBe(true);
   });
 });
 
@@ -161,5 +171,18 @@ describe("quote match prefix cache", () => {
       "The Producers",
     );
     expect(tryQuoteMatchPrefixCache(cacheKey, "flauntx", "flauntx", "The Producers")).toBeNull();
+  });
+
+  test("reuses cached hyphenated cues when the query extends a de-hyphenated prefix", () => {
+    rememberQuoteMatchSearchCache(
+      cacheKey,
+      "heartwarm",
+      "heartwarm",
+      [sampleResult("No! It was heart-warming.")],
+      "The Producers",
+    );
+
+    const filtered = tryQuoteMatchPrefixCache(cacheKey, "heartwarmin", "heartwarmin", "The Producers");
+    expect(filtered?.map((r) => r.text)).toEqual(["No! It was heart-warming."]);
   });
 });
