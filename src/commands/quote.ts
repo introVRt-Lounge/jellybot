@@ -33,6 +33,10 @@ const quoteMatchAutocompleteGuard = new AutocompleteSessionGuard();
 const quoteSeriesAutocompleteGuard = new AutocompleteSessionGuard();
 const QUOTE_MATCH_AUTOCOMPLETE_KEY = (interaction: AutocompleteInteraction) =>
   `${interaction.user.id}:${interaction.guildId ?? "dm"}:quote:match`;
+const QUOTE_MATCH_AUTOCOMPLETE_CACHE_KEY = (
+  interaction: AutocompleteInteraction,
+  seriesFilter?: string,
+) => `${QUOTE_MATCH_AUTOCOMPLETE_KEY(interaction)}:${seriesFilter?.toLowerCase() ?? ""}`;
 const QUOTE_SERIES_AUTOCOMPLETE_KEY = (interaction: AutocompleteInteraction) =>
   `${interaction.user.id}:${interaction.guildId ?? "dm"}:quote:series`;
 const QUOTE_AUTOCOMPLETE_TIMEOUT_MS = 2500;
@@ -229,8 +233,10 @@ async function handleQuoteAutocompleteOnce(
   }
 
   try {
-    const cacheKey = QUOTE_MATCH_AUTOCOMPLETE_KEY(interaction);
-    const { isCurrent, signal } = quoteMatchAutocompleteGuard.beginCancellable(cacheKey);
+    const cacheKey = QUOTE_MATCH_AUTOCOMPLETE_CACHE_KEY(interaction, seriesFilter);
+    const { isCurrent, signal } = quoteMatchAutocompleteGuard.beginCancellable(
+      QUOTE_MATCH_AUTOCOMPLETE_KEY(interaction),
+    );
 
     await yieldToEventLoop();
     if (await dropStaleQuoteAutocomplete(interaction, isCurrent, query)) {
@@ -253,7 +259,7 @@ async function handleQuoteAutocompleteOnce(
     const searchQuery = shapeQuoteAutocompleteQuery(query);
     const index = getSubtitleSearchIndex(config.subtitleDbPath);
 
-    let results = tryQuoteMatchPrefixCache(cacheKey, query, searchQuery);
+    let results = tryQuoteMatchPrefixCache(cacheKey, query, searchQuery, seriesFilter);
     let usedPrefixCache = results !== null;
 
     if (!results) {
@@ -262,7 +268,7 @@ async function handleQuoteAutocompleteOnce(
         QUOTE_AUTOCOMPLETE_TIMEOUT_MS,
         signal,
       );
-      rememberQuoteMatchSearchCache(cacheKey, query, searchQuery, results);
+      rememberQuoteMatchSearchCache(cacheKey, query, searchQuery, results, seriesFilter);
     }
 
     const choices: ApplicationCommandOptionChoiceData[] = quoteSearchChoices(results);

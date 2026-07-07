@@ -5,6 +5,7 @@ import {
   cueTextMatchesQueryTokens,
   extractDistinctiveTokens,
   extractQueryTokens,
+  isLastTokenPrefixExtension,
   rememberQuoteMatchSearchCache,
   shapeQuoteAutocompleteQuery,
   tryQuoteMatchPrefixCache,
@@ -23,6 +24,11 @@ describe("shapeQuoteAutocompleteQuery", () => {
     const long =
       "that's it baby, if you've got it, flaunt it!";
     expect(shapeQuoteAutocompleteQuery(long)).toBe("that baby flaunt");
+  });
+
+  test("preserves an in-progress short final token while shaping long quotes", () => {
+    const long = "that's it baby if you've got it fla";
+    expect(shapeQuoteAutocompleteQuery(long)).toBe("that baby fla");
   });
 
   test("keeps the last five distinctive tokens when many are present", () => {
@@ -47,15 +53,28 @@ describe("extractQueryTokens", () => {
   });
 });
 
+describe("isLastTokenPrefixExtension", () => {
+  test("detects when only the final token grew", () => {
+    expect(isLastTokenPrefixExtension("flaunt", "flaun")).toBe(false);
+    expect(isLastTokenPrefixExtension("fla", "flau")).toBe(true);
+    expect(isLastTokenPrefixExtension("flaunt", "flaunt it")).toBe(false);
+  });
+});
+
 describe("cueTextMatchesQueryTokens", () => {
-  test("requires every token to appear in cue text", () => {
+  test("requires whole-token matches, not substring hits inside other words", () => {
+    expect(cueTextMatchesQueryTokens("the cat sat", ["the", "he"])).toBe(false);
+    expect(cueTextMatchesQueryTokens("the help desk", ["the", "he"])).toBe(true);
+  });
+
+  test("allows prefix match on the final token only", () => {
     expect(cueTextMatchesQueryTokens("If you've got it, flaunt it!", ["flaunt", "baby"])).toBe(false);
-    expect(cueTextMatchesQueryTokens("that's it baby, flaunt it!", ["baby", "flaunt"])).toBe(true);
+    expect(cueTextMatchesQueryTokens("that's it baby, flaunt it!", ["baby", "fla"])).toBe(true);
   });
 });
 
 describe("quote match prefix cache", () => {
-  const cacheKey = "user:guild:quote:match";
+  const cacheKey = "user:guild:quote:match:the producers";
 
   const sampleResult = (text: string): QuoteSearchResult => ({
     itemId: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
@@ -72,21 +91,52 @@ describe("quote match prefix cache", () => {
   });
 
   test("returns null when cache is empty", () => {
-    expect(tryQuoteMatchPrefixCache(cacheKey, "flaunt", "flaunt")).toBeNull();
+    expect(tryQuoteMatchPrefixCache(cacheKey, "flaunt", "flaunt", "The Producers")).toBeNull();
   });
 
-  test("filters cached results when raw query extends previous prefix", () => {
-    rememberQuoteMatchSearchCache(cacheKey, "flaunt", "flaunt", [
-      sampleResult("If you've got it, flaunt it!"),
-      sampleResult("Something else entirely"),
-    ]);
+  test("filters cached results when the final token is extended", () => {
+    rememberQuoteMatchSearchCache(
+      cacheKey,
+      "fla",
+      "fla",
+      [sampleResult("If you've got it, flaunt it!"), sampleResult("Something else entirely")],
+      "The Producers",
+    );
 
-    const filtered = tryQuoteMatchPrefixCache(cacheKey, "flaunt it", "flaunt it");
+    const filtered = tryQuoteMatchPrefixCache(cacheKey, "flau", "flau", "The Producers");
     expect(filtered?.map((r) => r.text)).toEqual(["If you've got it, flaunt it!"]);
   });
 
+  test("returns null when a new token is added instead of extending the last one", () => {
+    rememberQuoteMatchSearchCache(
+      cacheKey,
+      "flaunt",
+      "flaunt",
+      [sampleResult("If you've got it, flaunt it!")],
+      "The Producers",
+    );
+    expect(tryQuoteMatchPrefixCache(cacheKey, "flaunt it", "flaunt it", "The Producers")).toBeNull();
+  });
+
+  test("returns null when the series scope changes", () => {
+    rememberQuoteMatchSearchCache(
+      cacheKey,
+      "fla",
+      "fla",
+      [sampleResult("If you've got it, flaunt it!")],
+      "The Producers",
+    );
+    expect(tryQuoteMatchPrefixCache(cacheKey, "flau", "flau", "Other Show")).toBeNull();
+  });
+
   test("returns null when extension does not match any cached cue", () => {
-    rememberQuoteMatchSearchCache(cacheKey, "flaunt", "flaunt", [sampleResult("If you've got it, flaunt it!")]);
-    expect(tryQuoteMatchPrefixCache(cacheKey, "flaunt baby", "flaunt baby")).toBeNull();
+    rememberQuoteMatchSearchCache(
+      cacheKey,
+      "flaunt",
+      "flaunt",
+      [sampleResult("If you've got it, flaunt it!")],
+      "The Producers",
+    );
+    expect(tryQuoteMatchPrefixCache(cacheKey, "flauntx", "flauntx", "The Producers")).toBeNull();
   });
 });
