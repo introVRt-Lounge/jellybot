@@ -1,4 +1,8 @@
 import type { QuoteSearchResult, SubtitleIndex } from "../subtitles/index-db.ts";
+import {
+  DISTINCTIVE_TOKEN_MIN_LENGTH,
+  extractDistinctiveTokens,
+} from "../subtitles/quote-query-shaping.ts";
 
 export type QuoteRequestMatch = {
   candidate: QuoteSearchResult;
@@ -10,7 +14,6 @@ export type QuoteRequestMatch = {
 const DEFAULT_TITLE_THRESHOLD = 0.55;
 const STRONG_TITLE_THRESHOLD = 0.8;
 const RELAXED_MIN_DISTINCTIVE_TOKENS = 2;
-const DISTINCTIVE_TOKEN_MIN_LENGTH = 4;
 // Anchor-fallback tier (#137): the first N distinctive tokens of a long
 // quote are AND'd to find the cue where the dialogue starts. The clip
 // renders from that cue's timestamp, so users can submit verbose monologue
@@ -94,14 +97,6 @@ export function findQuoteRequestMatch(
   }
 
   return best;
-}
-
-function extractDistinctiveTokens(quote: string): string[] {
-  return quote
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}\s]+/gu, " ")
-    .split(/\s+/)
-    .filter((token) => token.length >= DISTINCTIVE_TOKEN_MIN_LENGTH);
 }
 
 function isBetter(

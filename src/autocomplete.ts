@@ -68,6 +68,61 @@ export function yieldToEventLoop(): Promise<void> {
   return new Promise((resolve) => setImmediate(resolve));
 }
 
+/** Discord autocomplete interactions expire ~3s after receipt; leave headroom for FTS. */
+export const DISCORD_AUTOCOMPLETE_RESPONSE_DEADLINE_MS = 2500;
+
+export function autocompleteInteractionAgeMs(interaction: { createdTimestamp: number }): number {
+  return Date.now() - interaction.createdTimestamp;
+}
+
+export function remainingAutocompleteBudgetMs(
+  interaction: { createdTimestamp: number },
+  maxAgeMs: number,
+  floorMs = 50,
+): number {
+  return Math.max(floorMs, maxAgeMs - autocompleteInteractionAgeMs(interaction));
+}
+
+export function isAutocompleteInteractionExpired(
+  interaction: { createdTimestamp: number },
+  maxAgeMs = DISCORD_AUTOCOMPLETE_RESPONSE_DEADLINE_MS,
+): boolean {
+  return autocompleteInteractionAgeMs(interaction) > maxAgeMs;
+}
+
+/**
+ * Waits `debounceMs` unless `signal` aborts first (new keystroke superseded this token).
+ * Pair with AutocompleteSessionGuard.beginCancellable so overlapping tokens cancel the wait.
+ */
+export function waitDebounced(debounceMs: number, signal: AbortSignal): Promise<void> {
+  if (signal.aborted) {
+    throw signal.reason ?? new DOMException("The operation was aborted.", "AbortError");
+  }
+
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      cleanup();
+      if (signal.aborted) {
+        reject(signal.reason ?? new DOMException("The operation was aborted.", "AbortError"));
+        return;
+      }
+      resolve();
+    }, debounceMs);
+
+    const onAbort = () => {
+      cleanup();
+      reject(signal.reason ?? new DOMException("The operation was aborted.", "AbortError"));
+    };
+
+    const cleanup = () => {
+      clearTimeout(timer);
+      signal.removeEventListener("abort", onAbort);
+    };
+
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
 /**
  * Run synchronous work on a later turn so callers can interleave and
  * `withTimeout` can fire while earlier handlers yield. The work function

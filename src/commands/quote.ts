@@ -5,13 +5,25 @@ import {
   type ApplicationCommandOptionChoiceData,
 } from "discord.js";
 import type { AppConfig } from "../config.ts";
-import { runDeferredSyncWithTimeout, yieldToEventLoop } from "../autocomplete.ts";
+import {
+  runDeferredSyncWithTimeout,
+  waitDebounced,
+  yieldToEventLoop,
+  autocompleteInteractionAgeMs,
+  isAutocompleteInteractionExpired,
+  remainingAutocompleteBudgetMs,
+} from "../autocomplete.ts";
 import { AutocompleteSessionGuard, isBenignAutocompleteError } from "../autocomplete-guard.ts";
 import { beginEphemeralClipPreview, deliverClipPreview } from "../clip-preview/pipeline.ts";
 import type { JellyfinClient } from "../jellyfin.ts";
 import { planQuoteClip } from "../services/quote-request.ts";
 import { parseQuoteMatchToken } from "../subtitles/match-token.ts";
 import { openSubtitleIndex } from "../subtitles/index-db.ts";
+import {
+  rememberQuoteMatchSearchCache,
+  shapeQuoteAutocompleteQuery,
+  tryQuoteMatchPrefixCache,
+} from "../subtitles/quote-query-shaping.ts";
 import { quoteSearchChoices } from "../subtitles/quote-autocomplete.ts";
 import { getSubtitleSearchIndex } from "../subtitles/search-index.ts";
 import { formatTimestamp } from "../time.ts";
@@ -28,9 +40,15 @@ const quoteMatchAutocompleteGuard = new AutocompleteSessionGuard();
 const quoteSeriesAutocompleteGuard = new AutocompleteSessionGuard();
 const QUOTE_MATCH_AUTOCOMPLETE_KEY = (interaction: AutocompleteInteraction) =>
   `${interaction.user.id}:${interaction.guildId ?? "dm"}:quote:match`;
+const QUOTE_MATCH_AUTOCOMPLETE_CACHE_KEY = (
+  interaction: AutocompleteInteraction,
+  seriesFilter?: string,
+) => `${QUOTE_MATCH_AUTOCOMPLETE_KEY(interaction)}:${seriesFilter?.toLowerCase() ?? ""}`;
 const QUOTE_SERIES_AUTOCOMPLETE_KEY = (interaction: AutocompleteInteraction) =>
   `${interaction.user.id}:${interaction.guildId ?? "dm"}:quote:series`;
 const QUOTE_AUTOCOMPLETE_TIMEOUT_MS = 2500;
+const QUOTE_MATCH_AUTOCOMPLETE_DEBOUNCE_MS = 200;
+const QUOTE_MATCH_AUTOCOMPLETE_MAX_TOKEN_AGE_MS = 2500;
 const QUOTE_SERIES_AUTOCOMPLETE_LIMIT = 25;
 
 export const quoteCommand = new SlashCommandBuilder()
@@ -117,11 +135,28 @@ async function dropStaleQuoteAutocomplete(
   isCurrent: () => boolean,
   query: string,
 ): Promise<boolean> {
-  if (isCurrent() || interaction.responded) {
-    return false;
+  if (interaction.responded) {
+    return true;
   }
-  await safeAutocompleteRespond(interaction, [], { query, resultCount: 0 });
-  return true;
+
+  if (!isCurrent()) {
+    await safeAutocompleteRespond(interaction, [], { query, resultCount: 0 });
+    return true;
+  }
+
+  if (isAutocompleteInteractionExpired(interaction, QUOTE_MATCH_AUTOCOMPLETE_MAX_TOKEN_AGE_MS)) {
+    console.info(
+      JSON.stringify({
+        event: "quote.autocomplete.respond_skip",
+        reason: "token_expired",
+        query,
+        ageMs: autocompleteInteractionAgeMs(interaction),
+      }),
+    );
+    return true;
+  }
+
+  return false;
 }
 
 async function finishQuoteAutocomplete(
@@ -200,11 +235,14 @@ async function handleQuoteAutocompleteOnce(
   // 17.7M-cue global catalogue is too noisy for shorter prefixes).
   const minQueryLength = seriesFilter ? 1 : 3;
   if (query.length < minQueryLength) {
+    // Abort any in-flight debounced handler still waiting on a longer value.
+    quoteMatchAutocompleteGuard.beginCancellable(QUOTE_MATCH_AUTOCOMPLETE_KEY(interaction));
     await safeAutocompleteRespond(interaction, [], { query, resultCount: 0 });
     return;
   }
 
   try {
+    const cacheKey = QUOTE_MATCH_AUTOCOMPLETE_CACHE_KEY(interaction, seriesFilter);
     const { isCurrent, signal } = quoteMatchAutocompleteGuard.beginCancellable(
       QUOTE_MATCH_AUTOCOMPLETE_KEY(interaction),
     );
@@ -214,12 +252,38 @@ async function handleQuoteAutocompleteOnce(
       return;
     }
 
+    try {
+      await waitDebounced(QUOTE_MATCH_AUTOCOMPLETE_DEBOUNCE_MS, signal);
+    } catch (error) {
+      if (isBenignAutocompleteError(error)) {
+        return;
+      }
+      throw error;
+    }
+
+    if (await dropStaleQuoteAutocomplete(interaction, isCurrent, query)) {
+      return;
+    }
+
+    const searchQuery = shapeQuoteAutocompleteQuery(query);
     const index = getSubtitleSearchIndex(config.subtitleDbPath);
-    const results = await runDeferredSyncWithTimeout(
-      () => index.searchQuotes(query, 24, seriesFilter),
-      QUOTE_AUTOCOMPLETE_TIMEOUT_MS,
-      signal,
-    );
+
+    let results = tryQuoteMatchPrefixCache(cacheKey, query, searchQuery, seriesFilter);
+    let usedPrefixCache = results !== null;
+
+    if (!results) {
+      const ftsBudgetMs = remainingAutocompleteBudgetMs(
+        interaction,
+        QUOTE_MATCH_AUTOCOMPLETE_MAX_TOKEN_AGE_MS,
+      );
+      results = await runDeferredSyncWithTimeout(
+        () => index.searchQuotes(searchQuery, 24, seriesFilter),
+        ftsBudgetMs,
+        signal,
+      );
+      rememberQuoteMatchSearchCache(cacheKey, query, searchQuery, results, seriesFilter);
+    }
+
     const choices: ApplicationCommandOptionChoiceData[] = quoteSearchChoices(results);
     choices.push({
       name: QUOTE_REQUEST_AUTOCOMPLETE_LABEL,
@@ -231,6 +295,8 @@ async function handleQuoteAutocompleteOnce(
         event: "quote.autocomplete",
         interactionId: interaction.id,
         query,
+        searchQuery,
+        usedPrefixCache,
         seriesFilter: seriesFilter ?? null,
         minQueryLength,
         resultCount: choices.length,
