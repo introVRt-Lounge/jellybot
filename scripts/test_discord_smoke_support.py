@@ -12,7 +12,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from discord_smoke_support import (
     assess_quote_autocomplete_logs,
+    assess_quote_debounce_supersede_logs,
+    assess_quote_min_length_cancel_logs,
     assess_quote_series_autocomplete_logs,
+    assess_quote_shaping_logs,
     parse_json_log_events,
 )
 
@@ -92,6 +95,123 @@ class QuoteAutocompleteLogAssessmentTests(unittest.TestCase):
         ]
         result = assess_quote_series_autocomplete_logs("444", "Red", events)
         self.assertTrue(result.ok)
+
+    def test_debounce_fails_when_prefix_serves_stale_choices(self) -> None:
+        events = [
+            {"event": "quote.autocomplete", "query": "arrest", "resultCount": 25},
+            {
+                "event": "quote.autocomplete.responded",
+                "query": "arrest",
+                "resultCount": 25,
+                "responded": True,
+            },
+            {"event": "quote.autocomplete", "query": "arrested", "resultCount": 25},
+            {
+                "event": "quote.autocomplete.responded",
+                "query": "arrested",
+                "resultCount": 25,
+                "responded": True,
+            },
+        ]
+        result = assess_quote_debounce_supersede_logs(events, "arrest", "arrested")
+        self.assertFalse(result.ok)
+        self.assertIn("stale", result.detail)
+
+    def test_debounce_passes_when_only_final_serves_choices(self) -> None:
+        events = [
+            {"event": "quote.autocomplete", "query": "arrest", "resultCount": 0},
+            {
+                "event": "quote.autocomplete.responded",
+                "query": "arrest",
+                "resultCount": 0,
+                "responded": True,
+            },
+            {"event": "quote.autocomplete", "query": "arrested", "resultCount": 25},
+            {
+                "event": "quote.autocomplete.responded",
+                "query": "arrested",
+                "resultCount": 25,
+                "responded": True,
+            },
+        ]
+        result = assess_quote_debounce_supersede_logs(events, "arrest", "arrested")
+        self.assertTrue(result.ok)
+
+    def test_debounce_passes_when_prefix_never_logs(self) -> None:
+        # Typical 80ms burst under 100ms debounce: prefix aborted before FTS.
+        events = [
+            {"event": "quote.autocomplete", "query": "arrested", "resultCount": 25},
+            {
+                "event": "quote.autocomplete.responded",
+                "query": "arrested",
+                "resultCount": 25,
+                "responded": True,
+            },
+        ]
+        result = assess_quote_debounce_supersede_logs(events, "arrest", "arrested")
+        self.assertTrue(result.ok)
+
+    def test_shaping_requires_search_query_distinct_from_raw_query(self) -> None:
+        query = "that's it baby if you've got it flaunt it"
+        events = [
+            {
+                "event": "quote.autocomplete",
+                "query": query,
+                "searchQuery": "that baby flaunt",
+                "resultCount": 10,
+            },
+            {
+                "event": "quote.autocomplete.responded",
+                "query": query,
+                "resultCount": 10,
+                "responded": True,
+            },
+        ]
+        result = assess_quote_shaping_logs(events, query)
+        self.assertTrue(result.ok)
+        self.assertIn("that baby flaunt", result.detail)
+
+    def test_min_length_cancel_fails_when_valid_query_still_serves(self) -> None:
+        events = [
+            {"event": "quote.autocomplete", "query": "arrested", "resultCount": 25},
+            {
+                "event": "quote.autocomplete.responded",
+                "query": "arrested",
+                "resultCount": 25,
+                "responded": True,
+            },
+            # Below-min path never emits quote.autocomplete — only responded.
+            {
+                "event": "quote.autocomplete.responded",
+                "query": "ab",
+                "resultCount": 0,
+                "responded": True,
+            },
+        ]
+        result = assess_quote_min_length_cancel_logs(events, "arrested", "ab")
+        self.assertFalse(result.ok)
+        self.assertIn("stale", result.detail)
+
+    def test_min_length_cancel_passes_when_valid_query_does_not_serve(self) -> None:
+        # Production below-min: empty respond only (no quote.autocomplete search line).
+        events = [
+            {
+                "event": "quote.autocomplete.responded",
+                "query": "ab",
+                "resultCount": 0,
+                "responded": True,
+            },
+        ]
+        result = assess_quote_min_length_cancel_logs(events, "arrested", "ab")
+        self.assertTrue(result.ok)
+
+    def test_min_length_cancel_fails_without_below_min_respond(self) -> None:
+        events = [
+            {"event": "quote.autocomplete", "query": "arrested", "resultCount": 0},
+        ]
+        result = assess_quote_min_length_cancel_logs(events, "arrested", "ab")
+        self.assertFalse(result.ok)
+        self.assertIn("missing quote.autocomplete.responded", result.detail)
 
 
 if __name__ == "__main__":
