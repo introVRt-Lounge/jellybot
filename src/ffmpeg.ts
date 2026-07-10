@@ -41,7 +41,7 @@ export type ClipOptions = {
   /** Resolved ffmpeg stream map (e.g. `0:3?` or `0:a:0?`). Overrides audioStreamIndex when set. */
   audioMapSpec?: string;
   subtitlePath?: string;
-  /** PNG overlay (second ffmpeg input); bottom-right with 10px margin. */
+  /** PNG overlay (second ffmpeg input); ~10% width, bottom-right with 10px margin. */
   watermarkPath?: string;
 };
 
@@ -98,13 +98,26 @@ function buildVideoCodecArgs(videoCodec: string): string[] {
   return args;
 }
 
+/** Watermark width as a fraction of the scaled clip width (issue #98 / #177). */
+const WATERMARK_WIDTH_FRACTION = 0.1;
+const WATERMARK_MARGIN_PX = 10;
+
 function buildVideoEncodeArgs(videoCodec: string, maxHeight: number, subtitlePath?: string): string[] {
   return [...buildVideoCodecArgs(videoCodec), "-vf", buildVideoFilter(maxHeight, subtitlePath)];
 }
 
-function buildWatermarkFilterComplex(maxHeight: number, subtitlePath?: string): string {
+/**
+ * Scale the lounge PNG to ~10% of clip width and pin it bottom-right.
+ * Without scale2ref the 516×373 asset covers most of a 480p frame (#177).
+ */
+export function buildWatermarkFilterComplex(maxHeight: number, subtitlePath?: string): string {
   const scale = buildVideoFilter(maxHeight, subtitlePath);
-  return `[0:v]${scale}[base];[base][1:v]overlay=main_w-overlay_w-10:10[outv]`;
+  const margin = WATERMARK_MARGIN_PX;
+  return (
+    `[0:v]${scale}[base];` +
+    `[1:v][base]scale2ref=w=main_w*${WATERMARK_WIDTH_FRACTION}:h=ow/mdar[wm][v];` +
+    `[v][wm]overlay=main_w-overlay_w-${margin}:main_h-overlay_h-${margin}[outv]`
+  );
 }
 
 export function buildClipFfmpegArgs(options: ClipOptions): string[] {
