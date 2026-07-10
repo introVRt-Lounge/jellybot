@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { buildAudioEncodeArgs, buildClipFfmpegArgs, resolveAudioMapSpec } from "../src/ffmpeg.ts";
+import {
+  buildAudioEncodeArgs,
+  buildClipFfmpegArgs,
+  buildWatermarkFilterComplex,
+  resolveAudioMapSpec,
+} from "../src/ffmpeg.ts";
 
 describe("buildAudioEncodeArgs", () => {
   test("downmixes surround to stereo at 48 kHz", () => {
@@ -73,8 +78,19 @@ describe("buildClipFfmpegArgs", () => {
     });
 
     expect(args).toContain("-filter_complex");
-    expect(args.join(" ")).toContain("overlay=main_w-overlay_w-10:10");
+    const filter = args[args.indexOf("-filter_complex") + 1];
+    expect(filter).toContain("scale2ref=w=main_w*0.1:h=ow/mdar");
+    expect(filter).toContain("overlay=main_w-overlay_w-10:main_h-overlay_h-10");
     expect(args).toContain("[outv]");
     expect(args).toContain("/app/assets/introvrt-lounge-discord-watermark-transparent.png");
+  });
+});
+
+describe("buildWatermarkFilterComplex", () => {
+  test("scales watermark to 10% width and pins bottom-right (#177)", () => {
+    const filter = buildWatermarkFilterComplex(480);
+    expect(filter).toContain("scale2ref=w=main_w*0.1:h=ow/mdar");
+    expect(filter).toContain("overlay=main_w-overlay_w-10:main_h-overlay_h-10");
+    expect(filter).not.toContain("overlay=main_w-overlay_w-10:10");
   });
 });
