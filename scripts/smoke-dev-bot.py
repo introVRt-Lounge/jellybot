@@ -190,16 +190,25 @@ async def run_discord_smokes() -> list[str]:
                 fire_at = time.time()
                 quote = await find_slash_command(channel, app_id, "quote")
                 assert isinstance(quote, SlashCommand)
+                # Overlap keystrokes: awaiting each fire_autocomplete waits for the bot
+                # respond, which defeats debounce supersede (prefix already served).
+                fire_tasks: list[asyncio.Task] = []
                 for index, query in enumerate(queries):
-                    interaction = await fire_autocomplete(
-                        client, channel, quote, option_name="match", query=query
+                    fire_tasks.append(
+                        asyncio.create_task(
+                            fire_autocomplete(
+                                client, channel, quote, option_name="match", query=query
+                            )
+                        )
                     )
+                    if index < len(queries) - 1:
+                        await asyncio.sleep(gap_sec)
+                interactions = await asyncio.gather(*fire_tasks)
+                for index, (query, interaction) in enumerate(zip(queries, interactions)):
                     print(
                         f"[smoke] fired /quote match={query!r} burst={index + 1}/{len(queries)} "
                         f"interaction_id={interaction.id} client_ok={interaction.successful!r}"
                     )
-                    if index < len(queries) - 1:
-                        await asyncio.sleep(gap_sec)
 
                 _, events = poll_bot_logs(
                     log_cmd,

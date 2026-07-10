@@ -19,9 +19,9 @@ You should see activity in that channel when extended smoke is on; **required ga
 
 - **`/quote` `match` autocomplete** — log must show `quote.autocomplete` then `quote.autocomplete.responded` with `resultCount > 0`
 - **`/quote` `series` autocomplete** — same for `quote.series_autocomplete`
-- **`/quote` debounce (rapid keystrokes)** — fire prefix then final within ~80ms (`arrest` → `arrested`); final must respond with choices; prefix must **not** serve stale `resultCount > 0`
+- **`/quote` debounce (rapid keystrokes)** — fire prefix then final ~80ms apart **without awaiting the first respond** (`arrest` → `arrested`); final must respond with choices; prefix must **not** serve stale `resultCount > 0`
 - **`/quote` long-query shaping** — long match text must log `searchQuery` ≠ `query` and still respond in time (issue #171 class)
-- **`/quote` min-length cancel** — fire valid query then below-min (`arrested` → `ab`); below-min must log empty `quote.autocomplete.responded` (no FTS `quote.autocomplete`); pending longer query must **not** serve stale `resultCount > 0`
+- **`/quote` min-length cancel** — overlap valid then below-min (`arrested` → `ab`) the same way; below-min must log empty `quote.autocomplete.responded` (no FTS `quote.autocomplete`); pending longer query must **not** serve stale `resultCount > 0`
 
 Fail messages call out **Unknown interaction** explicitly (Discord 3s autocomplete window).
 
