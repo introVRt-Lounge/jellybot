@@ -31,7 +31,10 @@ from discord_smoke_lib import (
 from discord_smoke_support import (
     assess_field_autocomplete_logs,
     assess_quote_autocomplete_logs,
+    assess_quote_debounce_supersede_logs,
+    assess_quote_min_length_cancel_logs,
     assess_quote_series_autocomplete_logs,
+    assess_quote_shaping_logs,
     assert_health_responsive,
     bot_log_line_count,
     fetch_bot_logs_tail,
@@ -148,6 +151,141 @@ async def run_discord_smokes() -> list[str]:
             await autocomplete_quote("match", quote_query, assess_quote_autocomplete_logs)
         except Exception as exc:  # noqa: BLE001
             await check("quote.match_autocomplete", False, f"{type(exc).__name__}: {exc}")
+
+        long_quote_query = env(
+            "JELLYBOT_SMOKE_LONG_QUOTE_QUERY",
+            "that's it baby if you've got it flaunt it",
+        )
+        # Debounce/min-length supersede needs overlapping autocomplete HTTP posts.
+        # discord.py-self's _wrapped_interaction awaits the full round-trip and
+        # effectively serializes fires (~300ms+ between interaction snowflakes),
+        # so prefix always completes before the next keystroke. Keep those gates
+        # opt-in; unit tests cover the assessors + TS covers debounce behavior.
+        debounce_live = env("JELLYBOT_SMOKE_DEBOUNCE_LIVE", "0") in {"1", "true", "yes"}
+        debounce_prefix = env("JELLYBOT_SMOKE_DEBOUNCE_PREFIX", "arrest")
+        debounce_final = env("JELLYBOT_SMOKE_DEBOUNCE_FINAL", "arrested")
+        short_cancel_valid = env("JELLYBOT_SMOKE_SHORT_CANCEL_VALID", "arrested")
+        short_cancel_below = env("JELLYBOT_SMOKE_SHORT_CANCEL_BELOW", "ab")
+        burst_gap_sec = float(env("JELLYBOT_SMOKE_DEBOUNCE_BURST_MS", "80")) / 1000.0
+
+        async def autocomplete_quote_burst(
+            name: str,
+            queries: list[str],
+            assess_events,
+            *,
+            gap_sec: float,
+            min_events: int = 1,
+        ) -> None:
+            recover_sec = int(env("JELLYBOT_SMOKE_HEALTH_RECOVER_SEC", "45"))
+            for attempt in range(1, retry_count + 2):
+                try:
+                    wait_for_health(smoke_health_url(), timeout_sec=recover_sec)
+                    assert_health_responsive(smoke_health_url(), timeout_sec=2.0)
+                except TimeoutError as exc:
+                    last_detail = str(exc)
+                    if attempt <= retry_count:
+                        print(
+                            f"[smoke] health wedged before {name}, "
+                            f"retry {attempt}/{retry_count} (recover window {recover_sec}s)"
+                        )
+                        await asyncio.sleep(retry_gap_sec)
+                        continue
+                    await check(name, False, last_detail)
+                    return
+
+                fire_at = time.time()
+                quote = await find_slash_command(channel, app_id, "quote")
+                assert isinstance(quote, SlashCommand)
+                # Best-effort overlap: create_task + gap. Still often serializes
+                # inside discord.py-self; see JELLYBOT_SMOKE_DEBOUNCE_LIVE note.
+                fire_tasks: list[asyncio.Task] = []
+                for index, query in enumerate(queries):
+                    fire_tasks.append(
+                        asyncio.create_task(
+                            fire_autocomplete(
+                                client, channel, quote, option_name="match", query=query
+                            )
+                        )
+                    )
+                    if index < len(queries) - 1:
+                        await asyncio.sleep(gap_sec)
+                interactions = await asyncio.gather(*fire_tasks)
+                for index, (query, interaction) in enumerate(zip(queries, interactions)):
+                    print(
+                        f"[smoke] fired /quote match={query!r} burst={index + 1}/{len(queries)} "
+                        f"interaction_id={interaction.id} client_ok={interaction.successful!r}"
+                    )
+
+                _, events = poll_bot_logs(
+                    log_cmd,
+                    since_epoch=fire_at,
+                    timeout_sec=poll_sec,
+                    event_prefix="quote.",
+                    min_events=min_events,
+                )
+                result = assess_events(events)
+                last_detail = result.detail
+                if result.ok:
+                    await check(name, True, result.detail)
+                    return
+                if attempt <= retry_count:
+                    print(f"[smoke] retry {name} ({last_detail})")
+                    await asyncio.sleep(retry_gap_sec)
+                    continue
+                await check(name, False, last_detail)
+                return
+
+        await asyncio.sleep(float(env("JELLYBOT_SMOKE_BETWEEN_QUOTE_SEC", "3")))
+
+        try:
+            await autocomplete_quote_burst(
+                "quote.match_long_query_shaping",
+                [long_quote_query],
+                lambda events: assess_quote_shaping_logs(events, long_quote_query),
+                gap_sec=0.0,
+                min_events=2,
+            )
+        except Exception as exc:  # noqa: BLE001
+            await check("quote.match_long_query_shaping", False, f"{type(exc).__name__}: {exc}")
+
+        if debounce_live:
+            await asyncio.sleep(float(env("JELLYBOT_SMOKE_BETWEEN_QUOTE_SEC", "3")))
+            try:
+                await autocomplete_quote_burst(
+                    "quote.match_debounce_supersede",
+                    [debounce_prefix, debounce_final],
+                    lambda events: assess_quote_debounce_supersede_logs(
+                        events, debounce_prefix, debounce_final
+                    ),
+                    gap_sec=burst_gap_sec,
+                    min_events=2,
+                )
+            except Exception as exc:  # noqa: BLE001
+                await check(
+                    "quote.match_debounce_supersede", False, f"{type(exc).__name__}: {exc}"
+                )
+
+            await asyncio.sleep(float(env("JELLYBOT_SMOKE_BETWEEN_QUOTE_SEC", "3")))
+            try:
+                await autocomplete_quote_burst(
+                    "quote.match_min_length_cancel",
+                    [short_cancel_valid, short_cancel_below],
+                    lambda events: assess_quote_min_length_cancel_logs(
+                        events, short_cancel_valid, short_cancel_below
+                    ),
+                    gap_sec=burst_gap_sec,
+                    min_events=1,
+                )
+            except Exception as exc:  # noqa: BLE001
+                await check(
+                    "quote.match_min_length_cancel", False, f"{type(exc).__name__}: {exc}"
+                )
+        else:
+            print(
+                "[smoke] skip quote debounce/min-length live gates "
+                "(set JELLYBOT_SMOKE_DEBOUNCE_LIVE=1 to attempt; "
+                "discord.py-self serializes autocomplete round-trips)"
+            )
 
         if extended_smoke_enabled():
             clip_media_query = env("JELLYBOT_SMOKE_CLIP_MEDIA_QUERY", "Red")
@@ -273,7 +411,7 @@ def main() -> int:
             print(f"  - {item}")
         return 1
 
-    print("\n=== smoke PASSED — quote autocomplete responded in time ===")
+    print("\n=== smoke PASSED — quote autocomplete + long-query shaping OK ===")
     return 0
 
 

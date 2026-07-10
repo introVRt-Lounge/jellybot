@@ -19,8 +19,18 @@ You should see activity in that channel when extended smoke is on; **required ga
 
 - **`/quote` `match` autocomplete** — log must show `quote.autocomplete` then `quote.autocomplete.responded` with `resultCount > 0`
 - **`/quote` `series` autocomplete** — same for `quote.series_autocomplete`
+- **`/quote` long-query shaping** — long match text must log `searchQuery` ≠ `query` and still respond in time (issue #171 class)
 
 Fail messages call out **Unknown interaction** explicitly (Discord 3s autocomplete window).
+
+### Debounce / min-length (unit + optional live)
+
+Supersede gates (`arrest` → `arrested`, `arrested` → `ab`) are covered by:
+
+- TypeScript unit tests for debounce/cancel behavior
+- `scripts/test_discord_smoke_support.py` assessors (including production log shape: below-min emits empty `responded` only, no FTS line)
+
+Live Discord burst checks need overlapping autocomplete HTTP posts inside the 100ms debounce window. `discord.py-self` awaits each round-trip and effectively serializes fires (observed ~300ms+ between interaction snowflakes), so prefix always completes first. Opt in with `JELLYBOT_SMOKE_DEBOUNCE_LIVE=1` only when you have a fire-and-forget client path.
 
 ## Why Discord is painful to test
 

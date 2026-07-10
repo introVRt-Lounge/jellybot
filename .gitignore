@@ -17,3 +17,4 @@ site/
 __pycache__/
 *.pyc
 assets/jellybot_dev_*.png
+.openacp/

@@ -400,6 +400,220 @@ def log_lacks_event(log_text: str, event_name: str, *, query: str | None = None)
     return not log_has_event(log_text, event_name, query=query)
 
 
+def _quote_search_events(events: list[dict], query: str) -> list[dict]:
+    return [event for event in events if event.get("event") == "quote.autocomplete" and event.get("query") == query]
+
+
+def _quote_respond_outcome_after(
+    events: list[dict],
+    *,
+    start_idx: int,
+    query: str,
+) -> dict | None:
+    tail = events[start_idx + 1 :]
+    for event in tail:
+        event_name = event.get("event")
+        if event_name == "quote.autocomplete.responded" and event.get("query") == query:
+            return event
+        if event_name in {"quote.autocomplete.respond_skipped", "quote.autocomplete.respond_skip"}:
+            if event.get("query") in {query, None}:
+                return event
+        if event_name == "quote.autocomplete_failed" and event.get("query") == query:
+            return event
+        if event_name == "quote.autocomplete" and event.get("query") != query:
+            break
+    return None
+
+
+def assess_quote_debounce_supersede_logs(
+    events: list[dict],
+    prefix_query: str,
+    final_query: str,
+) -> QuoteAutocompleteAssessment:
+    """Rapid prefix→final keystrokes: final must win; prefix must not serve stale choices."""
+    final_searches = _quote_search_events(events, final_query)
+    if not final_searches:
+        return QuoteAutocompleteAssessment(
+            ok=False,
+            interaction_id="",
+            query=final_query,
+            result_count=None,
+            detail=f"missing quote.autocomplete for final query {final_query!r}",
+        )
+
+    final_search = final_searches[-1]
+    final_idx = events.index(final_search)
+    final_outcome = _quote_respond_outcome_after(events, start_idx=final_idx, query=final_query)
+    if final_outcome is None:
+        return QuoteAutocompleteAssessment(
+            ok=False,
+            interaction_id=str(final_search.get("interactionId", "")),
+            query=final_query,
+            result_count=final_search.get("resultCount"),
+            detail="final query search log found but no respond outcome",
+        )
+    if final_outcome.get("event") != "quote.autocomplete.responded":
+        return QuoteAutocompleteAssessment(
+            ok=False,
+            interaction_id=str(final_search.get("interactionId", "")),
+            query=final_query,
+            result_count=final_search.get("resultCount"),
+            detail=f"final query did not respond successfully: {final_outcome.get('event')}",
+        )
+    final_count = final_outcome.get("resultCount")
+    if not (final_outcome.get("responded") is True and isinstance(final_count, int) and final_count > 0):
+        return QuoteAutocompleteAssessment(
+            ok=False,
+            interaction_id=str(final_search.get("interactionId", "")),
+            query=final_query,
+            result_count=final_count if isinstance(final_count, int) else None,
+            detail=f"final query responded but resultCount={final_count!r}",
+        )
+
+    for outcome in (
+        event
+        for event in events
+        if event.get("event") == "quote.autocomplete.responded" and event.get("query") == prefix_query
+    ):
+        count = outcome.get("resultCount")
+        if outcome.get("responded") is True and isinstance(count, int) and count > 0:
+            return QuoteAutocompleteAssessment(
+                ok=False,
+                interaction_id=str(final_search.get("interactionId", "")),
+                query=final_query,
+                result_count=final_count,
+                detail=(
+                    f"prefix {prefix_query!r} served {count} stale choice(s) — "
+                    "debounce should cancel superseded keystrokes"
+                ),
+            )
+
+    return QuoteAutocompleteAssessment(
+        ok=True,
+        interaction_id=str(final_search.get("interactionId", "")),
+        query=final_query,
+        result_count=final_count,
+        detail=f"debounce kept final {final_query!r} ({final_count} choices); prefix did not serve stale hits",
+    )
+
+
+def assess_quote_shaping_logs(events: list[dict], query: str) -> QuoteAutocompleteAssessment:
+    """Long match input must shape searchQuery and still respond in time."""
+    searches = _quote_search_events(events, query)
+    if not searches:
+        return QuoteAutocompleteAssessment(
+            ok=False,
+            interaction_id="",
+            query=query,
+            result_count=None,
+            detail=f"missing quote.autocomplete for long query {query!r}",
+        )
+
+    search = searches[-1]
+    shaped = search.get("searchQuery")
+    if not isinstance(shaped, str) or shaped.strip() == query.strip():
+        return QuoteAutocompleteAssessment(
+            ok=False,
+            interaction_id=str(search.get("interactionId", "")),
+            query=query,
+            result_count=search.get("resultCount"),
+            detail=f"expected shaped searchQuery != query for long input (got searchQuery={shaped!r})",
+        )
+
+    search_idx = events.index(search)
+    outcome = _quote_respond_outcome_after(events, start_idx=search_idx, query=query)
+    if outcome is None or outcome.get("event") != "quote.autocomplete.responded":
+        return QuoteAutocompleteAssessment(
+            ok=False,
+            interaction_id=str(search.get("interactionId", "")),
+            query=query,
+            result_count=search.get("resultCount"),
+            detail="shaped search log found but no successful respond outcome",
+        )
+    count = outcome.get("resultCount")
+    if not (outcome.get("responded") is True and isinstance(count, int) and count > 0):
+        return QuoteAutocompleteAssessment(
+            ok=False,
+            interaction_id=str(search.get("interactionId", "")),
+            query=query,
+            result_count=count if isinstance(count, int) else None,
+            detail=f"shaped query responded but resultCount={count!r}",
+        )
+
+    return QuoteAutocompleteAssessment(
+        ok=True,
+        interaction_id=str(search.get("interactionId", "")),
+        query=query,
+        result_count=count,
+        detail=f"shaped {query!r} → {shaped!r} with {count} choice(s)",
+    )
+
+
+def assess_quote_min_length_cancel_logs(
+    events: list[dict],
+    valid_query: str,
+    short_query: str,
+) -> QuoteAutocompleteAssessment:
+    """Deleting below min length must cancel pending debounce and not serve stale choices.
+
+    The below-min path in quote.ts responds with [] immediately and does **not** emit
+    `quote.autocomplete` (no FTS). Correlate on `quote.autocomplete.responded` only.
+    """
+    short_outcomes = [
+        event
+        for event in events
+        if event.get("event") == "quote.autocomplete.responded" and event.get("query") == short_query
+    ]
+    if not short_outcomes:
+        return QuoteAutocompleteAssessment(
+            ok=False,
+            interaction_id="",
+            query=short_query,
+            result_count=None,
+            detail=f"missing quote.autocomplete.responded for below-min query {short_query!r}",
+        )
+
+    short_outcome = short_outcomes[-1]
+    short_count = short_outcome.get("resultCount")
+    if not (short_outcome.get("responded") is True and isinstance(short_count, int) and short_count == 0):
+        return QuoteAutocompleteAssessment(
+            ok=False,
+            interaction_id=str(short_outcome.get("interactionId", "")),
+            query=short_query,
+            result_count=short_count if isinstance(short_count, int) else None,
+            detail=(
+                f"below-min {short_query!r} should respond with empty choices "
+                f"(got resultCount={short_count!r})"
+            ),
+        )
+
+    for outcome in (
+        event
+        for event in events
+        if event.get("event") == "quote.autocomplete.responded" and event.get("query") == valid_query
+    ):
+        count = outcome.get("resultCount")
+        if outcome.get("responded") is True and isinstance(count, int) and count > 0:
+            return QuoteAutocompleteAssessment(
+                ok=False,
+                interaction_id=str(short_outcome.get("interactionId", "")),
+                query=short_query,
+                result_count=count,
+                detail=(
+                    f"valid query {valid_query!r} served {count} stale choice(s) after "
+                    f"below-min {short_query!r} — debounce cancel on shrink failed"
+                ),
+            )
+
+    return QuoteAutocompleteAssessment(
+        ok=True,
+        interaction_id=str(short_outcome.get("interactionId", "")),
+        query=short_query,
+        result_count=0,
+        detail=f"below-min {short_query!r} cleared pending {valid_query!r} (empty respond)",
+    )
+
+
 def assess_quote_autocomplete_logs(
     interaction_id: str,
     query: str,
