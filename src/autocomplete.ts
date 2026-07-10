@@ -71,6 +71,12 @@ export function yieldToEventLoop(): Promise<void> {
 /** Discord autocomplete interactions expire ~3s after receipt; leave headroom for FTS. */
 export const DISCORD_AUTOCOMPLETE_RESPONSE_DEADLINE_MS = 2500;
 
+/**
+ * Per-keystroke pause before `/quote match` FTS. Keep ≤100ms — gateway RTT + search must
+ * still fit Discord's ~3s hard limit (#173).
+ */
+export const QUOTE_MATCH_AUTOCOMPLETE_DEBOUNCE_MS = 100;
+
 export function autocompleteInteractionAgeMs(interaction: { createdTimestamp: number }): number {
   return Date.now() - interaction.createdTimestamp;
 }

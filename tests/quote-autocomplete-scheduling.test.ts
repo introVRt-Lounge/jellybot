@@ -4,6 +4,9 @@ import {
   waitDebounced,
   yieldToEventLoop,
   remainingAutocompleteBudgetMs,
+  isAutocompleteInteractionExpired,
+  autocompleteInteractionAgeMs,
+  QUOTE_MATCH_AUTOCOMPLETE_DEBOUNCE_MS,
 } from "../src/autocomplete.ts";
 import { AutocompleteSessionGuard } from "../src/autocomplete-guard.ts";
 
@@ -79,6 +82,12 @@ describe("remainingAutocompleteBudgetMs", () => {
   });
 });
 
+describe("quote match autocomplete debounce (#173)", () => {
+  test("stays at or under 100ms so gateway RTT still fits Discord's ~3s budget", () => {
+    expect(QUOTE_MATCH_AUTOCOMPLETE_DEBOUNCE_MS).toBeLessThanOrEqual(100);
+  });
+});
+
 describe("waitDebounced", () => {
   test("resolves after the debounce interval", async () => {
     const controller = new AbortController();
@@ -100,5 +109,15 @@ describe("waitDebounced", () => {
     const pending = waitDebounced(200, first.signal);
     guard.beginCancellable("user:quote:match");
     await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+  });
+});
+
+describe("autocomplete soft expiry vs Discord hard limit (#173)", () => {
+  test("soft 2500ms guard leaves headroom under Discord's ~3000ms hard limit", () => {
+    const softMs = 2500;
+    const interaction = { createdTimestamp: Date.now() - (softMs + 1) };
+    expect(isAutocompleteInteractionExpired(interaction, softMs)).toBe(true);
+    // Age just past soft guard should still be under a typical 3s client deadline.
+    expect(autocompleteInteractionAgeMs(interaction)).toBeLessThan(3000);
   });
 });

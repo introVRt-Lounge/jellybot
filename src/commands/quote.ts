@@ -12,6 +12,7 @@ import {
   autocompleteInteractionAgeMs,
   isAutocompleteInteractionExpired,
   remainingAutocompleteBudgetMs,
+  QUOTE_MATCH_AUTOCOMPLETE_DEBOUNCE_MS,
 } from "../autocomplete.ts";
 import { AutocompleteSessionGuard, isBenignAutocompleteError } from "../autocomplete-guard.ts";
 import { beginEphemeralClipPreview, deliverClipPreview } from "../clip-preview/pipeline.ts";
@@ -47,7 +48,6 @@ const QUOTE_MATCH_AUTOCOMPLETE_CACHE_KEY = (
 const QUOTE_SERIES_AUTOCOMPLETE_KEY = (interaction: AutocompleteInteraction) =>
   `${interaction.user.id}:${interaction.guildId ?? "dm"}:quote:series`;
 const QUOTE_AUTOCOMPLETE_TIMEOUT_MS = 2500;
-const QUOTE_MATCH_AUTOCOMPLETE_DEBOUNCE_MS = 200;
 const QUOTE_MATCH_AUTOCOMPLETE_MAX_TOKEN_AGE_MS = 2500;
 const QUOTE_SERIES_AUTOCOMPLETE_LIMIT = 25;
 
@@ -90,15 +90,17 @@ export const quoteCommand = new SlashCommandBuilder()
 async function safeAutocompleteRespond(
   interaction: AutocompleteInteraction,
   choices: ApplicationCommandOptionChoiceData[],
-  context: { query: string; resultCount: number },
+  context: { query: string; resultCount: number; reason?: string },
 ): Promise<void> {
+  const ageMs = autocompleteInteractionAgeMs(interaction);
   if (interaction.responded) {
     console.info(
       JSON.stringify({
         event: "quote.autocomplete.respond_skip",
-        reason: "already_responded",
+        reason: context.reason ?? "already_responded",
         query: context.query,
         resultCount: context.resultCount,
+        ageMs,
       }),
     );
     return;
@@ -112,6 +114,8 @@ async function safeAutocompleteRespond(
         query: context.query,
         resultCount: context.resultCount,
         responded: interaction.responded,
+        ageMs,
+        ...(context.reason ? { reason: context.reason } : {}),
       }),
     );
   } catch (error) {
@@ -121,6 +125,8 @@ async function safeAutocompleteRespond(
           event: "quote.autocomplete.respond_skipped",
           query: context.query,
           resultCount: context.resultCount,
+          ageMs,
+          ...(context.reason ? { reason: context.reason } : {}),
           error: error instanceof Error ? error.message : "unknown error",
         }),
       );
@@ -130,6 +136,14 @@ async function safeAutocompleteRespond(
   }
 }
 
+/**
+ * Drop work that must not continue (already answered, superseded keystroke, or soft-expired
+ * with no choices ready yet). Soft-expired tokens are **acked with []** so Discord does not
+ * spin until its ~3s hard timeout — never silent-return.
+ *
+ * When choices are already computed, use {@link finishQuoteAutocomplete} instead: it still
+ * best-effort responds with those choices past the soft 2.5s guard (Discord allows ~3s).
+ */
 async function dropStaleQuoteAutocomplete(
   interaction: AutocompleteInteraction,
   isCurrent: () => boolean,
@@ -140,19 +154,20 @@ async function dropStaleQuoteAutocomplete(
   }
 
   if (!isCurrent()) {
-    await safeAutocompleteRespond(interaction, [], { query, resultCount: 0 });
+    await safeAutocompleteRespond(interaction, [], {
+      query,
+      resultCount: 0,
+      reason: "superseded",
+    });
     return true;
   }
 
   if (isAutocompleteInteractionExpired(interaction, QUOTE_MATCH_AUTOCOMPLETE_MAX_TOKEN_AGE_MS)) {
-    console.info(
-      JSON.stringify({
-        event: "quote.autocomplete.respond_skip",
-        reason: "token_expired",
-        query,
-        ageMs: autocompleteInteractionAgeMs(interaction),
-      }),
-    );
+    await safeAutocompleteRespond(interaction, [], {
+      query,
+      resultCount: 0,
+      reason: "token_expired",
+    });
     return true;
   }
 
@@ -165,13 +180,31 @@ async function finishQuoteAutocomplete(
   choices: ApplicationCommandOptionChoiceData[],
   query: string,
 ): Promise<void> {
-  if (await dropStaleQuoteAutocomplete(interaction, isCurrent, query)) {
-    return;
-  }
   if (interaction.responded) {
     return;
   }
-  await safeAutocompleteRespond(interaction, choices, { query, resultCount: choices.length });
+
+  if (!isCurrent()) {
+    await safeAutocompleteRespond(interaction, [], {
+      query,
+      resultCount: 0,
+      reason: "superseded",
+    });
+    return;
+  }
+
+  // Soft budget (2.5s) exceeded but choices are ready: still attempt respond. Discord's hard
+  // limit is ~3s; discarding work here caused empty dropdowns while logs said responded:true
+  // on earlier keystrokes and silent skips on the final token (#173).
+  const softExpired = isAutocompleteInteractionExpired(
+    interaction,
+    QUOTE_MATCH_AUTOCOMPLETE_MAX_TOKEN_AGE_MS,
+  );
+  await safeAutocompleteRespond(interaction, choices, {
+    query,
+    resultCount: choices.length,
+    ...(softExpired ? { reason: "soft_expired_best_effort" } : {}),
+  });
 }
 
 export async function handleQuoteAutocomplete(
