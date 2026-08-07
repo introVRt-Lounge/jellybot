@@ -448,19 +448,26 @@ export class SubtitleIndex {
   }
 
   getStats(): SubtitleIndexStats {
-    const itemCount = (this.db.query("SELECT COUNT(*) AS count FROM media_items").get() as { count: number }).count;
-    // Operator metric reports source-cue count only; merged-window rows
-    // (issue #130) are an FTS-side artifact, not actual subtitle cues.
-    const cueCount = (
-      this.db.query("SELECT COUNT(*) AS count FROM subtitle_cues WHERE kind = 'single'").get() as {
-        count: number;
-      }
-    ).count;
-    const lastIndexedAt =
-      (this.db.query("SELECT MAX(indexed_at) AS value FROM media_items").get() as { value: string | null }).value ??
-      null;
+    // Issue #182: never COUNT(subtitle_cues) here. Prod is ~18M rows / 7.6GB;
+    // a full-table COUNT blocked the Discord event loop for ~35s and killed
+    // slash-command acks as "Unknown interaction". media_items.cue_count is
+    // maintained as single-cue counts only (merged-window rows are FTS-only
+    // — issue #130), so SUM is exact and O(items) instead of O(cues).
+    const row = this.db
+      .query(
+        `SELECT
+          COUNT(*) AS itemCount,
+          COALESCE(SUM(cue_count), 0) AS cueCount,
+          MAX(indexed_at) AS lastIndexedAt
+        FROM media_items`,
+      )
+      .get() as { itemCount: number; cueCount: number; lastIndexedAt: string | null };
 
-    return { itemCount, cueCount, lastIndexedAt };
+    return {
+      itemCount: row.itemCount,
+      cueCount: row.cueCount,
+      lastIndexedAt: row.lastIndexedAt ?? null,
+    };
   }
 
   startRun(): number {
