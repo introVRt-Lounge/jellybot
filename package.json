@@ -25,7 +25,8 @@
   "dependencies": {
     "discord.js": "^14.19.2",
     "dotenv": "^17.4.2",
-    "node-webvtt": "^1.9.4"
+    "node-webvtt": "^1.9.4",
+    "undici": "^6.28.0"
   },
   "devDependencies": {
     "@types/bun": "latest",
@@ -33,6 +34,6 @@
     "typescript": "^6.0.3"
   },
   "overrides": {
-    "undici": "6.27.0"
+    "undici": "6.28.0"
   }
 }

@@ -72,29 +72,57 @@ const healthState: HealthState = {
 
 let subtitleHealthCache: HealthState["subtitleIndex"] = null;
 let subtitleHealthCheckedAt = 0;
+let subtitleHealthRefreshInFlight = false;
 const SUBTITLE_HEALTH_TTL_MS = 60_000;
 
+/**
+ * Keep `/healthz` off the Discord event-loop critical path (#182).
+ *
+ * Docker probes this often. The previous implementation ran a synchronous
+ * multi-million-row COUNT on every TTL miss, freezing INTERACTION_CREATE
+ * delivery for tens of seconds. We now:
+ *  1. Always serve the last good cache immediately (stale-while-revalidate).
+ *  2. Kick a background refresh via setImmediate when the TTL expires, so
+ *     the health HTTP handler never waits on SQLite.
+ */
 function refreshSubtitleHealth(force = false): void {
   const now = Date.now();
-  if (!force && subtitleHealthCache && now - subtitleHealthCheckedAt < SUBTITLE_HEALTH_TTL_MS) {
+  const cacheFresh = Boolean(subtitleHealthCache) && now - subtitleHealthCheckedAt < SUBTITLE_HEALTH_TTL_MS;
+
+  if (subtitleHealthCache) {
     healthState.subtitleIndex = subtitleHealthCache;
+  }
+
+  if (!force && cacheFresh) {
     return;
   }
 
-  try {
-    const index = openSubtitleIndex(config.subtitleDbPath);
-    try {
-      subtitleHealthCache = index.getStats();
-      subtitleHealthCheckedAt = now;
-      healthState.subtitleIndex = subtitleHealthCache;
-    } finally {
-      index.close();
-    }
-  } catch {
-    subtitleHealthCache = null;
-    subtitleHealthCheckedAt = now;
-    healthState.subtitleIndex = null;
+  if (subtitleHealthRefreshInFlight) {
+    return;
   }
+
+  subtitleHealthRefreshInFlight = true;
+  setImmediate(() => {
+    try {
+      const index = openSubtitleIndex(config.subtitleDbPath);
+      try {
+        subtitleHealthCache = index.getStats();
+        subtitleHealthCheckedAt = Date.now();
+        healthState.subtitleIndex = subtitleHealthCache;
+      } finally {
+        index.close();
+      }
+    } catch {
+      // Keep serving the previous cache if a refresh fails; only clear when
+      // we never had one (startup / empty).
+      if (!subtitleHealthCache) {
+        healthState.subtitleIndex = null;
+      }
+      subtitleHealthCheckedAt = Date.now();
+    } finally {
+      subtitleHealthRefreshInFlight = false;
+    }
+  });
 }
 
 const webhookDispatcher = config.webhookSharedSecret
