@@ -1,5 +1,5 @@
 import { dirname } from "node:path";
-import { pickAudioStream, parsePreferredLanguages as parseAudioLanguages } from "../audio-track-select.ts";
+import { pickAudioStream, parsePreferredLanguages as parseAudioLanguages, audioStreamOrdinal } from "../audio-track-select.ts";
 import {
   cleanup,
   createClip,
@@ -126,6 +126,20 @@ export async function renderClip(params: {
 
     const preferred = parseAudioLanguages(params.preferredAudioLanguages);
     const audio = pickAudioStream(withMedia.mediaSource.streams, preferred);
+    const ordinal = audio ? audioStreamOrdinal(withMedia.mediaSource.streams, audio.index) : null;
+
+    console.info(
+      JSON.stringify({
+        event: "clip.audio_selected",
+        itemId: params.item.id,
+        jellyfinIndex: audio?.index ?? null,
+        audioOrdinal: ordinal,
+        language: audio?.language ?? null,
+        title: audio?.title || audio?.displayTitle || null,
+        channels: audio?.channels ?? null,
+        isDefault: audio?.isDefault ?? null,
+      }),
+    );
 
     if (params.burnInSubtitles) {
       subtitlePath = `${dirname(params.outputPath)}/${params.tempId}-subs.srt`;
@@ -153,7 +167,7 @@ export async function renderClip(params: {
       startSeconds: params.plan.startSeconds,
       durationSeconds: params.plan.durationSeconds,
       outputPath: params.outputPath,
-      audioStreamIndex: audio?.index,
+      audioOrdinal: ordinal ?? 0,
       subtitlePath,
       watermarkPath: params.watermarkPath,
     });
