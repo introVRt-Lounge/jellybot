@@ -13,7 +13,21 @@ describe("buildAudioEncodeArgs", () => {
 });
 
 describe("resolveAudioMapSpec", () => {
-  test("uses container stream index when Jellyfin audio index exists in file", () => {
+  test("maps by audio ordinal, not absolute container index (#184)", () => {
+    // Jerry Maguire: Jellyfin main=index 2, but ffmpeg sees main at index 1
+    // and commentary at index 2. Ordinal 0 must select the first audio.
+    const map = resolveAudioMapSpec(
+      [
+        { index: 0, codec_type: "video" },
+        { index: 1, codec_type: "audio" },
+        { index: 2, codec_type: "audio" },
+      ],
+      0,
+    );
+    expect(map).toBe("0:a:0?");
+  });
+
+  test("selects second audio stream by ordinal", () => {
     const map = resolveAudioMapSpec(
       [
         { index: 0, codec_type: "video" },
@@ -21,20 +35,27 @@ describe("resolveAudioMapSpec", () => {
         { index: 2, codec_type: "subtitle" },
         { index: 3, codec_type: "audio" },
       ],
-      3,
+      1,
     );
-    expect(map).toBe("0:3?");
+    expect(map).toBe("0:a:1?");
   });
 
-  test("falls back to first audio when index missing (remuxed Jellyfin stream)", () => {
-    const map = resolveAudioMapSpec(
-      [
+  test("falls back to first audio when ordinal missing or out of range", () => {
+    expect(
+      resolveAudioMapSpec(
+        [
+          { index: 0, codec_type: "video" },
+          { index: 1, codec_type: "audio" },
+        ],
+        3,
+      ),
+    ).toBe("0:a:0?");
+    expect(
+      resolveAudioMapSpec([
         { index: 0, codec_type: "video" },
         { index: 1, codec_type: "audio" },
-      ],
-      3,
-    );
-    expect(map).toBe("0:a:0?");
+      ]),
+    ).toBe("0:a:0?");
   });
 });
 

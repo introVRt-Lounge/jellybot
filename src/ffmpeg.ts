@@ -36,27 +36,30 @@ export type ClipOptions = {
   outputPath: string;
   maxHeight?: number;
   videoCodec?: string;
-  /** Jellyfin MediaStream index; used with ffprobe to pick the correct ffmpeg -map. */
-  audioStreamIndex?: number;
-  /** Resolved ffmpeg stream map (e.g. `0:3?` or `0:a:0?`). Overrides audioStreamIndex when set. */
+  /**
+   * 0-based ordinal among audio streams (ordered by container index).
+   * Prefer this over Jellyfin MediaStream.Index — those indices often do not
+   * match ffmpeg's stream indexes on static Jellyfin URLs (#184).
+   */
+  audioOrdinal?: number;
+  /** Resolved ffmpeg stream map (e.g. `0:a:0?`). Overrides audioOrdinal when set. */
   audioMapSpec?: string;
   subtitlePath?: string;
   /** PNG overlay (second ffmpeg input); ~10% width, bottom-right with 10px margin. */
   watermarkPath?: string;
 };
 
-/** Pick ffmpeg audio map: container index when present, else first audio (remuxed Jellyfin stream). */
+/** Pick ffmpeg audio map by 0-based ordinal among audio streams (#184). */
 export function resolveAudioMapSpec(
   streams: ProbedStream[],
-  jellyfinAudioStreamIndex?: number,
+  audioOrdinal?: number,
 ): string {
-  if (jellyfinAudioStreamIndex !== undefined) {
-    const atIndex = streams.find(
-      (stream) => stream.index === jellyfinAudioStreamIndex && stream.codec_type === "audio",
-    );
-    if (atIndex) {
-      return `0:${jellyfinAudioStreamIndex}?`;
-    }
+  const audioStreams = streams
+    .filter((stream) => stream.codec_type === "audio")
+    .sort((left, right) => left.index - right.index);
+
+  if (audioOrdinal !== undefined && audioOrdinal >= 0 && audioOrdinal < audioStreams.length) {
+    return `0:a:${audioOrdinal}?`;
   }
 
   return "0:a:0?";
@@ -125,7 +128,7 @@ export function buildClipFfmpegArgs(options: ClipOptions): string[] {
   const maxHeight = options.maxHeight ?? DEFAULT_MAX_HEIGHT;
   const audioMapSpec =
     options.audioMapSpec ??
-    (options.audioStreamIndex !== undefined ? `0:${options.audioStreamIndex}?` : "0:a:0?");
+    (options.audioOrdinal !== undefined ? `0:a:${options.audioOrdinal}?` : "0:a:0?");
   const audioMap = ["-map", audioMapSpec];
 
   if (options.watermarkPath) {
@@ -225,12 +228,17 @@ export async function createClip(options: ClipOptions): Promise<void> {
   await mkdir(dirname(options.outputPath), { recursive: true });
 
   let audioMapSpec = options.audioMapSpec;
-  if (!audioMapSpec && options.audioStreamIndex !== undefined) {
-    try {
-      const streams = await probeInputStreams(options.inputUrl);
-      audioMapSpec = resolveAudioMapSpec(streams, options.audioStreamIndex);
-    } catch {
-      // Jellyfin may serve a remuxed stream where only 0:a:0 exists; URL AudioStreamIndex still applies.
+  if (!audioMapSpec) {
+    if (options.audioOrdinal !== undefined) {
+      try {
+        const streams = await probeInputStreams(options.inputUrl);
+        audioMapSpec = resolveAudioMapSpec(streams, options.audioOrdinal);
+      } catch {
+        // Probe failed (transient Jellyfin blip); ordinal mapping is still the
+        // correct selector for multi-audio files when the demuxer can open.
+        audioMapSpec = `0:a:${options.audioOrdinal}?`;
+      }
+    } else {
       audioMapSpec = "0:a:0?";
     }
   }

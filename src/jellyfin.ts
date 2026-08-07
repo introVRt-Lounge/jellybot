@@ -46,6 +46,9 @@ type JellyfinMediaSourceResponse = {
     Index: number;
     Codec?: string;
     Language?: string;
+    Title?: string;
+    DisplayTitle?: string;
+    Channels?: number;
     IsDefault?: boolean;
     IsForced?: boolean;
     IsTextSubtitleStream?: boolean;
@@ -920,6 +923,9 @@ export class JellyfinClient {
         index: stream.Index,
         codec: stream.Codec,
         language: stream.Language,
+        title: stream.Title,
+        displayTitle: stream.DisplayTitle,
+        channels: stream.Channels,
         isDefault: stream.IsDefault,
         isForced: stream.IsForced,
         isTextSubtitleStream: stream.IsTextSubtitleStream,

@@ -3,6 +3,11 @@ export type SubtitleStreamCandidate = {
   index: number;
   codec?: string;
   language?: string;
+  /** Jellyfin MediaStream.Title (often names commentary tracks). */
+  title?: string;
+  /** Jellyfin MediaStream.DisplayTitle when Title is empty. */
+  displayTitle?: string;
+  channels?: number;
   isDefault?: boolean;
   isForced?: boolean;
   isTextSubtitleStream?: boolean;
