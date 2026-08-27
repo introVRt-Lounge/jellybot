@@ -25,7 +25,7 @@ Both commands use Jellyfin as the media source and ffmpeg for rendering. Clips a
 ### Subtitle index (`/quote` backend)
 
 - Builds a **SQLite FTS** database from Jellyfin subtitle streams
-- **Incremental indexing** on startup by default (`SUBTITLE_INDEX_ON_STARTUP=incremental`)
+- **Incremental indexing** on startup is **off by default** (`SUBTITLE_INDEX_ON_STARTUP=off`); use cron, webhooks, or `make index-subtitles-incremental`
 - Manual maintenance: `make index-subtitles`, `make index-subtitles-incremental`
 - Progress in `GET /healthz` → `subtitleIndex` (item count, cue count, last indexed timestamp)
 - Index DB lives on a **host bind mount** (`JELLYBOT_DATA_HOST_DIR`) so backups can include it
@@ -204,7 +204,7 @@ See [`.env.example`](../.env.example) for the full list. Subtitle-related:
 | `SUBTITLE_DB_PATH` | SQLite path inside container |
 | `JELLYBOT_DATA_HOST_DIR` | Host bind mount for subtitle DB |
 | `SUBTITLE_LANGUAGES` | Preferred track languages |
-| `SUBTITLE_INDEX_ON_STARTUP` | `incremental` (default) or `off` |
+| `SUBTITLE_INDEX_ON_STARTUP` | `off` (default) or `incremental` for dev catch-up on boot |
 | `SUBTITLE_INDEX_CONCURRENCY` | Indexer parallelism |
 | `WHISPER_*` | Planned STT long-tail ([#25](https://github.com/introVRt-Lounge/jellybot/issues/25)) |
 

@@ -6,7 +6,6 @@ import {
 } from "discord.js";
 import type { AppConfig } from "../config.ts";
 import {
-  runDeferredSyncWithTimeout,
   waitDebounced,
   yieldToEventLoop,
   autocompleteInteractionAgeMs,
@@ -26,7 +25,11 @@ import {
   tryQuoteMatchPrefixCache,
 } from "../subtitles/quote-query-shaping.ts";
 import { quoteSearchChoices } from "../subtitles/quote-autocomplete.ts";
-import { getSubtitleSearchIndex } from "../subtitles/search-index.ts";
+import { bumpInteractivePriority } from "../interactive-priority.ts";
+import {
+  listSeriesNamesOffThread,
+  searchQuotesOffThread,
+} from "../subtitles/search-worker-client.ts";
 import { formatTimestamp } from "../time.ts";
 import {
   buildMediaTypeSelectMenu,
@@ -212,6 +215,7 @@ export async function handleQuoteAutocomplete(
   _jellyfin: JellyfinClient,
   config: Pick<AppConfig, "subtitleDbPath">,
 ): Promise<void> {
+  bumpInteractivePriority();
   const existing = quoteAutocompleteInFlight.get(interaction.id);
   if (existing) {
     return existing;
@@ -299,7 +303,6 @@ async function handleQuoteAutocompleteOnce(
     }
 
     const searchQuery = shapeQuoteAutocompleteQuery(query);
-    const index = getSubtitleSearchIndex(config.subtitleDbPath);
 
     let results = tryQuoteMatchPrefixCache(cacheKey, query, searchQuery, seriesFilter);
     let usedPrefixCache = results !== null;
@@ -309,11 +312,17 @@ async function handleQuoteAutocompleteOnce(
         interaction,
         QUOTE_MATCH_AUTOCOMPLETE_MAX_TOKEN_AGE_MS,
       );
-      results = await runDeferredSyncWithTimeout(
-        () => index.searchQuotes(searchQuery, 24, seriesFilter),
+      results = await searchQuotesOffThread(
+        config.subtitleDbPath,
+        searchQuery,
+        24,
+        seriesFilter,
         ftsBudgetMs,
-        signal,
+        { interactive: true },
       );
+      if (signal.aborted) {
+        throw signal.reason ?? new DOMException("The operation was aborted.", "AbortError");
+      }
       rememberQuoteMatchSearchCache(cacheKey, query, searchQuery, results, seriesFilter);
     }
 
@@ -373,12 +382,16 @@ async function respondSeriesAutocomplete(
       return;
     }
 
-    const index = getSubtitleSearchIndex(config.subtitleDbPath);
-    const names = await runDeferredSyncWithTimeout(
-      () => index.listSeriesNames(prefix, QUOTE_SERIES_AUTOCOMPLETE_LIMIT),
+    const names = await listSeriesNamesOffThread(
+      config.subtitleDbPath,
+      prefix,
+      QUOTE_SERIES_AUTOCOMPLETE_LIMIT,
       QUOTE_AUTOCOMPLETE_TIMEOUT_MS,
-      signal,
+      { interactive: true },
     );
+    if (signal.aborted) {
+      throw signal.reason ?? new DOMException("The operation was aborted.", "AbortError");
+    }
 
     const choices: ApplicationCommandOptionChoiceData[] = names.map((name) => ({
       name: name.slice(0, 100),

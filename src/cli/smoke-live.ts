@@ -5,7 +5,7 @@ import { JellyfinClient } from "../jellyfin.ts";
 import { planClipRequest } from "../services/clip-request.ts";
 import { buildLibrarySubtitleCoverage } from "../services/subtitle-coverage.ts";
 import { openSubtitleIndex } from "../subtitles/index-db.ts";
-import { getSubtitleSearchIndex } from "../subtitles/search-index.ts";
+import { searchQuotesOffThread, listSeriesNamesOffThread } from "../subtitles/search-worker-client.ts";
 
 type SmokeCheck = {
   name: string;
@@ -13,7 +13,7 @@ type SmokeCheck = {
 };
 
 const config = loadConfig();
-const quoteQuery = process.env.JELLYBOT_SMOKE_QUOTE_QUERY?.trim() || "the";
+const quoteQuery = process.env.JELLYBOT_SMOKE_QUOTE_QUERY?.trim() || "ca-caw";
 const seriesQuery = process.env.JELLYBOT_SMOKE_SERIES_QUERY?.trim() || "Red";
 const clipMediaQuery = process.env.JELLYBOT_SMOKE_CLIP_MEDIA_QUERY?.trim() || "Red";
 const clipItemId =
@@ -31,7 +31,17 @@ const checks: SmokeCheck[] = [
   {
     name: "jellyfin.authenticate",
     run: async () => {
-      await jellyfin.authenticate();
+      let lastError: Error | undefined;
+      for (let attempt = 1; attempt <= 3; attempt += 1) {
+        try {
+          await jellyfin.authenticate();
+          return;
+        } catch (error) {
+          lastError = error instanceof Error ? error : new Error(String(error));
+          await new Promise((resolve) => setTimeout(resolve, attempt * 500));
+        }
+      }
+      throw lastError ?? new Error("Jellyfin authentication failed");
     },
   },
   {
@@ -52,8 +62,7 @@ const checks: SmokeCheck[] = [
   {
     name: "quote.match_search",
     run: async () => {
-      const index = getSubtitleSearchIndex(config.subtitleDbPath);
-      const results = index.searchQuotes(quoteQuery, 10);
+      const results = await searchQuotesOffThread(config.subtitleDbPath, quoteQuery, 10, undefined, 15_000);
       if (results.length < 1) {
         throw new Error(`no quote matches for query=${quoteQuery}`);
       }
@@ -69,8 +78,7 @@ const checks: SmokeCheck[] = [
   {
     name: "quote.series_search",
     run: async () => {
-      const index = getSubtitleSearchIndex(config.subtitleDbPath);
-      const names = index.listSeriesNames(seriesQuery, 10);
+      const names = await listSeriesNamesOffThread(config.subtitleDbPath, seriesQuery, 10, 10_000);
       if (names.length < 1) {
         throw new Error(`no series names for query=${seriesQuery}`);
       }
