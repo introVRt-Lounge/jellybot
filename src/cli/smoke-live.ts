@@ -31,7 +31,17 @@ const checks: SmokeCheck[] = [
   {
     name: "jellyfin.authenticate",
     run: async () => {
-      await jellyfin.authenticate();
+      let lastError: Error | undefined;
+      for (let attempt = 1; attempt <= 3; attempt += 1) {
+        try {
+          await jellyfin.authenticate();
+          return;
+        } catch (error) {
+          lastError = error instanceof Error ? error : new Error(String(error));
+          await new Promise((resolve) => setTimeout(resolve, attempt * 500));
+        }
+      }
+      throw lastError ?? new Error("Jellyfin authentication failed");
     },
   },
   {

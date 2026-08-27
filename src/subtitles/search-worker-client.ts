@@ -128,14 +128,29 @@ function callWorker(request: Omit<SearchWorkerRequest, "id">, timeoutMs: number)
   });
 }
 
+export type OffThreadSearchOptions = {
+  /**
+   * Autocomplete / slash-command path: never fall back to synchronous FTS on the
+   * gateway thread. Return [] on worker failure so Discord gets a fast ack.
+   */
+  interactive?: boolean;
+};
+
 export async function searchQuotesOffThread(
   dbPath: string,
   query: string,
   limit: number,
   seriesFilter: string | undefined,
   timeoutMs: number,
+  options: OffThreadSearchOptions = {},
 ): Promise<QuoteSearchResult[]> {
+  const interactive = options.interactive ?? false;
+
   if (!workerEnabled()) {
+    if (interactive) {
+      logInteractiveWorkerUnavailable("search");
+      return [];
+    }
     return getSubtitleSearchIndex(dbPath).searchQuotes(query, limit, seriesFilter);
   }
 
@@ -153,12 +168,16 @@ export async function searchQuotesOffThread(
   } catch (error) {
     console.warn(
       JSON.stringify({
-        event: "subtitle_search.worker_fallback",
+        event: "subtitle_search.worker_failed",
         op: "search",
+        interactive,
         error: error instanceof Error ? error.message : "unknown error",
       }),
     );
     terminateWorker();
+    if (interactive) {
+      return [];
+    }
     return getSubtitleSearchIndex(dbPath).searchQuotes(query, limit, seriesFilter);
   }
 }
@@ -168,8 +187,15 @@ export async function listSeriesNamesOffThread(
   prefix: string,
   limit: number,
   timeoutMs: number,
+  options: OffThreadSearchOptions = {},
 ): Promise<string[]> {
+  const interactive = options.interactive ?? false;
+
   if (!workerEnabled()) {
+    if (interactive) {
+      logInteractiveWorkerUnavailable("series");
+      return [];
+    }
     return getSubtitleSearchIndex(dbPath).listSeriesNames(prefix, limit);
   }
 
@@ -186,14 +212,28 @@ export async function listSeriesNamesOffThread(
   } catch (error) {
     console.warn(
       JSON.stringify({
-        event: "subtitle_search.worker_fallback",
+        event: "subtitle_search.worker_failed",
         op: "series",
+        interactive,
         error: error instanceof Error ? error.message : "unknown error",
       }),
     );
     terminateWorker();
+    if (interactive) {
+      return [];
+    }
     return getSubtitleSearchIndex(dbPath).listSeriesNames(prefix, limit);
   }
+}
+
+function logInteractiveWorkerUnavailable(op: string): void {
+  console.warn(
+    JSON.stringify({
+      event: "subtitle_search.worker_unavailable",
+      op,
+      hint: "Set JELLYBOT_SUBTITLE_SEARCH_WORKER=1 (default) for /quote autocomplete",
+    }),
+  );
 }
 
 /** Test-only teardown. */

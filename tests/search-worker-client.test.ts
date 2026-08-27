@@ -8,11 +8,17 @@ import {
   shutdownSubtitleSearchWorkerForTests,
 } from "../src/subtitles/search-worker-client.ts";
 
-describe("searchQuotesOffThread (#192)", () => {
+describe.serial("searchQuotesOffThread (#192)", () => {
   const paths: string[] = [];
+  let previousWorkerEnv: string | undefined;
 
   afterEach(() => {
     shutdownSubtitleSearchWorkerForTests();
+    if (previousWorkerEnv === undefined) {
+      delete process.env.JELLYBOT_SUBTITLE_SEARCH_WORKER;
+    } else {
+      process.env.JELLYBOT_SUBTITLE_SEARCH_WORKER = previousWorkerEnv;
+    }
     for (const path of paths) {
       try {
         unlinkSync(path);
@@ -20,6 +26,7 @@ describe("searchQuotesOffThread (#192)", () => {
         // ignore
       }
     }
+    paths.length = 0;
   });
 
   function tempDb(): string {
@@ -29,6 +36,9 @@ describe("searchQuotesOffThread (#192)", () => {
   }
 
   test("returns FTS matches via worker", async () => {
+    previousWorkerEnv = process.env.JELLYBOT_SUBTITLE_SEARCH_WORKER;
+    delete process.env.JELLYBOT_SUBTITLE_SEARCH_WORKER;
+
     const dbPath = tempDb();
     const index = openSubtitleIndex(dbPath);
     try {
@@ -53,7 +63,7 @@ describe("searchQuotesOffThread (#192)", () => {
   });
 
   test("interactive mode returns empty when worker disabled", async () => {
-    const previous = process.env.JELLYBOT_SUBTITLE_SEARCH_WORKER;
+    previousWorkerEnv = process.env.JELLYBOT_SUBTITLE_SEARCH_WORKER;
     process.env.JELLYBOT_SUBTITLE_SEARCH_WORKER = "0";
 
     const dbPath = tempDb();
@@ -74,22 +84,14 @@ describe("searchQuotesOffThread (#192)", () => {
       index.close();
     }
 
-    try {
-      const results = await searchQuotesOffThread(dbPath, "hello", 5, undefined, 5_000, {
-        interactive: true,
-      });
-      expect(results).toEqual([]);
-    } finally {
-      if (previous === undefined) {
-        delete process.env.JELLYBOT_SUBTITLE_SEARCH_WORKER;
-      } else {
-        process.env.JELLYBOT_SUBTITLE_SEARCH_WORKER = previous;
-      }
-    }
+    const results = await searchQuotesOffThread(dbPath, "hello", 5, undefined, 5_000, {
+      interactive: true,
+    });
+    expect(results).toEqual([]);
   });
 
   test("sync fallback when worker disabled and not interactive", async () => {
-    const previous = process.env.JELLYBOT_SUBTITLE_SEARCH_WORKER;
+    previousWorkerEnv = process.env.JELLYBOT_SUBTITLE_SEARCH_WORKER;
     process.env.JELLYBOT_SUBTITLE_SEARCH_WORKER = "0";
 
     const dbPath = tempDb();
@@ -110,15 +112,7 @@ describe("searchQuotesOffThread (#192)", () => {
       index.close();
     }
 
-    try {
-      const results = await searchQuotesOffThread(dbPath, "hello", 5, undefined, 5_000);
-      expect(results).toHaveLength(1);
-    } finally {
-      if (previous === undefined) {
-        delete process.env.JELLYBOT_SUBTITLE_SEARCH_WORKER;
-      } else {
-        process.env.JELLYBOT_SUBTITLE_SEARCH_WORKER = previous;
-      }
-    }
+    const results = await searchQuotesOffThread(dbPath, "hello", 5, undefined, 5_000);
+    expect(results).toHaveLength(1);
   });
 });
