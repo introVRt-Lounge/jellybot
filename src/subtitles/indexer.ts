@@ -2,6 +2,7 @@ import type { JellyfinClient, JellyfinItemWithMedia, SubtitledMediaPage } from "
 import { displayTitle } from "../display-title.ts";
 import { parseSubtitleContent } from "./parse.ts";
 import { pickSubtitleStream, parsePreferredLanguages } from "./track-select.ts";
+import { waitForInteractivePriorityClear } from "../interactive-priority.ts";
 import { openSubtitleIndex, type IndexedCue, type IndexedMediaItem, type SubtitleIndex } from "./index-db.ts";
 
 export type IndexSubtitlesOptions = {
@@ -243,6 +244,7 @@ async function mapWithConcurrency<T>(
       const current = items[cursor];
       cursor += 1;
       if (current === undefined) return;
+      await waitForInteractivePriorityClear();
       await worker(current);
       // Issue #147: each `worker` call ends with a synchronous SQLite write
       // (FTS5 + media_items insert) that can block the event loop for tens to
