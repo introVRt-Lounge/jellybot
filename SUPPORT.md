@@ -15,6 +15,7 @@
 |---------|---------|
 | [GitHub Issues](https://github.com/introVRt-Lounge/jellybot/issues/new/choose) | Bugs and feature requests |
 | **support@introvrtlounge.com** | General help when Issues are not appropriate |
+| **DMCA / copyright (public demo)** | Web form at [jellybot.introvrtlounge.com/dmca.html](https://jellybot.introvrtlounge.com/dmca.html) → ntfy topic `jellybot-dmca` — see [docs/DMCA.md](./docs/DMCA.md) |
 | **security@introvrtlounge.com** | Vulnerabilities (see [SECURITY.md](./SECURITY.md)) |
 
 Please **do not** post Discord tokens, Jellyfin passwords, or `.env` contents in issues or email.

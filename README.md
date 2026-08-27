@@ -106,7 +106,7 @@ That walks Jellyfin items with subtitles and stores cue text in SQLite FTS. Re-r
 
 The subtitle index is a **multi-GB derived cache** (not throwaway state). Store it on a **host bind mount** (`JELLYBOT_DATA_HOST_DIR`, default `./data`) so `docker_comprehensive` Borg picks it up. See [docs/architecture.md](docs/architecture.md#subtitle-index) and [docs/caps-and-limits.md](docs/caps-and-limits.md) for coverage tiers (Jellyfin subs, OpenSubtitles, Whisper long-tail).
 
-**Docs / marketing site:** https://jellybot.introvrtlounge.com (GitHub Pages + custom domain; built from `docs/` on each push to `main`).
+**Marketing / try-it site:** https://jellybot.introvrtlounge.com (Cloudflare Pages from `web/`). **Technical docs:** https://introvrt-lounge.github.io/jellybot/ (MkDocs on push to `main`). Web API: [docs/WEB_API.md](docs/WEB_API.md).
 
 The runtime container:
 

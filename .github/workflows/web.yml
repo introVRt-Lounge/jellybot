@@ -1,0 +1,37 @@
+name: Web
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "web/**"
+      - "assets/**"
+      - ".github/workflows/web.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: web-pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      deployments: write
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - name: Stage site assets
+        run: |
+          mkdir -p web/assets
+          cp assets/jellybot_banner_680x240.png assets/jellybot_icon_1024.png web/assets/
+
+      - name: Publish to Cloudflare Pages
+        uses: cloudflare/pages-action@7a9fd82e8e894396b1cb9242871c0c4a8b671fa5 # v1
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          projectName: jellybot
+          directory: web
+          gitHubToken: ${{ secrets.GITHUB_TOKEN }}

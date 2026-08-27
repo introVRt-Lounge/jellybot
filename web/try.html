@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Try Jellybot — quote search demo</title>
+    <meta name="description" content="Try Jellybot quote autocomplete and clip preview in your browser." />
+    <link rel="stylesheet" href="/styles.css" />
+    <link rel="icon" href="/assets/jellybot_icon_1024.png" />
+  </head>
+  <body>
+    <div class="container">
+      <header class="site-header">
+        <a class="brand" href="/">
+          <img src="/assets/jellybot_icon_1024.png" alt="Jellybot" />
+          <div>
+            <strong>Jellybot</strong>
+            <span>Web try-it</span>
+          </div>
+        </a>
+        <nav class="nav">
+          <a href="/">Home</a>
+          <a class="active" href="/try.html">Try it</a>
+          <a href="/install.html">Install</a>
+          <a href="https://github.com/introVRt-Lounge/jellybot">GitHub</a>
+        </nav>
+      </header>
+
+      <section class="hero" style="grid-template-columns: 1fr">
+        <div class="try-panel" data-quote-try>
+          <h1>Try /quote in the browser</h1>
+          <p class="lede">
+            This uses the same subtitle index and ffmpeg pipeline as the Discord bot. Previews are rate-limited and
+            expire after a short TTL.
+          </p>
+
+          <div class="field">
+            <label for="quote-query">Quote text</label>
+            <input id="quote-query" type="search" placeholder="e.g. cunning plan" autocomplete="off" />
+          </div>
+
+          <div class="field">
+            <label for="quote-series">Series filter (optional)</label>
+            <input id="quote-series" type="search" placeholder="Narrows TV searches to one show" autocomplete="off" />
+          </div>
+
+          <div class="field">
+            <label>Suggestions</label>
+            <ul id="quote-suggestions" class="suggestions" aria-live="polite"></ul>
+          </div>
+
+          <div class="field">
+            <label for="quote-duration">Duration (optional)</label>
+            <input id="quote-duration" type="text" placeholder="15" />
+          </div>
+
+          <div class="field">
+            <label for="quote-padding">Padding before quote (optional)</label>
+            <input id="quote-padding" type="text" placeholder="2" />
+          </div>
+
+          <div class="cta-row">
+            <button id="quote-render" class="button button-primary" type="button" disabled>Render preview</button>
+          </div>
+
+          <p id="quote-status" class="status"></p>
+          <video id="quote-preview" class="preview-player" controls playsinline></video>
+          <p class="status">
+            See something that shouldn't be here?
+            <a href="/dmca.html">Report a copyright concern</a>
+            (include the preview URL from your browser).
+          </p>
+        </div>
+      </section>
+
+      <footer class="site-footer">
+        <p>
+          <a href="/dmca.html">Copyright / DMCA</a>
+          ·
+          API base URL is configured in <code>config.js</code>. Point Traefik at the bot health port for
+          <code>api.jellybot.introvrtlounge.com</code> and enable <code>WEB_API_ENABLED=1</code> on the container.
+        </p>
+      </footer>
+    </div>
+
+    <script src="/config.js"></script>
+    <script src="/app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Copyright / DMCA — Jellybot</title>
+    <meta
+      name="description"
+      content="Report copyright concerns for Jellybot public web previews via the try-it demo."
+    />
+    <link rel="stylesheet" href="/styles.css" />
+    <link rel="icon" href="/assets/jellybot_icon_1024.png" />
+  </head>
+  <body>
+    <div class="container">
+      <header class="site-header">
+        <a class="brand" href="/">
+          <img src="/assets/jellybot_icon_1024.png" alt="Jellybot" />
+          <div>
+            <strong>Jellybot</strong>
+            <span>Copyright notices</span>
+          </div>
+        </a>
+        <nav class="nav">
+          <a href="/">Home</a>
+          <a href="/try.html">Try it</a>
+          <a href="/install.html">Install</a>
+          <a href="https://github.com/introVRt-Lounge/jellybot">GitHub</a>
+        </nav>
+      </header>
+
+      <section class="hero" style="grid-template-columns: 1fr">
+        <div>
+          <h1>Report copyright concerns</h1>
+          <p class="lede">
+            Jellybot is self-hosted software, but IntroVRt Lounge also operates a public
+            <strong>try-it demo</strong> that can render short previews from an indexed library. Use the form below
+            to flag material on that demo surface. Reports are delivered to the operator via
+            <strong>ntfy</strong> — same pattern as the
+            <a href="https://gavincowie.com/#contact">gavincowie.com contact form</a>.
+          </p>
+        </div>
+
+        <article class="install-step">
+          <h2>Submit a report</h2>
+          <form id="dmca-form" novalidate>
+            <div class="field">
+              <label for="kind">Notice type</label>
+              <select id="kind" name="kind">
+                <option value="takedown">DMCA takedown</option>
+                <option value="counter">Counter-notification</option>
+              </select>
+            </div>
+
+            <div class="field">
+              <label for="name">Your name (signature)</label>
+              <input id="name" name="name" type="text" maxlength="120" required />
+            </div>
+
+            <div class="field">
+              <label for="email">Email</label>
+              <input id="email" name="email" type="email" maxlength="254" required />
+            </div>
+
+            <div class="field">
+              <label for="contactAddress">Postal address</label>
+              <textarea id="contactAddress" name="contactAddress" rows="3" maxlength="500" required></textarea>
+            </div>
+
+            <div class="field">
+              <label for="contactPhone">Telephone (optional)</label>
+              <input id="contactPhone" name="contactPhone" type="text" maxlength="64" />
+            </div>
+
+            <div class="field">
+              <label for="copyrightedWork">Copyrighted work identified</label>
+              <textarea id="copyrightedWork" name="copyrightedWork" rows="3" maxlength="500" required></textarea>
+            </div>
+
+            <div class="field">
+              <label for="infringingMaterial">Material to flag (quote text, title, description)</label>
+              <textarea id="infringingMaterial" name="infringingMaterial" rows="4" maxlength="3000" required></textarea>
+            </div>
+
+            <div class="field">
+              <label for="previewUrl">Preview URL (if you have one)</label>
+              <input
+                id="previewUrl"
+                name="previewUrl"
+                type="url"
+                maxlength="500"
+                placeholder="https://api.jellybot.introvrtlounge.com/api/v1/previews/…"
+              />
+            </div>
+
+            <div class="field">
+              <label for="details">Additional details (optional)</label>
+              <textarea id="details" name="details" rows="4" maxlength="3000"></textarea>
+            </div>
+
+            <div class="checkbox-row">
+              <input id="goodFaith" name="goodFaith" type="checkbox" required />
+              <label for="goodFaith">
+                I have a good-faith belief that use of the material is not authorized by the copyright owner, its
+                agent, or the law.
+              </label>
+            </div>
+
+            <div class="checkbox-row">
+              <input id="accuracy" name="accuracy" type="checkbox" required />
+              <label for="accuracy">
+                Under penalty of perjury, the information in this report is accurate and I am authorized to act on
+                behalf of the copyright owner.
+              </label>
+            </div>
+
+            <div class="hp-field">
+              <label for="website">Website</label>
+              <input id="website" name="website" type="text" tabindex="-1" autocomplete="off" />
+            </div>
+
+            <button class="button button-primary" type="submit">Submit report</button>
+          </form>
+          <p id="dmca-status" class="status" role="status" aria-live="polite"></p>
+          <noscript><p class="status">JavaScript is required to submit a report.</p></noscript>
+        </article>
+
+        <article class="install-step">
+          <h2>Scope</h2>
+          <ul>
+            <li>Public try-it previews on this site and the demo API</li>
+            <li>Not third-party self-hosted Jellybot installs (those operators own their libraries)</li>
+          </ul>
+          <p>
+            Security issues belong in
+            <a href="https://github.com/introVRt-Lounge/jellybot/blob/main/SECURITY.md">SECURITY.md</a>, not here.
+          </p>
+        </article>
+      </section>
+
+      <footer class="site-footer">
+        <p>
+          <a href="/dmca.html">Copyright / DMCA</a>
+          ·
+          <a href="https://github.com/introVRt-Lounge/jellybot">GitHub</a>
+        </p>
+      </footer>
+    </div>
+
+    <script src="/config.js"></script>
+    <script src="/app.js"></script>
+  </body>
+</html>
