@@ -134,6 +134,22 @@ export function waitDebounced(debounceMs: number, signal: AbortSignal): Promise<
  * `withTimeout` can fire while earlier handlers yield. The work function
  * must not run at argument-evaluation time (see issue #147 / quote autocomplete).
  */
+/**
+ * Run synchronous work on a later event-loop turn so Discord handlers can ack
+ * first. Same deferral as {@link runDeferredSyncWithTimeout} without a timer.
+ */
+export function runDeferredSync<T>(work: () => T): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    setImmediate(() => {
+      try {
+        resolve(work());
+      } catch (error) {
+        reject(error);
+      }
+    });
+  });
+}
+
 export async function runDeferredSyncWithTimeout<T>(
   work: () => T,
   ms: number,

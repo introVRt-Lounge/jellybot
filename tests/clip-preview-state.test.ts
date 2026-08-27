@@ -6,8 +6,24 @@ import {
   parsePreviewModalCustomId,
   isPreviewInteractionCustomId,
 } from "../src/clip-preview/custom-id.ts";
+import { editReplyReplacingAttachments } from "../src/clip-preview/pipeline.ts";
 import { applyPreviewAction, canApplyPreviewAction } from "../src/clip-preview/state-machine.ts";
 import { ClipPreviewStore } from "../src/clip-preview/store.ts";
+
+describe("editReplyReplacingAttachments (#188)", () => {
+  test("clears attachments when replacing clip preview files", () => {
+    expect(
+      editReplyReplacingAttachments({
+        content: "Preview",
+        files: [{ attachment: "/tmp/x.mp4", name: "x.mp4" }],
+      }),
+    ).toEqual({
+      content: "Preview",
+      files: [{ attachment: "/tmp/x.mp4", name: "x.mp4" }],
+      attachments: [],
+    });
+  });
+});
 
 describe("clip preview state machine", () => {
   test("allows post, cancel, and retry while awaiting approval", () => {

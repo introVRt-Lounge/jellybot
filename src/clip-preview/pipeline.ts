@@ -17,6 +17,17 @@ import { clipPreviewStore, type ClipPreviewClipParams, type ClipPreviewCommand, 
 const PREVIEW_FOOTER =
   "Only you can see this preview. Use **Post** to share it in the channel, **Cancel** to discard, or **Try again** to adjust timing.";
 
+/**
+ * Discord keeps existing message attachments on `editReply` / `update` unless
+ * `attachments` is explicitly cleared. `files: []` alone stacks a new clip next
+ * to the old one (often broken after local cleanup) — issue #188.
+ */
+export function editReplyReplacingAttachments(
+  options: InteractionEditReplyOptions,
+): InteractionEditReplyOptions {
+  return { ...options, attachments: [] };
+}
+
 export type PreviewReplyTarget = {
   editReply: (options: InteractionEditReplyOptions | string) => Promise<unknown>;
   channelId: string | null;
@@ -147,11 +158,13 @@ export async function showClipPreview(params: {
     PREVIEW_FOOTER,
   ].join("\n");
 
-  await params.interaction.editReply({
-    content,
-    files: [attachment],
-    components: buildPreviewActionRows(sessionId),
-  });
+  await params.interaction.editReply(
+    editReplyReplacingAttachments({
+      content,
+      files: [attachment],
+      components: buildPreviewActionRows(sessionId),
+    }),
+  );
 
   return sessionId;
 }
