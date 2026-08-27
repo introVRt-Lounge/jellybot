@@ -88,33 +88,85 @@ function ensureWorker(): Worker {
   return worker;
 }
 
+type CallWorkerOptions = {
+  interactive?: boolean;
+  signal?: AbortSignal;
+};
+
 function callSearchWorker(
   request: Omit<Extract<SearchWorkerRequest, { op: "search" }>, "id">,
   timeoutMs: number,
+  options: CallWorkerOptions = {},
 ): Promise<QuoteSearchResult[]> {
-  return callWorker(request, timeoutMs) as Promise<QuoteSearchResult[]>;
+  return callWorker(request, timeoutMs, options) as Promise<QuoteSearchResult[]>;
 }
 
 function callSeriesWorker(
   request: Omit<Extract<SearchWorkerRequest, { op: "series" }>, "id">,
   timeoutMs: number,
+  options: CallWorkerOptions = {},
 ): Promise<string[]> {
-  return callWorker(request, timeoutMs) as Promise<string[]>;
+  return callWorker(request, timeoutMs, options) as Promise<string[]>;
 }
 
-function callWorker(request: Omit<SearchWorkerRequest, "id">, timeoutMs: number): Promise<unknown> {
+function callWorker(
+  request: Omit<SearchWorkerRequest, "id">,
+  timeoutMs: number,
+  options: CallWorkerOptions = {},
+): Promise<unknown> {
+  const { interactive = false, signal } = options;
+
+  if (signal?.aborted) {
+    return Promise.reject(
+      signal.reason ?? new DOMException("The operation was aborted.", "AbortError"),
+    );
+  }
+
   const id = nextId++;
   nextId = nextId % Number.MAX_SAFE_INTEGER;
 
   return new Promise<unknown>((resolve, reject) => {
+    let settled = false;
+
+    const finish = (handler: () => void) => {
+      if (settled) return;
+      settled = true;
+      signal?.removeEventListener("abort", onAbort);
+      handler();
+    };
+
     const timer = setTimeout(() => {
       pending.delete(id);
-      reject(new Error("Subtitle search timed out"));
+      if (interactive) {
+        terminateWorker();
+      }
+      finish(() => reject(new Error("Subtitle search timed out")));
     }, timeoutMs);
 
+    const onAbort = () => {
+      clearTimeout(timer);
+      pending.delete(id);
+      if (interactive) {
+        terminateWorker();
+      }
+      finish(() =>
+        reject(signal?.reason ?? new DOMException("The operation was aborted.", "AbortError")),
+      );
+    };
+
+    signal?.addEventListener("abort", onAbort);
+
     pending.set(id, {
-      resolve: resolve as (value: unknown) => void,
-      reject,
+      resolve: (value) => {
+        clearTimeout(timer);
+        pending.delete(id);
+        finish(() => resolve(value));
+      },
+      reject: (error) => {
+        clearTimeout(timer);
+        pending.delete(id);
+        finish(() => reject(error));
+      },
       timer,
     });
 
@@ -123,6 +175,8 @@ function callWorker(request: Omit<SearchWorkerRequest, "id">, timeoutMs: number)
     } catch (error) {
       clearTimeout(timer);
       pending.delete(id);
+      signal?.removeEventListener("abort", onAbort);
+      settled = true;
       reject(error);
     }
   });
@@ -134,6 +188,8 @@ export type OffThreadSearchOptions = {
    * gateway thread. Return [] on worker failure so Discord gets a fast ack.
    */
   interactive?: boolean;
+  /** When aborted (superseded keystroke), drop the worker request immediately. */
+  signal?: AbortSignal;
 };
 
 export async function searchQuotesOffThread(
@@ -145,6 +201,11 @@ export async function searchQuotesOffThread(
   options: OffThreadSearchOptions = {},
 ): Promise<QuoteSearchResult[]> {
   const interactive = options.interactive ?? false;
+  const { signal } = options;
+
+  if (signal?.aborted) {
+    return [];
+  }
 
   if (!workerEnabled()) {
     if (interactive) {
@@ -164,8 +225,13 @@ export async function searchQuotesOffThread(
         seriesFilter,
       },
       timeoutMs,
+      { interactive, signal },
     );
   } catch (error) {
+    if (interactive && isBenignWorkerError(error, signal)) {
+      return [];
+    }
+
     console.warn(
       JSON.stringify({
         event: "subtitle_search.worker_failed",
@@ -190,6 +256,11 @@ export async function listSeriesNamesOffThread(
   options: OffThreadSearchOptions = {},
 ): Promise<string[]> {
   const interactive = options.interactive ?? false;
+  const { signal } = options;
+
+  if (signal?.aborted) {
+    return [];
+  }
 
   if (!workerEnabled()) {
     if (interactive) {
@@ -208,8 +279,13 @@ export async function listSeriesNamesOffThread(
         limit,
       },
       timeoutMs,
+      { interactive, signal },
     );
   } catch (error) {
+    if (interactive && isBenignWorkerError(error, signal)) {
+      return [];
+    }
+
     console.warn(
       JSON.stringify({
         event: "subtitle_search.worker_failed",
@@ -224,6 +300,16 @@ export async function listSeriesNamesOffThread(
     }
     return getSubtitleSearchIndex(dbPath).listSeriesNames(prefix, limit);
   }
+}
+
+function isBenignWorkerError(error: unknown, signal?: AbortSignal): boolean {
+  if (signal?.aborted) return true;
+  if (error instanceof DOMException && error.name === "AbortError") return true;
+  if (error instanceof Error) {
+    if (error.message === "Subtitle search timed out") return true;
+    if (error.message === "Subtitle search worker terminated") return true;
+  }
+  return false;
 }
 
 function logInteractiveWorkerUnavailable(op: string): void {
