@@ -149,11 +149,20 @@ Use a bind mount, not a named Docker volume — volumes under `/var/lib/docker/v
 
 Do **not** trigger on every `issues.opened` event. File via the **Agent task** template; **`@radgey-cmd`** adds `ai-triage` or `ai-safe` when ready.
 
-## Docs site (marketing URL)
+## Public web surfaces (#191)
 
 | | |
 |---|---|
-| **Target URL** | https://jellybot.introvrtlounge.com |
+| **Marketing URL** | https://jellybot.introvrtlounge.com |
+| **Marketing build** | Cloudflare Pages — `.github/workflows/web.yml`, source `web/` |
+| **CF secrets** | `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` |
+| **Web API** | `api.jellybot.introvrtlounge.com` → Traefik → `jellybot:8080`, `WEB_API_ENABLED=1` |
+| **DMCA reports** | `/dmca.html` → `POST /api/v1/dmca/report` → ntfy **`jellybot-dmca`** |
+| **Operator docs** | https://introvrt-lounge.github.io/jellybot/ (MkDocs) |
+
+## Docs site (technical reference)
+
+| | |
+|---|---|
+| **Target URL** | https://introvrt-lounge.github.io/jellybot/ |
 | **Build** | MkDocs workflow → GitHub Pages |
-| **Custom domain** | `docs/CNAME` + repo Settings → Pages |
-| **DNS** | `CNAME jellybot` → `introvrt-lounge.github.io` |

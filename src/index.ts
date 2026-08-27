@@ -53,6 +53,7 @@ import { isBenignAutocompleteError } from "./autocomplete-guard.ts";
 import { handleRankSelect } from "./features/rank-handlers.ts";
 import { FeatureStore } from "./features/feature-store.ts";
 import { startFeaturePipelineReconcileLoop } from "./features/pipeline-reconcile.ts";
+import { createWebApiHandler } from "./api/router.ts";
 
 const config = loadConfig();
 const jellyfin = new JellyfinClient(
@@ -139,6 +140,13 @@ const webhookDispatcher = config.webhookSharedSecret
     })
   : null;
 
+const webApiHandler = config.webApiEnabled
+  ? createWebApiHandler({
+      config,
+      jellyfin,
+    })
+  : undefined;
+
 startHealthServer(
   config.healthPort,
   config.appVersion,
@@ -146,16 +154,28 @@ startHealthServer(
     refreshSubtitleHealth();
     return healthState;
   },
-  webhookDispatcher
-    ? {
-        webhooks: {
-          config: { sharedSecret: config.webhookSharedSecret ?? "" },
-          dispatcher: webhookDispatcher,
-        },
-      }
-    : {},
+  {
+    ...(webhookDispatcher
+      ? {
+          webhooks: {
+            config: { sharedSecret: config.webhookSharedSecret ?? "" },
+            dispatcher: webhookDispatcher,
+          },
+        }
+      : {}),
+    ...(webApiHandler ? { webApi: webApiHandler } : {}),
+  },
 );
 console.info(`Health server listening on :${config.healthPort}/healthz`);
+if (webApiHandler) {
+  console.info(
+    JSON.stringify({
+      event: "web_api.ready",
+      paths: ["/api/v1/quote/suggest", "/api/v1/quote/preview", "/api/v1/clip/media"],
+      corsOrigins: config.webApiCorsOrigins,
+    }),
+  );
+}
 if (webhookDispatcher) {
   console.info(
     JSON.stringify({

@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Install Jellybot</title>
+    <meta name="description" content="Install Jellybot on your server with Docker and GHCR." />
+    <link rel="stylesheet" href="/styles.css" />
+    <link rel="icon" href="/assets/jellybot_icon_1024.png" />
+  </head>
+  <body>
+    <div class="container">
+      <header class="site-header">
+        <a class="brand" href="/">
+          <img src="/assets/jellybot_icon_1024.png" alt="Jellybot" />
+          <div>
+            <strong>Jellybot</strong>
+            <span>Install guide</span>
+          </div>
+        </a>
+        <nav class="nav">
+          <a href="/">Home</a>
+          <a href="/try.html">Try it</a>
+          <a class="active" href="/install.html">Install</a>
+          <a href="https://github.com/introVRt-Lounge/jellybot">GitHub</a>
+        </nav>
+      </header>
+
+      <section class="hero" style="grid-template-columns: 1fr">
+        <div>
+          <h1>Install on your server</h1>
+          <p class="lede">
+            Jellybot is a single container that talks to Jellyfin, stores a subtitle index on disk, and registers
+            guild-scoped slash commands in Discord.
+          </p>
+        </div>
+
+        <article class="install-step">
+          <h2>1. Discord application</h2>
+          <p>Create a bot at the Discord Developer Portal with <code>bot</code> and <code>applications.commands</code> scopes.</p>
+          <p>Minimum permissions: Send Messages, Attach Files, Use Slash Commands.</p>
+        </article>
+
+        <article class="install-step">
+          <h2>2. Configure environment</h2>
+          <pre><code>cp .env.example .env
+# Required:
+# DISCORD_TOKEN, DISCORD_CLIENT_ID
+# JELLYFIN_USERNAME, JELLYFIN_PASSWORD
+# JELLYFIN_MOVIES_LIBRARY_ID, JELLYFIN_TV_LIBRARY_ID
+# Optional web try-it API:
+# WEB_API_ENABLED=1</code></pre>
+        </article>
+
+        <article class="install-step">
+          <h2>3. Run with Docker</h2>
+          <pre><code>docker pull ghcr.io/introvrt-lounge/jellybot:latest
+docker compose -f deploy/prod/docker-compose.yml up -d</code></pre>
+          <p>Mount persistent data for the subtitle index:</p>
+          <pre><code>volumes:
+  - ./data:/var/lib/jellybot/data</code></pre>
+        </article>
+
+        <article class="install-step">
+          <h2>4. Register commands & index subtitles</h2>
+          <pre><code>make register-commands
+make index-subtitles</code></pre>
+          <p>Re-run incremental indexing after new subtitle files land in Jellyfin.</p>
+        </article>
+
+        <article class="install-step">
+          <h2>5. Verify</h2>
+          <pre><code>curl -s http://127.0.0.1:8080/healthz | jq .
+curl -s http://127.0.0.1:8080/api/v1/meta</code></pre>
+          <p>In Discord: <code>/quote</code> autocomplete should return indexed matches after the index build completes.</p>
+        </article>
+      </section>
+
+      <footer class="site-footer">
+        <p>
+          <a href="/dmca.html">Copyright / DMCA</a>
+          · Full operator docs:
+          <a href="https://introvrt-lounge.github.io/jellybot/">introvrt-lounge.github.io/jellybot</a>
+        </p>
+      </footer>
+    </div>
+  </body>
+</html>

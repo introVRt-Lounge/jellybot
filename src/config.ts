@@ -79,6 +79,19 @@ export type AppConfig = {
   supercutMaxMb: number;
   /** PNG burned into clip/quote renders; unset disables overlay. */
   watermarkPath?: string;
+  /** Public REST API for web try-it (disabled unless WEB_API_ENABLED=1). */
+  webApiEnabled: boolean;
+  webApiCorsOrigins: string[];
+  webApiPreviewTtlMs: number;
+  webApiMaxPreviewMb: number;
+  webApiRateLimitSuggestPerMinute: number;
+  webApiRateLimitPreviewPerHour: number;
+  webApiDmcaRateLimitWindowMs: number;
+  webApiDmcaRateLimitMax: number;
+  webApiDmcaNtfyTopic?: string;
+  ntfyServer?: string;
+  ntfyUser?: string;
+  ntfyPassword?: string;
 };
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
@@ -137,7 +150,29 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     supercutCoalesceGapMs: Number(env.SUPERCUT_COALESCE_GAP_MS ?? 1500),
     supercutMaxMb: Number(env.SUPERCUT_MAX_MB ?? 24),
     watermarkPath: resolveWatermarkPath(env),
+    webApiEnabled: env.WEB_API_ENABLED?.trim() === "1",
+    webApiCorsOrigins: parseWebApiCorsOrigins(env),
+    webApiPreviewTtlMs: Number(env.WEB_API_PREVIEW_TTL_MS ?? 900_000),
+    webApiMaxPreviewMb: Number(env.WEB_API_MAX_PREVIEW_MB ?? 50),
+    webApiRateLimitSuggestPerMinute: Number(env.WEB_API_RATE_LIMIT_SUGGEST_PER_MIN ?? 60),
+    webApiRateLimitPreviewPerHour: Number(env.WEB_API_RATE_LIMIT_PREVIEW_PER_HOUR ?? 10),
+    webApiDmcaRateLimitWindowMs: Number(env.WEB_API_DMCA_RATE_LIMIT_WINDOW ?? 900) * 1000,
+    webApiDmcaRateLimitMax: Number(env.WEB_API_DMCA_RATE_LIMIT_MAX ?? 5),
+    webApiDmcaNtfyTopic: env.WEB_API_DMCA_NTFY_TOPIC?.trim() || undefined,
+    ntfyServer: env.NTFY_SERVER?.trim().replace(/\/+$/, "") || undefined,
+    ntfyUser: env.NTFY_USER?.trim().replace(/^"|"$/g, "") || undefined,
+    ntfyPassword: env.NTFY_PASSWORD?.trim().replace(/^"|"$/g, "") || undefined,
   };
+}
+
+function parseWebApiCorsOrigins(env: NodeJS.ProcessEnv): string[] {
+  const raw =
+    env.WEB_API_CORS_ORIGINS?.trim() ||
+    "https://jellybot.introvrtlounge.com,http://127.0.0.1:8788,http://localhost:8788";
+  return raw
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
 }
 
 function parseOptionalNumber(raw: string | undefined): number | undefined {

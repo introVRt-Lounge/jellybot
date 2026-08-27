@@ -24,6 +24,8 @@ extra:
 
 nav:
   - Home: index.md
+  - Web API: WEB_API.md
+  - Copyright / DMCA: DMCA.md
   - Issue to deployment: ISSUE_TO_DEPLOYMENT.md
   - Development: DEVELOPMENT.md
   - Caps and limits: caps-and-limits.md

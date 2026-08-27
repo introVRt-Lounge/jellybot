@@ -1,6 +1,8 @@
 import type { WebhookDispatcher } from "./webhooks/dispatch.ts";
 import { tryHandleWebhook, type WebhookRouterConfig } from "./webhooks/router.ts";
 
+export type WebApiHandler = (request: Request) => Promise<Response | null>;
+
 export type HealthState = {
   discordReady: boolean;
   jellyfinUser?: string;
@@ -18,6 +20,8 @@ export type StartHealthServerOptions = {
     config: WebhookRouterConfig;
     dispatcher: WebhookDispatcher;
   };
+  /** Optional public web try-it API. When undefined, /api/v1/* returns 404. */
+  webApi?: WebApiHandler;
 };
 
 export function startHealthServer(
@@ -30,6 +34,11 @@ export function startHealthServer(
     hostname: "0.0.0.0",
     port,
     async fetch(request) {
+      if (options.webApi) {
+        const apiResponse = await options.webApi(request);
+        if (apiResponse) return apiResponse;
+      }
+
       // Webhook routes get first crack so /hooks/radarr etc. don't fall
       // through to the health 404 path.
       if (options.webhooks) {

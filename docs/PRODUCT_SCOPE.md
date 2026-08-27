@@ -6,7 +6,7 @@ Canonical scope for automated PR review (`scope-review` check) and human triage.
 
 Help **every member of a Discord guild** get **maximum practical value** from a **large personal or shared Jellyfin library** — movies, TV, music, and any other item types Jellyfin exposes — without leaving Discord.
 
-The north star is **use Jellyfin to max effect**: if the media (or metadata) lives in Jellyfin and guild members can discover, clip, or share it in Discord, it is generally in scope.
+The north star is **use Jellyfin to max effect**: if the media (or metadata) lives in Jellyfin and guild members can discover, clip, or share it in Discord **or via the public web try-it surface**, it is generally in scope.
 
 ## In scope
 
@@ -18,6 +18,7 @@ Changes that directly support:
 - **Watchability** — audio track selection, subtitle/lyrics burn-in where applicable, Discord-friendly encodes
 - **Library coverage** — indexing (subtitles, lyrics, or other text sources Jellyfin provides), incremental index, health of index data
 - **Guild UX** — slash commands, ephemeral previews, buttons/modals for clip approval
+- **Web try-it / install surface** — marketing site on Cloudflare Pages, REST API for quote/clip autocomplete and preview playback (same Jellyfin → clip pipeline as Discord; browser delivery instead of channel upload)
 - **Reliability** — bot health, Jellyfin auth, error messages operators can act on
 - **Ship path for this bot** — CI, Docker/GHCR, Watchtower deploy, release announce **for jellybot only**
 - **Operator docs** — commands, setup, development, security for this repo
@@ -28,7 +29,7 @@ Changes that directly support:
 - Unrelated products (other bots, unrelated web apps, generic infra unrelated to jellybot)
 - Features that bypass guild members (admin-only power tools with no member benefit)
 - Unrelated AI/chat bot behavior, moderation, ticketing, or general-purpose Discord utilities
-- Serving or hosting media **outside** the Jellyfin → clip → Discord path
+- Serving or hosting media **outside** the Jellyfin → clip → (Discord **or** web preview) path
 - Broad refactors with no user-visible or operational benefit to the mission above
 - Secrets, auth, or deployment patterns copied from other projects without jellybot need
 

@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Jellybot — Jellyfin clips & quotes for Discord</title>
+    <meta
+      name="description"
+      content="Self-hosted Discord bot for Jellyfin libraries. Search subtitles, clip scenes, and share MP4s in your server."
+    />
+    <link rel="stylesheet" href="/styles.css" />
+    <link rel="icon" href="/assets/jellybot_icon_1024.png" />
+  </head>
+  <body>
+    <div class="container">
+      <header class="site-header">
+        <a class="brand" href="/">
+          <img src="/assets/jellybot_icon_1024.png" alt="Jellybot" />
+          <div>
+            <strong>Jellybot</strong>
+            <span>Jellyfin clips for Discord</span>
+          </div>
+        </a>
+        <nav class="nav">
+          <a class="active" href="/">Home</a>
+          <a href="/try.html">Try it</a>
+          <a href="/install.html">Install</a>
+          <a href="https://github.com/introVRt-Lounge/jellybot">GitHub</a>
+          <a href="https://introvrt-lounge.github.io/jellybot/">Docs</a>
+        </nav>
+      </header>
+
+      <section class="hero">
+        <div>
+          <h1>Clip your Jellyfin library without leaving Discord.</h1>
+          <p class="lede">
+            Jellybot indexes subtitles, finds the quote you remember, renders an H.264 clip with ffmpeg,
+            and posts it to your guild. Self-hosted. Docker-first. No cloud transcoding lock-in.
+          </p>
+          <div class="cta-row">
+            <a class="button button-primary" href="/try.html">Try quote search</a>
+            <a class="button button-secondary" href="/install.html">Install on your server</a>
+          </div>
+        </div>
+        <div class="hero-card">
+          <img src="/assets/jellybot_banner_680x240.png" alt="Jellybot banner" />
+          <p>
+            Commands: <code>/quote</code>, <code>/clip</code>, <code>/subcoverage</code>.
+            Pull the GHCR image, point it at Jellyfin, register slash commands, build the subtitle index once.
+          </p>
+        </div>
+      </section>
+
+      <section class="feature-grid">
+        <article>
+          <h3>/quote</h3>
+          <p>Search indexed subtitle text and clip the matching scene with padding and duration controls.</p>
+        </article>
+        <article>
+          <h3>/clip</h3>
+          <p>Pick a movie or TV episode, set start/end timestamps, preview privately, then post to the channel.</p>
+        </article>
+        <article>
+          <h3>Self-hosted</h3>
+          <p>Runs beside Jellyfin on your hardware. Health endpoint, Compose profiles, Watchtower-friendly GHCR tags.</p>
+        </article>
+      </section>
+
+      <footer class="site-footer">
+        <p>
+          <a href="/dmca.html">Copyright / DMCA</a>
+          · MIT licensed ·
+          <a href="https://github.com/introVRt-Lounge/jellybot">introVRt-Lounge/jellybot</a>
+          · Container:
+          <a href="https://github.com/introVRt-Lounge/jellybot/pkgs/container/jellybot">ghcr.io/introvrt-lounge/jellybot</a>
+        </p>
+      </footer>
+    </div>
+  </body>
+</html>
