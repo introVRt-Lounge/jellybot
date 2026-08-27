@@ -52,7 +52,43 @@ describe("searchQuotesOffThread (#192)", () => {
     expect(results[0]?.text).toContain("ca-caw");
   });
 
-  test("sync fallback when worker disabled", async () => {
+  test("interactive mode returns empty when worker disabled", async () => {
+    const previous = process.env.JELLYBOT_SUBTITLE_SEARCH_WORKER;
+    process.env.JELLYBOT_SUBTITLE_SEARCH_WORKER = "0";
+
+    const dbPath = tempDb();
+    const index = openSubtitleIndex(dbPath);
+    try {
+      index.replaceItem(
+        {
+          itemId: "cccccccccccccccccccccccccccccccc",
+          itemType: "Movie",
+          title: "Test",
+          productionYear: 2000,
+          mediaSourceId: "src",
+          subtitleIndex: 0,
+        },
+        [{ startMs: 0, endMs: 500, text: "hello world", kind: "single" }],
+      );
+    } finally {
+      index.close();
+    }
+
+    try {
+      const results = await searchQuotesOffThread(dbPath, "hello", 5, undefined, 5_000, {
+        interactive: true,
+      });
+      expect(results).toEqual([]);
+    } finally {
+      if (previous === undefined) {
+        delete process.env.JELLYBOT_SUBTITLE_SEARCH_WORKER;
+      } else {
+        process.env.JELLYBOT_SUBTITLE_SEARCH_WORKER = previous;
+      }
+    }
+  });
+
+  test("sync fallback when worker disabled and not interactive", async () => {
     const previous = process.env.JELLYBOT_SUBTITLE_SEARCH_WORKER;
     process.env.JELLYBOT_SUBTITLE_SEARCH_WORKER = "0";
 

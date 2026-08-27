@@ -129,7 +129,7 @@ Template compose: [deploy/prod/docker-compose.yml](deploy/prod/docker-compose.ym
 | **Host path (prod)** | `/home/heavygee/docker/jellybot/data/subtitles.db` |
 | **Compose** | `JELLYBOT_DATA_HOST_DIR=/home/heavygee/docker/jellybot/data` |
 | **Backup** | `backup_docker_comprehensive.borg` (with other `~/docker/*` configs) |
-| **Startup indexing** | `SUBTITLE_INDEX_ON_STARTUP=incremental` (default) |
+| **Startup indexing** | `SUBTITLE_INDEX_ON_STARTUP=off` (default); set `incremental` only for dev catch-up |
 | **Health** | `curl -s localhost:8080/healthz \| jq .subtitleIndex` |
 
 Use a bind mount, not a named Docker volume — volumes under `/var/lib/docker/volumes/` are outside system Borg jobs.
@@ -149,11 +149,28 @@ Use a bind mount, not a named Docker volume — volumes under `/var/lib/docker/v
 
 Do **not** trigger on every `issues.opened` event. File via the **Agent task** template; **`@radgey-cmd`** adds `ai-triage` or `ai-safe` when ready.
 
-## Docs site (marketing URL)
+## Public web surfaces (#191)
 
 | | |
 |---|---|
-| **Target URL** | https://jellybot.introvrtlounge.com |
+| **Marketing URL** | https://jellybot.introvrtlounge.com |
+| **Marketing build** | Cloudflare Pages — `.github/workflows/web.yml`, source `web/` |
+| **CF secrets** | `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` (repo Actions secrets) |
+| **CF project** | `jellybot` (create in Cloudflare dashboard on first deploy) |
+| **Web API** | `https://api.jellybot.introvrtlounge.com` → Traefik → `jellybot:8080` with `WEB_API_ENABLED=1` |
+| **Copyright / DMCA** | Public form `/dmca.html` → `POST /api/v1/dmca/report` → ntfy topic **`jellybot-dmca`** · [docs/DMCA.md](docs/DMCA.md) |
+| **Operator docs (MkDocs)** | https://introvrt-lounge.github.io/jellybot/ (migrate custom domain after CF Pages cutover if desired) |
+
+DNS cutover for marketing:
+
+1. Create Cloudflare Pages project + connect GitHub workflow
+2. Add custom domain `jellybot.introvrtlounge.com` in Cloudflare Pages
+3. Point `jellybot` CNAME at Cloudflare Pages target (retire GitHub Pages CNAME when ready)
+
+## Docs site (technical reference)
+
+| | |
+|---|---|
+| **Target URL** | https://introvrt-lounge.github.io/jellybot/ |
 | **Build** | MkDocs workflow → GitHub Pages |
-| **Custom domain** | `docs/CNAME` + repo Settings → Pages |
-| **DNS** | `CNAME jellybot` → `introvrt-lounge.github.io` |
+| **Custom domain (legacy)** | `docs/CNAME` pointed at GitHub Pages — superseded by CF marketing site on `jellybot.introvrtlounge.com` |

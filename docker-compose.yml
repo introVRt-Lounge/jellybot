@@ -16,9 +16,9 @@ services:
     env_file: .env
     environment:
       HEALTH_PORT: 8080
-      SUBTITLE_INDEX_ON_STARTUP: ${SUBTITLE_INDEX_ON_STARTUP:-incremental}
+      SUBTITLE_INDEX_ON_STARTUP: ${SUBTITLE_INDEX_ON_STARTUP:-off}
     ports:
-      - "${HEALTH_PORT:-8080}:8080"
+      - "127.0.0.1:${HEALTH_PORT:-8080}:8080"
     volumes:
       - jellybot-clips:/var/lib/jellybot/clips
       - ${JELLYBOT_DATA_HOST_DIR:-./data}:/var/lib/jellybot/data
