@@ -43,7 +43,7 @@ import { autoSyncSlashCommands } from "./discord/command-sync-auto.ts";
 import { BotStateStore } from "./release/bot-state.ts";
 import { startHealthServer, type HealthState } from "./health.ts";
 import { JellyfinClient } from "./jellyfin.ts";
-import { indexSubtitles } from "./subtitles/indexer.ts";
+import { startJellyfinConnectionLoop } from "./jellyfin-startup.ts";
 import { openSubtitleIndex } from "./subtitles/index-db.ts";
 import { parsePreferredLanguages } from "./subtitles/track-select.ts";
 import { WebhookDispatcher } from "./webhooks/dispatch.ts";
@@ -667,32 +667,13 @@ function shutdown(): void {
 process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
 
-await jellyfin.authenticate();
-healthState.jellyfinUser = jellyfin.userName;
 refreshSubtitleHealth();
-console.info(`Authenticated to Jellyfin as ${jellyfin.userName}`);
-
-if (config.subtitleIndexOnStartup === "incremental") {
-  void indexSubtitles(jellyfin, {
-    dbPath: config.subtitleDbPath,
-    preferredLanguages: parsePreferredLanguages(config.subtitleLanguages),
-    concurrency: config.subtitleIndexConcurrency,
-    incremental: true,
-    onProgress(event) {
-      if (event.type === "done") {
-        refreshSubtitleHealth();
-      }
-      console.info(JSON.stringify({ event: "subtitle_index.background", ...event }));
-    },
-  }).catch((error) => {
-    console.error(
-      JSON.stringify({
-        event: "subtitle_index.background_failed",
-        error: error instanceof Error ? error.message : "unknown error",
-      }),
-    );
-  });
-}
+startJellyfinConnectionLoop({
+  jellyfin,
+  config,
+  healthState,
+  onSubtitleIndexDone: refreshSubtitleHealth,
+});
 
 if (process.env.JELLYBOT_DISABLE_DISCORD_GATEWAY === "1") {
   console.warn(

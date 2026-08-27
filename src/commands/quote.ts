@@ -318,7 +318,7 @@ async function handleQuoteAutocompleteOnce(
         24,
         seriesFilter,
         ftsBudgetMs,
-        { interactive: true },
+        { interactive: true, signal },
       );
       if (signal.aborted) {
         throw signal.reason ?? new DOMException("The operation was aborted.", "AbortError");
@@ -387,7 +387,7 @@ async function respondSeriesAutocomplete(
       prefix,
       QUOTE_SERIES_AUTOCOMPLETE_LIMIT,
       QUOTE_AUTOCOMPLETE_TIMEOUT_MS,
-      { interactive: true },
+      { interactive: true, signal },
     );
     if (signal.aborted) {
       throw signal.reason ?? new DOMException("The operation was aborted.", "AbortError");

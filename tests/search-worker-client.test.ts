@@ -90,6 +90,21 @@ describe.serial("searchQuotesOffThread (#192)", () => {
     expect(results).toEqual([]);
   });
 
+  test("interactive abort returns empty without sync fallback", async () => {
+    previousWorkerEnv = process.env.JELLYBOT_SUBTITLE_SEARCH_WORKER;
+    delete process.env.JELLYBOT_SUBTITLE_SEARCH_WORKER;
+
+    const dbPath = tempDb();
+    const controller = new AbortController();
+    controller.abort();
+
+    const results = await searchQuotesOffThread(dbPath, "hello", 5, undefined, 5_000, {
+      interactive: true,
+      signal: controller.signal,
+    });
+    expect(results).toEqual([]);
+  });
+
   test("sync fallback when worker disabled and not interactive", async () => {
     previousWorkerEnv = process.env.JELLYBOT_SUBTITLE_SEARCH_WORKER;
     process.env.JELLYBOT_SUBTITLE_SEARCH_WORKER = "0";
