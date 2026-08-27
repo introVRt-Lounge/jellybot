@@ -23,7 +23,7 @@ import { parseQuoteMatchToken } from "../subtitles/match-token.ts";
 import { buildClipRetryModal, buildPreviewActionRows, buildQuoteRetryModal } from "./components.ts";
 import { parsePreviewButtonCustomId, parsePreviewModalCustomId } from "./custom-id.ts";
 import type { PreviewReplyTarget } from "./pipeline.ts";
-import { showClipPreview } from "./pipeline.ts";
+import { showClipPreview, editReplyReplacingAttachments } from "./pipeline.ts";
 import { applyPreviewAction } from "./state-machine.ts";
 import { clipPreviewStore } from "./store.ts";
 
@@ -112,11 +112,13 @@ export async function handleClipPreviewButton(
     clipPreviewStore.updateState(session.id, transition.state);
     await cleanup(session.outputPath);
     clipPreviewStore.delete(session.id);
-    await interaction.update({
-      content: "Preview cancelled. Nothing was posted to the channel.",
-      components: [],
-      files: [],
-    });
+    await interaction.update(
+      editReplyReplacingAttachments({
+        content: "Preview cancelled. Nothing was posted to the channel.",
+        components: [],
+        files: [],
+      }),
+    );
     console.info(
       JSON.stringify({
         event: `${session.command}.preview_cancelled`,
@@ -148,11 +150,13 @@ export async function handleClipPreviewButton(
     const channel = interaction.channel;
     if (!channel || !channel.isTextBased()) {
       clipPreviewStore.releasePost(parsed.sessionId);
-      await interaction.editReply({
-        content: "Could not post — channel is unavailable.",
-        components: buildPreviewActionRows(parsed.sessionId),
-        files: [],
-      });
+      await interaction.editReply(
+        editReplyReplacingAttachments({
+          content: "Could not post — channel is unavailable.",
+          components: buildPreviewActionRows(parsed.sessionId),
+          files: [],
+        }),
+      );
       return;
     }
 
@@ -172,11 +176,13 @@ export async function handleClipPreviewButton(
       await cleanup(claimed.outputPath);
       clipPreviewStore.delete(claimed.id);
 
-      await interaction.editReply({
-        content: "Posted to the channel.",
-        components: [],
-        files: [],
-      });
+      await interaction.editReply(
+        editReplyReplacingAttachments({
+          content: "Posted to the channel.",
+          components: [],
+          files: [],
+        }),
+      );
 
       console.info(
         JSON.stringify({
@@ -241,11 +247,13 @@ export async function handleClipPreviewModal(
   }
 
   await interaction.deferUpdate();
-  await interaction.editReply({
-    content: "Re-rendering preview…",
-    components: [],
-    files: [],
-  });
+  await interaction.editReply(
+    editReplyReplacingAttachments({
+      content: "Re-rendering preview…",
+      components: [],
+      files: [],
+    }),
+  );
 
   const oldPath = session.outputPath;
   let plan;

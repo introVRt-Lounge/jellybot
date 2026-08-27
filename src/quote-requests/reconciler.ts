@@ -1,4 +1,5 @@
 import type { Client, Message, TextChannel } from "discord.js";
+import { runDeferredSync, yieldToEventLoop } from "../autocomplete.ts";
 import type { AppConfig } from "../config.ts";
 import { displayTitleWithYear } from "../display-title.ts";
 import { formatEpisodeLabel, type JellyfinClient } from "../jellyfin.ts";
@@ -62,13 +63,18 @@ export function startQuoteRequestReconcileLoop(
   const pollFailureCounts = new Map<number, number>();
 
   const tick = () => {
-    void runQuoteRequestReconcile(deps, pollFailureCounts).catch((error) => {
-      console.error(
-        JSON.stringify({
-          event: "quotewish.reconcile.error",
-          error: error instanceof Error ? error.message : "unknown error",
-        }),
-      );
+    // Issue #189: never run reconcile work on the setInterval callback stack.
+    // Sync FTS on the 18M-row subtitle index blocked INTERACTION_CREATE for
+    // ~10s and killed /quote deferReply with tokenAgeMs > 10_000.
+    setImmediate(() => {
+      void runQuoteRequestReconcile(deps, pollFailureCounts).catch((error) => {
+        console.error(
+          JSON.stringify({
+            event: "quotewish.reconcile.error",
+            error: error instanceof Error ? error.message : "unknown error",
+          }),
+        );
+      });
     });
   };
 
@@ -112,7 +118,10 @@ export async function runQuoteRequestReconcile(
 
     let fulfilled = 0;
     for (const request of pending) {
-      const match = findQuoteRequestMatch(index, request.movieText, request.quoteText);
+      await yieldToEventLoop();
+      const match = await runDeferredSync(() =>
+        findQuoteRequestMatch(index!, request.movieText, request.quoteText),
+      );
       if (!match || match.confidence === "none") {
         continue;
       }
