@@ -92,6 +92,20 @@ const CLIENT_INFO = {
   version: "1.0.0",
 };
 
+/**
+ * Jellyfin 12 disables legacy Emby headers by default (`X-Emby-Authorization`,
+ * `X-Emby-Token`). Use the MediaBrowser Authorization scheme instead.
+ */
+export function mediaBrowserClientAuthorization(
+  info: typeof CLIENT_INFO = CLIENT_INFO,
+): string {
+  return `MediaBrowser Client="${info.client}", Device="${info.device}", DeviceId="${info.deviceId}", Version="${info.version}"`;
+}
+
+export function mediaBrowserTokenAuthorization(accessToken: string): string {
+  return `MediaBrowser Token="${accessToken}"`;
+}
+
 const JELLYFIN_ITEM_ID_PATTERN = /^[a-f0-9]{32}$/i;
 const ITEM_FIELDS =
   "Path,ParentId,SeriesName,SeasonName,ParentIndexNumber,IndexNumber,ProductionYear,RunTimeTicks,OriginalTitle";
@@ -199,7 +213,7 @@ export class JellyfinClient {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "X-Emby-Authorization": `MediaBrowser Client="${CLIENT_INFO.client}", Device="${CLIENT_INFO.device}", DeviceId="${CLIENT_INFO.deviceId}", Version="${CLIENT_INFO.version}"`,
+        Authorization: mediaBrowserClientAuthorization(),
       },
       body: JSON.stringify({
         Username: this.usernameInput,
@@ -228,7 +242,7 @@ export class JellyfinClient {
   private headers(extra: HeadersInit = {}): HeadersInit {
     const { accessToken } = this.requireAuth();
     return {
-      "X-Emby-Token": accessToken,
+      Authorization: mediaBrowserTokenAuthorization(accessToken),
       Accept: "application/json",
       ...extra,
     };
