@@ -73,22 +73,22 @@ Search indexed subtitles and clip the scene around a matched quote. Uses the sam
 
 | Option | Required | Type | Notes |
 | --- | --- | --- | --- |
-| `match` | Yes | Autocomplete string | Type at least 3 characters, then pick a quote match |
-| `series` | No | Autocomplete string | Narrow autocomplete + the chosen match to a single TV series. Useful when bare keywords surface other shows ahead of yours. |
+| `match` | Yes | Autocomplete string | Quote text search, then pick a match. Needs 3+ characters globally, or 2+ when `series` is set. Discord requires this option before optional ones in the schema. |
+| `series` | No | Autocomplete string | Limits **match** autocomplete and submit to that TV series. Set it (click the option) before typing match when you want to narrow. |
 | `duration` | No | String | Clip length from the quote (default `15s`) |
 | `padding` | No | String | Seconds before the quote (default `2s`) |
 | `subtitles` | No | Boolean | When `true`, burns the preferred Jellyfin subtitle track into the clip video |
 
 The subtitle index must exist first. Run `make index-subtitles` on the host/container before expecting matches.
 
-When `series` is set the autocomplete and final selection are scoped to that show; selecting a quote token from another series triggers a friendly rejection rather than fetching the wrong clip. Movies have no series name and are always excluded when a series filter is in play.
+When `series` is set, match autocomplete and FTS only return cues from that show (movies are excluded). Submit still rejects a match token from a different series. Preferred flow: fill `series`, then type `match` (re-type match after changing series so autocomplete refreshes).
 
 ### Examples
 
 ```text
+/quote series:"The IT Crowd" match:heartwarming
 /quote match:love finds its way
 /quote match:does love happen duration:20 padding:3 subtitles:True
-/quote series:"The IT Crowd" match:heartwarming
 ```
 
 ### Failure cases
