@@ -60,14 +60,14 @@ export const quoteCommand = new SlashCommandBuilder()
   .addStringOption((option) =>
     option
       .setName("match")
-      .setDescription("Search quote text, then pick a match from autocomplete")
+      .setDescription("Quote text (scoped to series if set). Pick series first when narrowing.")
       .setRequired(true)
       .setAutocomplete(true),
   )
   .addStringOption((option) =>
     option
       .setName("series")
-      .setDescription("Narrow to a TV series (autocomplete). Useful when bare keywords surface other shows.")
+      .setDescription("Limit match search to one TV series (set before typing match)")
       .setRequired(false)
       .setAutocomplete(true),
   )
@@ -265,12 +265,10 @@ async function handleQuoteAutocompleteOnce(
   const seriesFilterRaw = interaction.options.getString("series");
   const seriesFilter = seriesFilterRaw && seriesFilterRaw.trim().length > 0 ? seriesFilterRaw.trim() : undefined;
 
-  // Issue #154: with a series filter active, the FTS search space is
-  // already narrowed to one show, so a 1-char prefix is tractable and
-  // replaces any stale cached list the moment the user types after
-  // setting `series:`. Without a filter the 3-char minimum stays (the
-  // 17.7M-cue global catalogue is too noisy for shorter prefixes).
-  const minQueryLength = seriesFilter ? 1 : 3;
+  // Issue #154 / #200: with a series filter active, the FTS search space is
+  // already narrowed to one show. FTS still drops tokens shorter than 2 chars
+  // (`prepareFtsQuery`), so keep a 2-char floor when filtered (3 without).
+  const minQueryLength = seriesFilter ? 2 : 3;
   if (query.length < minQueryLength) {
     // Abort any in-flight debounced handler still waiting on a longer value.
     quoteMatchAutocompleteGuard.beginCancellable(QUOTE_MATCH_AUTOCOMPLETE_KEY(interaction));
