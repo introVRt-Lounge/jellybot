@@ -2,6 +2,7 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { Database } from "bun:sqlite";
 import {
+  encodeQuoteFromSeriesToken,
   encodeQuoteFromToken,
   formatQuoteFromLabel,
   type QuoteFromChoice,
@@ -302,6 +303,11 @@ export class SubtitleIndex {
     if (scope?.kind === "series") {
       where.push("LOWER(m.series_name) = LOWER(?)");
       params.push(scope.seriesName);
+    } else if (scope?.kind === "seriesByItem") {
+      where.push(
+        "LOWER(m.series_name) = (SELECT LOWER(series_name) FROM media_items WHERE LOWER(item_id) = LOWER(?))",
+      );
+      params.push(scope.itemId);
     } else if (scope?.kind === "movie") {
       where.push("LOWER(m.item_id) = LOWER(?)");
       params.push(scope.itemId);
@@ -439,26 +445,28 @@ export class SubtitleIndex {
     const like = trimmed.length === 0 ? null : `%${trimmed}%`;
     const fetchLimit = Math.max(limit * 2, limit);
 
-    type SeriesRow = { name: string };
+    type SeriesRow = { name: string; sampleItemId: string };
     type MovieRow = { itemId: string; title: string; productionYear: number | null };
 
     const seriesRows = (
       like == null
         ? (this.db
             .query(
-              `SELECT DISTINCT series_name AS name
+              `SELECT series_name AS name, MIN(item_id) AS sampleItemId
                FROM media_items
                WHERE series_name IS NOT NULL AND series_name <> ''
+               GROUP BY series_name
                ORDER BY series_name COLLATE NOCASE
                LIMIT ?`,
             )
             .all(fetchLimit) as SeriesRow[])
         : (this.db
             .query(
-              `SELECT DISTINCT series_name AS name
+              `SELECT series_name AS name, MIN(item_id) AS sampleItemId
                FROM media_items
                WHERE series_name IS NOT NULL AND series_name <> ''
                  AND LOWER(series_name) LIKE LOWER(?)
+               GROUP BY series_name
                ORDER BY series_name COLLATE NOCASE
                LIMIT ?`,
             )
@@ -492,7 +500,7 @@ export class SubtitleIndex {
       ...seriesRows.map((row) => ({
         kind: "series" as const,
         label: formatQuoteFromLabel({ kind: "series", seriesName: row.name }),
-        value: encodeQuoteFromToken({ kind: "series", seriesName: row.name }),
+        value: encodeQuoteFromSeriesToken(row.name, row.sampleItemId),
         sortKey: row.name.toLowerCase(),
       })),
       ...movieRows.map((row) => ({
@@ -509,6 +517,19 @@ export class SubtitleIndex {
 
     choices.sort((a, b) => a.sortKey.localeCompare(b.sortKey));
     return choices.slice(0, limit).map(({ kind, label, value }) => ({ kind, label, value }));
+  }
+
+  getSeriesNameForItem(itemId: string): string | null {
+    const row = this.db
+      .query(
+        `SELECT series_name AS seriesName
+         FROM media_items
+         WHERE LOWER(item_id) = LOWER(?)
+         LIMIT 1`,
+      )
+      .get(itemId) as { seriesName: string | null } | null;
+    const name = row?.seriesName?.trim();
+    return name ? name : null;
   }
 
   getCueMatch(itemId: string, startMs: number, endMs: number): QuoteSearchResult | null {

@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   encodeQuoteFromToken,
+  encodeQuoteFromSeriesToken,
   formatQuoteFromLabel,
   parseQuoteFromToken,
   quoteFromScopeCacheKey,
@@ -17,6 +18,16 @@ describe("quote from scope tokens", () => {
 
     expect(parseQuoteFromToken(encodeQuoteFromToken(series))).toEqual(series);
     expect(parseQuoteFromToken(encodeQuoteFromToken(movie))).toEqual(movie);
+  });
+
+  test("uses se:itemId when series name exceeds Discord choice limit", () => {
+    const longName = "X".repeat(120);
+    const sampleId = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    const token = encodeQuoteFromSeriesToken(longName, sampleId);
+    expect(token).toBe(`se:${sampleId}`);
+    expect(parseQuoteFromToken(token)).toEqual({ kind: "seriesByItem", itemId: sampleId });
+    // `se:` must not be parsed as a truncated `s:` name.
+    expect(parseQuoteFromToken(token)?.kind).not.toBe("series");
   });
 
   test("rejects bare names and malformed movie ids", () => {

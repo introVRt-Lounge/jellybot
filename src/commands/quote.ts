@@ -485,8 +485,12 @@ export async function handleQuoteCommand(
 
   const index = openSubtitleIndex(config.subtitleDbPath);
   let match;
+  let seriesByItemName: string | null = null;
   try {
     match = index.getCueMatch(token.itemId, token.startMs, token.endMs);
+    if (scope?.kind === "seriesByItem") {
+      seriesByItemName = index.getSeriesNameForItem(scope.itemId);
+    }
   } finally {
     index.close();
   }
@@ -506,6 +510,18 @@ export async function handleQuoteCommand(
     if (!matchSeries || matchSeries.toLowerCase() !== scope.seriesName.toLowerCase()) {
       await interaction.editReply(
         `That quote isn't from **${displayNameForScope(scope)}**. Re-run \`/quote\` with the matching title, or clear the \`from\` option.`,
+      );
+      return;
+    }
+  } else if (scope?.kind === "seriesByItem") {
+    const matchSeries = match.seriesName ?? null;
+    if (
+      !seriesByItemName ||
+      !matchSeries ||
+      matchSeries.toLowerCase() !== seriesByItemName.toLowerCase()
+    ) {
+      await interaction.editReply(
+        `That quote isn't from the selected series. Re-run \`/quote\` with the matching title, or clear the \`from\` option.`,
       );
       return;
     }

@@ -101,6 +101,14 @@ describe("SubtitleIndex", () => {
       expect(movieScoped[0]?.itemId).toBe("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
       expect(movieScoped[0]?.itemType).toBe("Movie");
 
+      // seriesByItem resolves the full series_name via a sample episode id.
+      const byItem = index.searchQuotes("heartwarming", 10, {
+        kind: "seriesByItem",
+        itemId: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      });
+      expect(byItem).toHaveLength(1);
+      expect(byItem[0]?.seriesName).toBe("The IT Crowd");
+
       // Movies (NULL series_name) never satisfy a series filter.
       const moviesOnly = index.searchQuotes("heartwarming", 10, {
         kind: "series",
@@ -156,6 +164,25 @@ describe("SubtitleIndex", () => {
       );
       expect(hits.find((h) => h.kind === "movie")?.label).toContain("Movie ·");
       expect(hits.find((h) => h.kind === "series")?.label).toContain("TV ·");
+
+      const longName = `Very Long Series Title ${"Z".repeat(100)}`;
+      index.replaceItem(
+        {
+          itemId: "cccccccccccccccccccccccccccccccc",
+          itemType: "Episode",
+          title: "Ep1",
+          seriesName: longName,
+          seasonNumber: 1,
+          episodeNumber: 1,
+          mediaSourceId: "src-long",
+          subtitleIndex: 0,
+        },
+        [{ startMs: 1000, endMs: 2000, text: "Hello." }],
+      );
+      const longHits = index.listQuoteFromTitles("Very Long Series", 25);
+      const longChoice = longHits.find((h) => h.kind === "series" && h.label.includes("Very Long"));
+      expect(longChoice?.value.startsWith("se:")).toBe(true);
+      expect(longChoice?.value.length).toBeLessThanOrEqual(100);
     } finally {
       index.close();
     }
