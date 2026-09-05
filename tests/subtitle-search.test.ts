@@ -48,11 +48,11 @@ describe("SubtitleIndex", () => {
     }
   });
 
-  test("scopes searchQuotes to a series when seriesName is supplied (issue #152)", () => {
+  test("scopes searchQuotes to a series or movie (issues #152 / #202)", () => {
     const index = openSubtitleIndex(dbPath);
     try {
-      // Two cues with the same word in different series. Bare query returns
-      // both; series-scoped query returns only the requested one.
+      // Two cues with the same word in different titles. Bare query returns
+      // both; scoped query returns only the requested one.
       index.replaceItem(
         {
           itemId: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
@@ -84,17 +84,78 @@ describe("SubtitleIndex", () => {
       expect(unscoped.length).toBeGreaterThanOrEqual(2);
 
       // Series filter (case-insensitive) keeps only the IT Crowd cue.
-      const scoped = index.searchQuotes("heartwarming", 10, "the it crowd");
+      const scoped = index.searchQuotes("heartwarming", 10, {
+        kind: "series",
+        seriesName: "the it crowd",
+      });
       expect(scoped).toHaveLength(1);
       expect(scoped[0]?.seriesName).toBe("The IT Crowd");
       expect(scoped[0]?.text).toBe("No! It was heart-warming.");
 
+      // Movie item_id filter keeps only that film.
+      const movieScoped = index.searchQuotes("heartwarming", 10, {
+        kind: "movie",
+        itemId: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      });
+      expect(movieScoped).toHaveLength(1);
+      expect(movieScoped[0]?.itemId).toBe("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
+      expect(movieScoped[0]?.itemType).toBe("Movie");
+
       // Movies (NULL series_name) never satisfy a series filter.
-      const moviesOnly = index.searchQuotes("heartwarming", 10, "Heartwarming");
+      const moviesOnly = index.searchQuotes("heartwarming", 10, {
+        kind: "series",
+        seriesName: "Heartwarming",
+      });
       expect(moviesOnly).toHaveLength(0);
 
       // Unknown series returns nothing without throwing.
-      expect(index.searchQuotes("heartwarming", 10, "Nonexistent Show")).toHaveLength(0);
+      expect(
+        index.searchQuotes("heartwarming", 10, {
+          kind: "series",
+          seriesName: "Nonexistent Show",
+        }),
+      ).toHaveLength(0);
+    } finally {
+      index.close();
+    }
+  });
+
+  test("listQuoteFromTitles returns series and movies for from autocomplete (issue #202)", () => {
+    const index = openSubtitleIndex(dbPath);
+    try {
+      index.replaceItem(
+        {
+          itemId: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          itemType: "Episode",
+          title: "Pilot",
+          seriesName: "Archer",
+          seasonNumber: 1,
+          episodeNumber: 1,
+          mediaSourceId: "src-a",
+          subtitleIndex: 0,
+        },
+        [{ startMs: 1000, endMs: 2000, text: "Hello." }],
+      );
+      index.replaceItem(
+        {
+          itemId: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          itemType: "Movie",
+          title: "Archipelago",
+          productionYear: 2010,
+          mediaSourceId: "src-m",
+          subtitleIndex: 0,
+        },
+        [{ startMs: 1000, endMs: 2000, text: "Hello." }],
+      );
+
+      const hits = index.listQuoteFromTitles("arch", 25);
+      expect(hits.map((h) => h.kind).sort()).toEqual(["movie", "series"]);
+      expect(hits.find((h) => h.kind === "series")?.value).toBe("s:Archer");
+      expect(hits.find((h) => h.kind === "movie")?.value).toBe(
+        "m:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      );
+      expect(hits.find((h) => h.kind === "movie")?.label).toContain("Movie ·");
+      expect(hits.find((h) => h.kind === "series")?.label).toContain("TV ·");
     } finally {
       index.close();
     }

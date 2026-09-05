@@ -14,7 +14,7 @@ from discord_smoke_support import (
     assess_quote_autocomplete_logs,
     assess_quote_debounce_supersede_logs,
     assess_quote_min_length_cancel_logs,
-    assess_quote_series_autocomplete_logs,
+    assess_quote_from_autocomplete_logs,
     assess_quote_shaping_logs,
     parse_json_log_events,
 )
@@ -81,7 +81,7 @@ class QuoteAutocompleteLogAssessmentTests(unittest.TestCase):
     def test_series_passes_when_responded_follows_series_search(self) -> None:
         events = [
             {
-                "event": "quote.series_autocomplete",
+                "event": "quote.from_autocomplete",
                 "interactionId": "444",
                 "query": "Red",
                 "resultCount": 3,
@@ -93,7 +93,7 @@ class QuoteAutocompleteLogAssessmentTests(unittest.TestCase):
                 "responded": True,
             },
         ]
-        result = assess_quote_series_autocomplete_logs("444", "Red", events)
+        result = assess_quote_from_autocomplete_logs("444", "Red", events)
         self.assertTrue(result.ok)
 
     def test_debounce_fails_when_prefix_serves_stale_choices(self) -> None:

@@ -1,6 +1,14 @@
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { Database } from "bun:sqlite";
+import {
+  encodeQuoteFromToken,
+  formatQuoteFromLabel,
+  type QuoteFromChoice,
+  type QuoteSearchScope,
+} from "./quote-scope.ts";
+
+export type { QuoteFromChoice, QuoteSearchScope } from "./quote-scope.ts";
 
 export type IndexedMediaItem = {
   itemId: string;
@@ -280,22 +288,23 @@ export class SubtitleIndex {
   /**
    * Search subtitle cues by FTS5 ranked by bm25.
    *
-   * `seriesName` (case-insensitive equals) narrows results to a single TV
-   * show. Used by `/quote series:` (#152) so common-noun queries like
-   * `heartwarming` aren't drowned out by short-cue movies elsewhere in the
-   * catalogue. Movies have a NULL `series_name`; passing a series filter
-   * naturally excludes them.
+   * Optional `scope` (#152 / #202) narrows to one TV series (`series_name`)
+   * or one movie (`item_id`). Used by `/quote from:` so common-noun queries
+   * aren't drowned out by the rest of the catalogue.
    */
-  searchQuotes(query: string, limit = 25, seriesName?: string): QuoteSearchResult[] {
+  searchQuotes(query: string, limit = 25, scope?: QuoteSearchScope): QuoteSearchResult[] {
     const ftsQuery = prepareFtsQuery(query);
     if (!ftsQuery) return [];
 
     const where: string[] = ["subtitle_cues_fts MATCH ?"];
     const params: (string | number)[] = [ftsQuery];
 
-    if (seriesName) {
+    if (scope?.kind === "series") {
       where.push("LOWER(m.series_name) = LOWER(?)");
-      params.push(seriesName);
+      params.push(scope.seriesName);
+    } else if (scope?.kind === "movie") {
+      where.push("LOWER(m.item_id) = LOWER(?)");
+      params.push(scope.itemId);
     }
 
     params.push(limit);
@@ -419,6 +428,87 @@ export class SubtitleIndex {
           .all(`%${trimmed}%`, limit) as { name: string }[]);
 
     return rows.map((r) => r.name);
+  }
+
+  /**
+   * Movie titles + TV series names for `/quote from:` autocomplete (#202).
+   * Prefix/contains match; results sorted case-insensitively by title.
+   */
+  listQuoteFromTitles(prefix: string, limit: number): QuoteFromChoice[] {
+    const trimmed = prefix.trim();
+    const like = trimmed.length === 0 ? null : `%${trimmed}%`;
+    const fetchLimit = Math.max(limit * 2, limit);
+
+    type SeriesRow = { name: string };
+    type MovieRow = { itemId: string; title: string; productionYear: number | null };
+
+    const seriesRows = (
+      like == null
+        ? (this.db
+            .query(
+              `SELECT DISTINCT series_name AS name
+               FROM media_items
+               WHERE series_name IS NOT NULL AND series_name <> ''
+               ORDER BY series_name COLLATE NOCASE
+               LIMIT ?`,
+            )
+            .all(fetchLimit) as SeriesRow[])
+        : (this.db
+            .query(
+              `SELECT DISTINCT series_name AS name
+               FROM media_items
+               WHERE series_name IS NOT NULL AND series_name <> ''
+                 AND LOWER(series_name) LIKE LOWER(?)
+               ORDER BY series_name COLLATE NOCASE
+               LIMIT ?`,
+            )
+            .all(like, fetchLimit) as SeriesRow[])
+    );
+
+    const movieRows = (
+      like == null
+        ? (this.db
+            .query(
+              `SELECT item_id AS itemId, title, production_year AS productionYear
+               FROM media_items
+               WHERE item_type = 'Movie' AND title IS NOT NULL AND title <> ''
+               ORDER BY title COLLATE NOCASE
+               LIMIT ?`,
+            )
+            .all(fetchLimit) as MovieRow[])
+        : (this.db
+            .query(
+              `SELECT item_id AS itemId, title, production_year AS productionYear
+               FROM media_items
+               WHERE item_type = 'Movie' AND title IS NOT NULL AND title <> ''
+                 AND LOWER(title) LIKE LOWER(?)
+               ORDER BY title COLLATE NOCASE
+               LIMIT ?`,
+            )
+            .all(like, fetchLimit) as MovieRow[])
+    );
+
+    const choices: Array<QuoteFromChoice & { sortKey: string }> = [
+      ...seriesRows.map((row) => ({
+        kind: "series" as const,
+        label: formatQuoteFromLabel({ kind: "series", seriesName: row.name }),
+        value: encodeQuoteFromToken({ kind: "series", seriesName: row.name }),
+        sortKey: row.name.toLowerCase(),
+      })),
+      ...movieRows.map((row) => ({
+        kind: "movie" as const,
+        label: formatQuoteFromLabel({
+          kind: "movie",
+          title: row.title,
+          productionYear: row.productionYear,
+        }),
+        value: encodeQuoteFromToken({ kind: "movie", itemId: row.itemId }),
+        sortKey: row.title.toLowerCase(),
+      })),
+    ];
+
+    choices.sort((a, b) => a.sortKey.localeCompare(b.sortKey));
+    return choices.slice(0, limit).map(({ kind, label, value }) => ({ kind, label, value }));
   }
 
   getCueMatch(itemId: string, startMs: number, endMs: number): QuoteSearchResult | null {

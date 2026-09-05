@@ -1,4 +1,4 @@
-import type { QuoteSearchResult } from "./index-db.ts";
+import type { QuoteFromChoice, QuoteSearchResult, QuoteSearchScope } from "./index-db.ts";
 import { getSubtitleSearchIndex } from "./search-index.ts";
 
 type SearchWorkerRequest =
@@ -8,11 +8,18 @@ type SearchWorkerRequest =
       dbPath: string;
       query: string;
       limit: number;
-      seriesFilter?: string;
+      scope?: QuoteSearchScope;
     }
   | {
       id: number;
       op: "series";
+      dbPath: string;
+      prefix: string;
+      limit: number;
+    }
+  | {
+      id: number;
+      op: "from";
       dbPath: string;
       prefix: string;
       limit: number;
@@ -21,6 +28,7 @@ type SearchWorkerRequest =
 type SearchWorkerResponse =
   | { id: number; ok: true; op: "search"; results: QuoteSearchResult[] }
   | { id: number; ok: true; op: "series"; names: string[] }
+  | { id: number; ok: true; op: "from"; choices: QuoteFromChoice[] }
   | { id: number; ok: false; error: string };
 
 type Pending = {
@@ -72,6 +80,11 @@ function ensureWorker(): Worker {
       return;
     }
 
+    if (msg.op === "from") {
+      entry.resolve(msg.choices);
+      return;
+    }
+
     entry.resolve(msg.names);
   };
 
@@ -107,6 +120,14 @@ function callSeriesWorker(
   options: CallWorkerOptions = {},
 ): Promise<string[]> {
   return callWorker(request, timeoutMs, options) as Promise<string[]>;
+}
+
+function callFromWorker(
+  request: Omit<Extract<SearchWorkerRequest, { op: "from" }>, "id">,
+  timeoutMs: number,
+  options: CallWorkerOptions = {},
+): Promise<QuoteFromChoice[]> {
+  return callWorker(request, timeoutMs, options) as Promise<QuoteFromChoice[]>;
 }
 
 function callWorker(
@@ -196,7 +217,7 @@ export async function searchQuotesOffThread(
   dbPath: string,
   query: string,
   limit: number,
-  seriesFilter: string | undefined,
+  scope: QuoteSearchScope | undefined,
   timeoutMs: number,
   options: OffThreadSearchOptions = {},
 ): Promise<QuoteSearchResult[]> {
@@ -212,7 +233,7 @@ export async function searchQuotesOffThread(
       logInteractiveWorkerUnavailable("search");
       return [];
     }
-    return getSubtitleSearchIndex(dbPath).searchQuotes(query, limit, seriesFilter);
+    return getSubtitleSearchIndex(dbPath).searchQuotes(query, limit, scope);
   }
 
   try {
@@ -222,7 +243,7 @@ export async function searchQuotesOffThread(
         dbPath,
         query,
         limit,
-        seriesFilter,
+        scope,
       },
       timeoutMs,
       { interactive, signal },
@@ -244,7 +265,7 @@ export async function searchQuotesOffThread(
     if (interactive) {
       return [];
     }
-    return getSubtitleSearchIndex(dbPath).searchQuotes(query, limit, seriesFilter);
+    return getSubtitleSearchIndex(dbPath).searchQuotes(query, limit, scope);
   }
 }
 
@@ -299,6 +320,60 @@ export async function listSeriesNamesOffThread(
       return [];
     }
     return getSubtitleSearchIndex(dbPath).listSeriesNames(prefix, limit);
+  }
+}
+
+export async function listQuoteFromTitlesOffThread(
+  dbPath: string,
+  prefix: string,
+  limit: number,
+  timeoutMs: number,
+  options: OffThreadSearchOptions = {},
+): Promise<QuoteFromChoice[]> {
+  const interactive = options.interactive ?? false;
+  const { signal } = options;
+
+  if (signal?.aborted) {
+    return [];
+  }
+
+  if (!workerEnabled()) {
+    if (interactive) {
+      logInteractiveWorkerUnavailable("from");
+      return [];
+    }
+    return getSubtitleSearchIndex(dbPath).listQuoteFromTitles(prefix, limit);
+  }
+
+  try {
+    return await callFromWorker(
+      {
+        op: "from",
+        dbPath,
+        prefix,
+        limit,
+      },
+      timeoutMs,
+      { interactive, signal },
+    );
+  } catch (error) {
+    if (interactive && isBenignWorkerError(error, signal)) {
+      return [];
+    }
+
+    console.warn(
+      JSON.stringify({
+        event: "subtitle_search.worker_failed",
+        op: "from",
+        interactive,
+        error: error instanceof Error ? error.message : "unknown error",
+      }),
+    );
+    terminateWorker();
+    if (interactive) {
+      return [];
+    }
+    return getSubtitleSearchIndex(dbPath).listQuoteFromTitles(prefix, limit);
   }
 }
 

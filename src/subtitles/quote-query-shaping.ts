@@ -12,7 +12,7 @@ const AUTOCOMPLETE_TAIL_DISTINCTIVE_COUNT = 5;
 type QuoteMatchSearchCacheEntry = {
   rawQuery: string;
   searchQuery: string;
-  seriesFilter?: string;
+  scopeKey?: string;
   results: QuoteSearchResult[];
 };
 
@@ -110,24 +110,24 @@ export function rememberQuoteMatchSearchCache(
   rawQuery: string,
   searchQuery: string,
   results: QuoteSearchResult[],
-  seriesFilter?: string,
+  scopeKey?: string,
 ): void {
   if (results.length === 0) return;
-  quoteMatchSearchCache.set(cacheKey, { rawQuery, searchQuery, seriesFilter, results });
+  quoteMatchSearchCache.set(cacheKey, { rawQuery, searchQuery, scopeKey, results });
 }
 
 export function tryQuoteMatchPrefixCache(
   cacheKey: string,
   rawQuery: string,
   searchQuery: string,
-  seriesFilter?: string,
+  scopeKey?: string,
 ): QuoteSearchResult[] | null {
   const cached = quoteMatchSearchCache.get(cacheKey);
   if (!cached) return null;
 
-  const cachedSeries = cached.seriesFilter?.toLowerCase() ?? "";
-  const activeSeries = seriesFilter?.toLowerCase() ?? "";
-  if (cachedSeries !== activeSeries) return null;
+  const cachedScope = cached.scopeKey ?? "";
+  const activeScope = scopeKey ?? "";
+  if (cachedScope !== activeScope) return null;
 
   // Only reuse cached rows while refining the final token on both raw and
   // shaped queries. A growing final token can shift the shaped window; if

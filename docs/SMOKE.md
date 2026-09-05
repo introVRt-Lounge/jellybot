@@ -18,7 +18,7 @@ You should see activity in that channel when extended smoke is on; **required ga
 ## Required gate (CI)
 
 - **`/quote` `match` autocomplete** — log must show `quote.autocomplete` then `quote.autocomplete.responded` with `resultCount > 0`
-- **`/quote` `series` autocomplete** — same for `quote.series_autocomplete`
+- **`/quote` `from` autocomplete** — same for `quote.from_autocomplete` (movie or series titles)
 - **`/quote` long-query shaping** — long match text must log `searchQuery` ≠ `query` and still respond in time (issue #171 class)
 
 Fail messages call out **Unknown interaction** explicitly (Discord 3s autocomplete window).
