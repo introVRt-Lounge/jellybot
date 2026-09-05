@@ -27,9 +27,15 @@ import {
 import { quoteSearchChoices } from "../subtitles/quote-autocomplete.ts";
 import { bumpInteractivePriority } from "../interactive-priority.ts";
 import {
-  listSeriesNamesOffThread,
+  listQuoteFromTitlesOffThread,
   searchQuotesOffThread,
 } from "../subtitles/search-worker-client.ts";
+import {
+  displayNameForScope,
+  parseQuoteFromToken,
+  quoteFromScopeCacheKey,
+  type QuoteSearchScope,
+} from "../subtitles/quote-scope.ts";
 import { formatTimestamp } from "../time.ts";
 import {
   buildMediaTypeSelectMenu,
@@ -41,18 +47,18 @@ export { QUOTE_REQUEST_AUTOCOMPLETE_TOKEN } from "../quote-requests/modal.ts";
 
 const quoteAutocompleteInFlight = new Map<string, Promise<void>>();
 const quoteMatchAutocompleteGuard = new AutocompleteSessionGuard();
-const quoteSeriesAutocompleteGuard = new AutocompleteSessionGuard();
+const quoteFromAutocompleteGuard = new AutocompleteSessionGuard();
 const QUOTE_MATCH_AUTOCOMPLETE_KEY = (interaction: AutocompleteInteraction) =>
   `${interaction.user.id}:${interaction.guildId ?? "dm"}:quote:match`;
 const QUOTE_MATCH_AUTOCOMPLETE_CACHE_KEY = (
   interaction: AutocompleteInteraction,
-  seriesFilter?: string,
-) => `${QUOTE_MATCH_AUTOCOMPLETE_KEY(interaction)}:${seriesFilter?.toLowerCase() ?? ""}`;
-const QUOTE_SERIES_AUTOCOMPLETE_KEY = (interaction: AutocompleteInteraction) =>
-  `${interaction.user.id}:${interaction.guildId ?? "dm"}:quote:series`;
+  scopeKey: string,
+) => `${QUOTE_MATCH_AUTOCOMPLETE_KEY(interaction)}:${scopeKey}`;
+const QUOTE_FROM_AUTOCOMPLETE_KEY = (interaction: AutocompleteInteraction) =>
+  `${interaction.user.id}:${interaction.guildId ?? "dm"}:quote:from`;
 const QUOTE_AUTOCOMPLETE_TIMEOUT_MS = 2500;
 const QUOTE_MATCH_AUTOCOMPLETE_MAX_TOKEN_AGE_MS = 2500;
-const QUOTE_SERIES_AUTOCOMPLETE_LIMIT = 25;
+const QUOTE_FROM_AUTOCOMPLETE_LIMIT = 25;
 
 export const quoteCommand = new SlashCommandBuilder()
   .setName("quote")
@@ -60,14 +66,14 @@ export const quoteCommand = new SlashCommandBuilder()
   .addStringOption((option) =>
     option
       .setName("match")
-      .setDescription("Quote text (scoped to series if set). Pick series first when narrowing.")
+      .setDescription("Quote text (scoped to from if set). Pick from first when narrowing.")
       .setRequired(true)
       .setAutocomplete(true),
   )
   .addStringOption((option) =>
     option
-      .setName("series")
-      .setDescription("Limit match search to one TV series (set before typing match)")
+      .setName("from")
+      .setDescription("Limit match search to one movie or TV series (set before typing match)")
       .setRequired(false)
       .setAutocomplete(true),
   )
@@ -248,8 +254,8 @@ async function handleQuoteAutocompleteOnce(
 ): Promise<void> {
   const focused = interaction.options.getFocused(true);
 
-  if (focused.name === "series") {
-    await respondSeriesAutocomplete(interaction, config);
+  if (focused.name === "from") {
+    await respondFromAutocomplete(interaction, config);
     return;
   }
 
@@ -260,15 +266,19 @@ async function handleQuoteAutocompleteOnce(
 
   const query = focused.value.trim();
 
-  // Pick up the optional series filter alongside the focused `match` value
-  // so cue autocomplete narrows to the chosen show before bm25 ranks it.
-  const seriesFilterRaw = interaction.options.getString("series");
-  const seriesFilter = seriesFilterRaw && seriesFilterRaw.trim().length > 0 ? seriesFilterRaw.trim() : undefined;
+  // Pick up the optional from filter alongside the focused `match` value
+  // so cue autocomplete narrows to the chosen title before bm25 ranks it.
+  const fromRaw = interaction.options.getString("from");
+  const scope: QuoteSearchScope | undefined =
+    fromRaw && fromRaw.trim().length > 0
+      ? (parseQuoteFromToken(fromRaw.trim()) ?? undefined)
+      : undefined;
+  const scopeKey = quoteFromScopeCacheKey(scope);
 
-  // Issue #154 / #200: with a series filter active, the FTS search space is
-  // already narrowed to one show. FTS still drops tokens shorter than 2 chars
+  // Issue #154 / #202: with a from filter active, the FTS search space is
+  // already narrowed to one title. FTS still drops tokens shorter than 2 chars
   // (`prepareFtsQuery`), so keep a 2-char floor when filtered (3 without).
-  const minQueryLength = seriesFilter ? 2 : 3;
+  const minQueryLength = scope ? 2 : 3;
   if (query.length < minQueryLength) {
     // Abort any in-flight debounced handler still waiting on a longer value.
     quoteMatchAutocompleteGuard.beginCancellable(QUOTE_MATCH_AUTOCOMPLETE_KEY(interaction));
@@ -277,7 +287,7 @@ async function handleQuoteAutocompleteOnce(
   }
 
   try {
-    const cacheKey = QUOTE_MATCH_AUTOCOMPLETE_CACHE_KEY(interaction, seriesFilter);
+    const cacheKey = QUOTE_MATCH_AUTOCOMPLETE_CACHE_KEY(interaction, scopeKey);
     const { isCurrent, signal } = quoteMatchAutocompleteGuard.beginCancellable(
       QUOTE_MATCH_AUTOCOMPLETE_KEY(interaction),
     );
@@ -302,7 +312,7 @@ async function handleQuoteAutocompleteOnce(
 
     const searchQuery = shapeQuoteAutocompleteQuery(query);
 
-    let results = tryQuoteMatchPrefixCache(cacheKey, query, searchQuery, seriesFilter);
+    let results = tryQuoteMatchPrefixCache(cacheKey, query, searchQuery, scopeKey);
     let usedPrefixCache = results !== null;
 
     if (!results) {
@@ -314,14 +324,14 @@ async function handleQuoteAutocompleteOnce(
         config.subtitleDbPath,
         searchQuery,
         24,
-        seriesFilter,
+        scope,
         ftsBudgetMs,
         { interactive: true, signal },
       );
       if (signal.aborted) {
         throw signal.reason ?? new DOMException("The operation was aborted.", "AbortError");
       }
-      rememberQuoteMatchSearchCache(cacheKey, query, searchQuery, results, seriesFilter);
+      rememberQuoteMatchSearchCache(cacheKey, query, searchQuery, results, scopeKey);
     }
 
     const choices: ApplicationCommandOptionChoiceData[] = quoteSearchChoices(results);
@@ -337,7 +347,7 @@ async function handleQuoteAutocompleteOnce(
         query,
         searchQuery,
         usedPrefixCache,
-        seriesFilter: seriesFilter ?? null,
+        fromScope: scopeKey || null,
         minQueryLength,
         resultCount: choices.length,
       }),
@@ -354,7 +364,7 @@ async function handleQuoteAutocompleteOnce(
       JSON.stringify({
         event: "quote.autocomplete_failed",
         query,
-        seriesFilter: seriesFilter ?? null,
+        fromScope: scopeKey || null,
         error: error instanceof Error ? error.message : "unknown error",
       }),
     );
@@ -363,7 +373,7 @@ async function handleQuoteAutocompleteOnce(
   }
 }
 
-async function respondSeriesAutocomplete(
+async function respondFromAutocomplete(
   interaction: AutocompleteInteraction,
   config: Pick<AppConfig, "subtitleDbPath">,
 ): Promise<void> {
@@ -371,8 +381,8 @@ async function respondSeriesAutocomplete(
   const prefix = focused.value.trim();
 
   try {
-    const { isCurrent, signal } = quoteSeriesAutocompleteGuard.beginCancellable(
-      QUOTE_SERIES_AUTOCOMPLETE_KEY(interaction),
+    const { isCurrent, signal } = quoteFromAutocompleteGuard.beginCancellable(
+      QUOTE_FROM_AUTOCOMPLETE_KEY(interaction),
     );
 
     await yieldToEventLoop();
@@ -380,10 +390,10 @@ async function respondSeriesAutocomplete(
       return;
     }
 
-    const names = await listSeriesNamesOffThread(
+    const fromChoices = await listQuoteFromTitlesOffThread(
       config.subtitleDbPath,
       prefix,
-      QUOTE_SERIES_AUTOCOMPLETE_LIMIT,
+      QUOTE_FROM_AUTOCOMPLETE_LIMIT,
       QUOTE_AUTOCOMPLETE_TIMEOUT_MS,
       { interactive: true, signal },
     );
@@ -391,14 +401,14 @@ async function respondSeriesAutocomplete(
       throw signal.reason ?? new DOMException("The operation was aborted.", "AbortError");
     }
 
-    const choices: ApplicationCommandOptionChoiceData[] = names.map((name) => ({
-      name: name.slice(0, 100),
-      value: name,
+    const choices: ApplicationCommandOptionChoiceData[] = fromChoices.map((choice) => ({
+      name: choice.label.slice(0, 100),
+      value: choice.value.slice(0, 100),
     }));
 
     console.info(
       JSON.stringify({
-        event: "quote.series_autocomplete",
+        event: "quote.from_autocomplete",
         interactionId: interaction.id,
         query: prefix,
         resultCount: choices.length,
@@ -414,7 +424,7 @@ async function respondSeriesAutocomplete(
 
     console.error(
       JSON.stringify({
-        event: "quote.series_autocomplete_failed",
+        event: "quote.from_autocomplete_failed",
         query: prefix,
         error: error instanceof Error ? error.message : "unknown error",
       }),
@@ -442,8 +452,15 @@ export async function handleQuoteCommand(
   await beginEphemeralClipPreview(interaction);
 
   const matchRaw = interaction.options.getString("match", true);
-  const seriesRaw = interaction.options.getString("series");
-  const seriesFilter = seriesRaw && seriesRaw.trim().length > 0 ? seriesRaw.trim() : undefined;
+  const fromRaw = interaction.options.getString("from");
+  const scope: QuoteSearchScope | undefined =
+    fromRaw && fromRaw.trim().length > 0 ? parseQuoteFromToken(fromRaw.trim()) ?? undefined : undefined;
+  if (fromRaw && fromRaw.trim().length > 0 && !scope) {
+    await interaction.editReply(
+      "Pick a title from the `from` autocomplete list (movie or series), or clear that option.",
+    );
+    return;
+  }
   const durationRaw = interaction.options.getString("duration");
   const paddingRaw = interaction.options.getString("padding");
   const burnInSubtitles = interaction.options.getBoolean("subtitles") ?? false;
@@ -468,8 +485,12 @@ export async function handleQuoteCommand(
 
   const index = openSubtitleIndex(config.subtitleDbPath);
   let match;
+  let seriesByItemName: string | null = null;
   try {
     match = index.getCueMatch(token.itemId, token.startMs, token.endMs);
+    if (scope?.kind === "seriesByItem") {
+      seriesByItemName = index.getSeriesNameForItem(scope.itemId);
+    }
   } finally {
     index.close();
   }
@@ -481,15 +502,33 @@ export async function handleQuoteCommand(
     return;
   }
 
-  // Defence against autocomplete-then-change-series: if the user picked a
-  // cue, then narrowed `series:` to a different show before submitting,
-  // refuse rather than fetching a clip from the wrong show. Movies (NULL
-  // series_name) never satisfy a series filter.
-  if (seriesFilter) {
+  // Defence against autocomplete-then-change-from: if the user picked a
+  // cue, then narrowed `from:` to a different title before submitting,
+  // refuse rather than fetching a clip from the wrong work.
+  if (scope?.kind === "series") {
     const matchSeries = match.seriesName ?? null;
-    if (!matchSeries || matchSeries.toLowerCase() !== seriesFilter.toLowerCase()) {
+    if (!matchSeries || matchSeries.toLowerCase() !== scope.seriesName.toLowerCase()) {
       await interaction.editReply(
-        `That quote isn't from **${seriesFilter}**. Re-run \`/quote\` with the matching series, or clear the \`series\` option.`,
+        `That quote isn't from **${displayNameForScope(scope)}**. Re-run \`/quote\` with the matching title, or clear the \`from\` option.`,
+      );
+      return;
+    }
+  } else if (scope?.kind === "seriesByItem") {
+    const matchSeries = match.seriesName ?? null;
+    if (
+      !seriesByItemName ||
+      !matchSeries ||
+      matchSeries.toLowerCase() !== seriesByItemName.toLowerCase()
+    ) {
+      await interaction.editReply(
+        `That quote isn't from the selected series. Re-run \`/quote\` with the matching title, or clear the \`from\` option.`,
+      );
+      return;
+    }
+  } else if (scope?.kind === "movie") {
+    if (match.itemId.toLowerCase() !== scope.itemId.toLowerCase()) {
+      await interaction.editReply(
+        `That quote isn't from the selected movie. Re-run \`/quote\` with the matching title, or clear the \`from\` option.`,
       );
       return;
     }

@@ -33,7 +33,7 @@ from discord_smoke_support import (
     assess_quote_autocomplete_logs,
     assess_quote_debounce_supersede_logs,
     assess_quote_min_length_cancel_logs,
-    assess_quote_series_autocomplete_logs,
+    assess_quote_from_autocomplete_logs,
     assess_quote_shaping_logs,
     assert_health_responsive,
     bot_log_line_count,
@@ -139,11 +139,11 @@ async def run_discord_smokes() -> list[str]:
                 return
 
         # --- Required: the latency class that broke prod UX ---
-        # Series first — lighter than FTS match search; match can wedge the loop briefly.
+        # from first — lighter than FTS match search; match can wedge the loop briefly.
         try:
-            await autocomplete_quote("series", series_query, assess_quote_series_autocomplete_logs)
+            await autocomplete_quote("from", series_query, assess_quote_from_autocomplete_logs)
         except Exception as exc:  # noqa: BLE001
-            await check("quote.series_autocomplete", False, f"{type(exc).__name__}: {exc}")
+            await check("quote.from_autocomplete", False, f"{type(exc).__name__}: {exc}")
 
         await asyncio.sleep(float(env("JELLYBOT_SMOKE_BETWEEN_QUOTE_SEC", "3")))
 

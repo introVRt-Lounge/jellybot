@@ -197,19 +197,19 @@ class GenericAutocompleteAssessment:
     result_count: int | None = None
 
 
-def assess_quote_series_autocomplete_logs(
+def assess_quote_from_autocomplete_logs(
     interaction_id: str,
     query: str,
     events: list[dict],
     *,
     match_query_only: bool = False,
 ) -> QuoteAutocompleteAssessment:
-    """Series option uses quote.series_autocomplete + shared quote.autocomplete.responded."""
+    """from option uses quote.from_autocomplete + shared quote.autocomplete.responded."""
     if match_query_only:
         search_candidates = [
             event
             for event in events
-            if event.get("event") == "quote.series_autocomplete" and event.get("query") == query
+            if event.get("event") == "quote.from_autocomplete" and event.get("query") == query
         ]
         search = search_candidates[-1] if search_candidates else None
     else:
@@ -217,7 +217,7 @@ def assess_quote_series_autocomplete_logs(
             (
                 event
                 for event in events
-                if event.get("event") == "quote.series_autocomplete"
+                if event.get("event") == "quote.from_autocomplete"
                 and str(event.get("interactionId")) == interaction_id
                 and event.get("query") == query
             ),
@@ -225,7 +225,7 @@ def assess_quote_series_autocomplete_logs(
         )
     if search is None:
         failed_only = next(
-            (event for event in events if event.get("event") == "quote.series_autocomplete_failed" and event.get("query") == query),
+            (event for event in events if event.get("event") == "quote.from_autocomplete_failed" and event.get("query") == query),
             None,
         )
         if failed_only is not None:
@@ -234,7 +234,7 @@ def assess_quote_series_autocomplete_logs(
                 interaction_id=interaction_id,
                 query=query,
                 result_count=None,
-                detail=f"series_autocomplete_failed: {failed_only.get('error', 'unknown')}",
+                detail=f"from_autocomplete_failed: {failed_only.get('error', 'unknown')}",
             )
         skipped_only = next(
             (
@@ -265,7 +265,7 @@ def assess_quote_series_autocomplete_logs(
             interaction_id=interaction_id,
             query=query,
             result_count=None,
-            detail="missing quote.series_autocomplete log line for interaction/query",
+            detail="missing quote.from_autocomplete log line for interaction/query",
         )
 
     result_count = search.get("resultCount")
@@ -295,14 +295,14 @@ def assess_quote_series_autocomplete_logs(
             detail="series responded log present but not successful",
         )
 
-    failed = next((event for event in tail if event.get("event") == "quote.series_autocomplete_failed"), None)
+    failed = next((event for event in tail if event.get("event") == "quote.from_autocomplete_failed"), None)
     if failed is not None:
         return QuoteAutocompleteAssessment(
             ok=False,
             interaction_id=interaction_id,
             query=query,
             result_count=parsed_count,
-            detail=f"series_autocomplete_failed: {failed.get('error', 'unknown')}",
+            detail=f"from_autocomplete_failed: {failed.get('error', 'unknown')}",
         )
 
     skipped = next(

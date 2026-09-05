@@ -63,7 +63,7 @@ export function uniqueChoiceName(name: string, seenNames: Set<string>): string {
   return name;
 }
 
-/** Lets other interaction handlers (e.g. `/quote series:`) run between keystrokes. */
+/** Lets other interaction handlers (e.g. `/quote from:`) run between keystrokes. */
 export function yieldToEventLoop(): Promise<void> {
   return new Promise((resolve) => setImmediate(resolve));
 }

@@ -5,7 +5,7 @@ import { JellyfinClient } from "../jellyfin.ts";
 import { planClipRequest } from "../services/clip-request.ts";
 import { buildLibrarySubtitleCoverage } from "../services/subtitle-coverage.ts";
 import { openSubtitleIndex } from "../subtitles/index-db.ts";
-import { searchQuotesOffThread, listSeriesNamesOffThread } from "../subtitles/search-worker-client.ts";
+import { searchQuotesOffThread, listQuoteFromTitlesOffThread } from "../subtitles/search-worker-client.ts";
 
 type SmokeCheck = {
   name: string;
@@ -76,17 +76,17 @@ const checks: SmokeCheck[] = [
     },
   },
   {
-    name: "quote.series_search",
+    name: "quote.from_search",
     run: async () => {
-      const names = await listSeriesNamesOffThread(config.subtitleDbPath, seriesQuery, 10, 10_000);
-      if (names.length < 1) {
-        throw new Error(`no series names for query=${seriesQuery}`);
+      const choices = await listQuoteFromTitlesOffThread(config.subtitleDbPath, seriesQuery, 10, 10_000);
+      if (choices.length < 1) {
+        throw new Error(`no from titles for query=${seriesQuery}`);
       }
       console.info(
         JSON.stringify({
-          event: "smoke.quote.series_search",
+          event: "smoke.quote.from_search",
           query: seriesQuery,
-          resultCount: names.length,
+          resultCount: choices.length,
         }),
       );
     },

@@ -9,18 +9,18 @@ describe("quote command contract", () => {
     expect(json.name).toBe("quote");
   });
 
-  test("declares match before series (Discord requires required options first)", () => {
+  test("declares match before from (Discord requires required options first)", () => {
     const names = json.options?.map((option) => option.name);
-    expect(names).toEqual(["match", "series", "duration", "padding", "subtitles"]);
+    expect(names).toEqual(["match", "from", "duration", "padding", "subtitles"]);
   });
 
-  test("match is required; series is optional with autocomplete (issue #152)", () => {
+  test("match is required; from is optional with autocomplete (issue #202)", () => {
     const match = json.options?.find((option) => option.name === "match");
-    const series = json.options?.find((option) => option.name === "series");
+    const from = json.options?.find((option) => option.name === "from");
     expect(match?.autocomplete).toBe(true);
     expect(match?.required).toBe(true);
-    expect(series?.autocomplete).toBe(true);
-    expect(series?.required).toBe(false);
+    expect(from?.autocomplete).toBe(true);
+    expect(from?.required).toBe(false);
   });
 });
 

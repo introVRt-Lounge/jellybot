@@ -94,7 +94,7 @@ describe("quote match prefix cache", () => {
   const sampleResult = (text: string): QuoteSearchResult => ({
     itemId: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     itemType: "Movie",
-    title: "The Producers",
+    title: "s:the producers",
     startMs: 1000,
     endMs: 2000,
     text,
@@ -106,7 +106,7 @@ describe("quote match prefix cache", () => {
   });
 
   test("returns null when cache is empty", () => {
-    expect(tryQuoteMatchPrefixCache(cacheKey, "flaunt", "flaunt", "The Producers")).toBeNull();
+    expect(tryQuoteMatchPrefixCache(cacheKey, "flaunt", "flaunt", "s:the producers")).toBeNull();
   });
 
   test("filters cached results when the final token is extended", () => {
@@ -115,10 +115,10 @@ describe("quote match prefix cache", () => {
       "fla",
       "fla",
       [sampleResult("If you've got it, flaunt it!"), sampleResult("Something else entirely")],
-      "The Producers",
+      "s:the producers",
     );
 
-    const filtered = tryQuoteMatchPrefixCache(cacheKey, "flau", "flau", "The Producers");
+    const filtered = tryQuoteMatchPrefixCache(cacheKey, "flau", "flau", "s:the producers");
     expect(filtered?.map((r) => r.text)).toEqual(["If you've got it, flaunt it!"]);
   });
 
@@ -128,14 +128,14 @@ describe("quote match prefix cache", () => {
       "alpha bravo charlie delta echo fla",
       "alpha bravo charlie delta echo fla",
       [sampleResult("alpha bravo charlie delta echo flaunt")],
-      "The Producers",
+      "s:the producers",
     );
     expect(
       tryQuoteMatchPrefixCache(
         cacheKey,
         "alpha bravo charlie delta echo flau",
         "bravo charlie delta echo flau",
-        "The Producers",
+        "s:the producers",
       ),
     ).toBeNull();
   });
@@ -146,20 +146,20 @@ describe("quote match prefix cache", () => {
       "flaunt",
       "flaunt",
       [sampleResult("If you've got it, flaunt it!")],
-      "The Producers",
+      "s:the producers",
     );
-    expect(tryQuoteMatchPrefixCache(cacheKey, "flaunt it", "flaunt it", "The Producers")).toBeNull();
+    expect(tryQuoteMatchPrefixCache(cacheKey, "flaunt it", "flaunt it", "s:the producers")).toBeNull();
   });
 
-  test("returns null when the series scope changes", () => {
+  test("returns null when the from scope changes", () => {
     rememberQuoteMatchSearchCache(
       cacheKey,
       "fla",
       "fla",
       [sampleResult("If you've got it, flaunt it!")],
-      "The Producers",
+      "s:the producers",
     );
-    expect(tryQuoteMatchPrefixCache(cacheKey, "flau", "flau", "Other Show")).toBeNull();
+    expect(tryQuoteMatchPrefixCache(cacheKey, "flau", "flau", "s:other show")).toBeNull();
   });
 
   test("returns null when extension does not match any cached cue", () => {
@@ -168,9 +168,9 @@ describe("quote match prefix cache", () => {
       "flaunt",
       "flaunt",
       [sampleResult("If you've got it, flaunt it!")],
-      "The Producers",
+      "s:the producers",
     );
-    expect(tryQuoteMatchPrefixCache(cacheKey, "flauntx", "flauntx", "The Producers")).toBeNull();
+    expect(tryQuoteMatchPrefixCache(cacheKey, "flauntx", "flauntx", "s:the producers")).toBeNull();
   });
 
   test("reuses cached hyphenated cues when the query extends a de-hyphenated prefix", () => {
@@ -179,10 +179,10 @@ describe("quote match prefix cache", () => {
       "heartwarm",
       "heartwarm",
       [sampleResult("No! It was heart-warming.")],
-      "The Producers",
+      "s:the producers",
     );
 
-    const filtered = tryQuoteMatchPrefixCache(cacheKey, "heartwarmin", "heartwarmin", "The Producers");
+    const filtered = tryQuoteMatchPrefixCache(cacheKey, "heartwarmin", "heartwarmin", "s:the producers");
     expect(filtered?.map((r) => r.text)).toEqual(["No! It was heart-warming."]);
   });
 });
