@@ -122,7 +122,7 @@ Then drop a real file (or use the Radarr "Search now" / "Manual Import" actions)
 |---|---|---|
 | `401 Unauthorized` | Token mismatch | Re-paste the secret; URL-encode special chars or use the `X-Webhook-Token` header instead. |
 | `404 Webhooks disabled (no shared secret configured)` | `WEBHOOK_SHARED_SECRET` is unset | Set it in `~/docker/jellybot/.env` and recreate the container. |
-| Connect **Test** returns `404 Not Found` but `curl` to the same URL works | A leftover `jellybot-smoke-*` container registered the DNS name `jellybot` on `traefik_net` | `docker rm -f $(docker ps -aq --filter name=jellybot-smoke)`; smoke-ci rebinds with a unique alias (#206). |
+| Connect **Test** returns `404 Not Found` but `curl` to the same URL works | A leftover `jellybot-smoke-*` container registered the DNS name `jellybot` on `traefik_net` | `docker rm -f $(docker ps -aq --filter name=jellybot-smoke)`; smoke-ci no longer joins `traefik_net` (#206). |
 | No `webhook.received` lines ever | Connect notification missing in Sonarr/Radarr/Bazarr | Add the Webhook entries below; Test should log `webhook.ignored` for `eventType: Test`. |
 | `webhook.dispatch.item_not_found` | Jellyfin hadn't scanned the new file before our poll window expired | Increase `WEBHOOK_POLL_MAX_ATTEMPTS` or check that Radarr's "Connect to Jellyfin" Connect entry is configured. |
 | `webhook.dispatch.skipped reason:no_cues` | Item exists but has only image-based subs (PGS / VobSub) | Run the pgs-to-srt OCR fallback or wait for Bazarr to fetch a text track, then the Bazarr webhook will retrigger. |

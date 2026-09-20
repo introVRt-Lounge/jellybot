@@ -17,13 +17,6 @@ if [ ! -f .env ]; then
   ln -sf "$HOST_ENV" .env
 fi
 
-HOST_DEV="$(dirname "$HOST_ENV")"
-HOST_OVERRIDE="${HOST_DEV}/docker-compose.override.yml"
-if [ -f "$HOST_OVERRIDE" ] && [ ! -f docker-compose.override.yml ]; then
-  ln -sf "$HOST_OVERRIDE" docker-compose.override.yml
-  echo "smoke-ci: using host override ${HOST_OVERRIDE} (Jellyfin on traefik_net)"
-fi
-
 SMOKE_ID="${GITHUB_RUN_ID:-local$$}"
 export COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-jellybot-smoke-${SMOKE_ID}}"
 export JELLYBOT_CONTAINER_NAME="${JELLYBOT_CONTAINER_NAME:-jellybot-smoke-${SMOKE_ID}}"
@@ -34,32 +27,40 @@ export JELLYBOT_DATA_HOST_DIR="${JELLYBOT_DATA_HOST_DIR:-/home/heavygee/docker/j
 export JELLYBOT_SMOKE_HEALTH_URL="${JELLYBOT_SMOKE_HEALTH_URL:-http://127.0.0.1:${HEALTH_PORT}/healthz}"
 export JELLYBOT_SMOKE_LOG_CMD="${JELLYBOT_SMOKE_LOG_CMD:-docker logs ${JELLYBOT_CONTAINER_NAME}}"
 export DISCORD_PY_SELF_ROOT="${DISCORD_PY_SELF_ROOT:-$HOME/coding/discord.py-self}"
+# Host-published Jellyfin (not traefik DNS) — see docker-compose.smoke.yml / #206.
+export JELLYBOT_SMOKE_JELLYFIN_URL="${JELLYBOT_SMOKE_JELLYFIN_URL:-http://172.17.0.1:8096}"
+
+COMPOSE=(docker compose -f docker-compose.yml -f docker-compose.smoke.yml)
 
 cleanup() {
   if [ "${JELLYBOT_SMOKE_LEAVE_UP:-0}" != "1" ]; then
-    docker compose --profile app down --remove-orphans >/dev/null 2>&1 || true
+    "${COMPOSE[@]}" --profile app down --remove-orphans >/dev/null 2>&1 || true
   fi
 }
 trap cleanup EXIT
 
 echo "smoke-ci: ephemeral ${JELLYBOT_CONTAINER_NAME} on host :${HEALTH_PORT} (project ${COMPOSE_PROJECT_NAME})"
-docker compose --profile app build jellybot
-SUBTITLE_INDEX_ON_STARTUP=off docker compose --profile app up -d --force-recreate jellybot
+echo "smoke-ci: Jellyfin via ${JELLYBOT_SMOKE_JELLYFIN_URL} (no traefik_net — protects prod jellybot DNS)"
+"${COMPOSE[@]}" --profile app build jellybot
+SUBTITLE_INDEX_ON_STARTUP=off "${COMPOSE[@]}" --profile app up -d --force-recreate jellybot
 
-# Host override attaches the compose service name `jellybot` as a DNS alias on
-# traefik_net. That steals resolution from prod `jellybot` for Sonarr/Radarr/
-# Bazarr Connect (#206). Reconnect with a unique alias only.
-if docker network inspect traefik_net >/dev/null 2>&1; then
-  if docker inspect "${JELLYBOT_CONTAINER_NAME}" --format '{{json .NetworkSettings.Networks}}' | grep -q traefik_net; then
-    echo "smoke-ci: rebinding ${JELLYBOT_CONTAINER_NAME} on traefik_net as alias jellybot-smoke-${SMOKE_ID} (not jellybot)"
-    docker network disconnect traefik_net "${JELLYBOT_CONTAINER_NAME}" || true
-    docker network connect --alias "jellybot-smoke-${SMOKE_ID}" traefik_net "${JELLYBOT_CONTAINER_NAME}"
+echo "smoke-ci: waiting for ${JELLYBOT_CONTAINER_NAME} healthy"
+for _ in $(seq 1 60); do
+  status="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "${JELLYBOT_CONTAINER_NAME}" 2>/dev/null || echo missing)"
+  if [ "$status" = "healthy" ]; then
+    break
   fi
-fi
+  if [ "$status" = "exited" ] || [ "$status" = "dead" ] || [ "$status" = "missing" ]; then
+    echo "smoke-ci: container ${JELLYBOT_CONTAINER_NAME} status=${status}" >&2
+    docker logs "${JELLYBOT_CONTAINER_NAME}" 2>&1 | tail -40 >&2 || true
+    exit 1
+  fi
+  sleep 1
+done
 
 echo "smoke-ci: preflight (Jellyfin + subtitle index in container — not Discord smoke)"
-# Cap preflight: subcoverage.library can stall on a huge Jellyfin library (#206 babysit).
-if ! timeout 180 docker compose --profile app exec -T jellybot bun run src/cli/smoke-live.ts; then
+# Cap preflight: compose exec can hang after smoke-live exits; Discord remains the gate.
+if ! timeout 180 "${COMPOSE[@]}" --profile app exec -T jellybot bun run src/cli/smoke-live.ts; then
   echo "smoke-ci: smoke-live timed out or failed — continuing to Discord autocomplete gate" >&2
 fi
 
