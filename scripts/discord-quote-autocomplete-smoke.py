@@ -79,7 +79,7 @@ async def main() -> int:
         )
 
         data = {
-            "application_command": quote._data,
+            "application_command": quote.to_dict(),
             "attachments": [],
             "id": str(quote.id),
             "name": quote.name,

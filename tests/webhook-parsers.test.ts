@@ -4,6 +4,7 @@ import {
   parseRadarrWebhook,
   parseSonarrWebhook,
 } from "../src/webhooks/parsers.ts";
+import { extractProviderIdsFromPath, itemPathMatchesPrefix } from "../src/webhooks/path.ts";
 
 describe("parseRadarrWebhook", () => {
   test("turns OnImport into a movie kick keyed by tmdbId", () => {
@@ -161,5 +162,28 @@ describe("parseBazarrWebhook", () => {
   test("returns null on payloads with no usable identifier", () => {
     expect(parseBazarrWebhook({ event: "x", title: "ambiguous" })).toBeNull();
     expect(parseBazarrWebhook({})).toBeNull();
+  });
+});
+
+describe("Bazarr Autopulse path helpers", () => {
+  test("extractProviderIdsFromPath reads Radarr-style bracket tags", () => {
+    expect(
+      extractProviderIdsFromPath(
+        "/media/movies/Star Wars The Force Awakens (2015) [imdb-tt2488496]",
+      ),
+    ).toEqual({ imdbId: "tt2488496" });
+    expect(extractProviderIdsFromPath("/media/movies/Foo [tmdb-140607]")).toEqual({
+      tmdbId: 140607,
+    });
+    expect(extractProviderIdsFromPath("/media/tv/Buffy [tvdb-70327]/Season 01")).toEqual({
+      tvdbId: 70327,
+    });
+  });
+
+  test("itemPathMatchesPrefix matches file under or equal to the prefix", () => {
+    const prefix = "/media/movies/Foo (2020)";
+    expect(itemPathMatchesPrefix(`${prefix}/Foo.mkv`, prefix)).toBe(true);
+    expect(itemPathMatchesPrefix(prefix, prefix)).toBe(true);
+    expect(itemPathMatchesPrefix("/media/movies/Bar/Bar.mkv", prefix)).toBe(false);
   });
 });

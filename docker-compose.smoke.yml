@@ -1,0 +1,9 @@
+# Smoke-only compose overlay. Do NOT put the smoke container on traefik_net:
+# compose registers the service name `jellybot` as a DNS alias there and steals
+# resolution from prod jellybot (Sonarr/Radarr/Bazarr Connect → wrong container).
+# Reach Jellyfin via the host-published port instead (#206).
+services:
+  jellybot:
+    environment:
+      JELLYFIN_URL: ${JELLYBOT_SMOKE_JELLYFIN_URL:-http://172.17.0.1:8096}
+    # Intentionally no traefik_net — keep DNS name jellybot off the shared LAN.

@@ -5,8 +5,10 @@ import type { WebhookKick } from "./types.ts";
 export type WebhookRouterConfig = {
   /**
    * Required token for inbound webhooks. Compared against the
-   * `X-Webhook-Token` header or `?token=` query string. Empty string disables
-   * the entire webhook surface (router returns 404).
+   * `X-Webhook-Token` header, `?token=` query string, or HTTP Basic
+   * username/password (Bazarr Autopulse cannot append `?path=` onto a URL that
+   * already has `?token=` — it uses a second `?` and breaks auth). Empty
+   * string disables the entire webhook surface (router returns 404).
    */
   sharedSecret: string;
 };
@@ -26,9 +28,8 @@ const PARSERS: Record<string, (raw: unknown) => WebhookKick | null> = {
  *
  * Handles:
  * - POST /hooks/radarr | /hooks/sonarr | /hooks/bazarr
- * - GET / HEAD on the same paths return 200 with a small status body so
- *   Connect "Test" buttons see a happy response without ever exercising the
- *   indexer.
+ * - GET /hooks/bazarr?path=… — Bazarr Autopulse external webhook (indexes)
+ * - GET / HEAD on other hook paths return 200 ready (Connect Test / probes)
  */
 export async function tryHandleWebhook(
   request: Request,
@@ -48,12 +49,45 @@ export async function tryHandleWebhook(
     return new Response(`Unknown webhook source: ${source}`, { status: 404 });
   }
 
-  // GET / HEAD = liveness ping. Auth-gated so we don't leak "I exist" without
-  // a token, but the body is small + safe.
   if (request.method === "GET" || request.method === "HEAD") {
     if (!authenticate(request, url, config.sharedSecret)) {
       return new Response("Unauthorized", { status: 401 });
     }
+
+    // Bazarr Autopulse: GET with ?path=<parent-dir-of-media> means "subtitle
+    // (or media) just landed here — re-index". Without path this is a probe.
+    if (request.method === "GET" && source === "bazarr") {
+      const mediaPath = url.searchParams.get("path")?.trim();
+      if (mediaPath) {
+        const kick: WebhookKick = {
+          kind: "path",
+          source: "bazarr",
+          eventType: "subtitle",
+          mediaPath,
+        };
+        const result = dispatcher.enqueue(kick);
+        console.info(
+          JSON.stringify({
+            event: "webhook.received",
+            source: kick.source,
+            eventType: kick.eventType,
+            kind: kick.kind,
+            title: null,
+            tmdbId: null,
+            tvdbId: null,
+            seasonNumber: null,
+            episodeNumber: null,
+            mediaPath: kick.mediaPath,
+            deduped: result.ok && "deduped" in result ? result.deduped : false,
+          }),
+        );
+        return Response.json({
+          status: "queued",
+          deduped: "deduped" in result ? result.deduped : false,
+        });
+      }
+    }
+
     return Response.json({ status: "ready", source });
   }
 
@@ -105,11 +139,12 @@ export async function tryHandleWebhook(
       source: kick.source,
       eventType: kick.eventType,
       kind: kick.kind,
-      title: kick.title ?? null,
+      title: kick.kind === "path" ? null : kick.title ?? null,
       tmdbId: kick.kind === "movie" ? kick.tmdbId ?? null : null,
       tvdbId: kick.kind === "episode" ? kick.tvdbId : null,
       seasonNumber: kick.kind === "episode" ? kick.seasonNumber : null,
       episodeNumber: kick.kind === "episode" ? kick.episodeNumber : null,
+      mediaPath: kick.kind === "path" ? kick.mediaPath : null,
       deduped: result.ok && "deduped" in result ? result.deduped : false,
     }),
   );
@@ -123,6 +158,19 @@ function authenticate(request: Request, url: URL, secret: string): boolean {
 
   const queryToken = url.searchParams.get("token");
   if (queryToken && constantTimeEqual(queryToken, secret)) return true;
+
+  const authorization = request.headers.get("authorization") ?? request.headers.get("Authorization");
+  if (authorization?.toLowerCase().startsWith("basic ")) {
+    try {
+      const decoded = atob(authorization.slice(6).trim());
+      const colon = decoded.indexOf(":");
+      const user = colon >= 0 ? decoded.slice(0, colon) : decoded;
+      const pass = colon >= 0 ? decoded.slice(colon + 1) : "";
+      if (constantTimeEqual(pass, secret) || constantTimeEqual(user, secret)) return true;
+    } catch {
+      // ignore malformed base64
+    }
+  }
 
   return false;
 }

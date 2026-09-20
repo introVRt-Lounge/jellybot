@@ -27,6 +27,17 @@ export type WebhookKick =
       seasonNumber: number;
       episodeNumber: number;
       title?: string;
+    }
+  | {
+      /**
+       * Bazarr `use_external_webhook` (Autopulse-style) GETs with `?path=` set
+       * to the parent directory of the media file. Resolve Jellyfin items
+       * under that prefix and re-index them so new SRT drops land in /quote.
+       */
+      kind: "path";
+      source: "bazarr";
+      eventType: string;
+      mediaPath: string;
     };
 
 /**
@@ -39,6 +50,9 @@ export function kickKey(kick: WebhookKick): string {
     if (kick.tmdbId != null) return `movie:tmdb:${kick.tmdbId}`;
     if (kick.imdbId) return `movie:imdb:${kick.imdbId}`;
     return `movie:unknown:${kick.title ?? "?"}`;
+  }
+  if (kick.kind === "path") {
+    return `path:${kick.mediaPath.replace(/\/+$/, "")}`;
   }
   return `episode:tvdb:${kick.tvdbId}:S${kick.seasonNumber}E${kick.episodeNumber}`;
 }
