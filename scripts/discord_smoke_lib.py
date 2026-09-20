@@ -83,7 +83,7 @@ async def fire_autocomplete(
     )
 
     data: dict[str, Any] = {
-        "application_command": command._data,
+        "application_command": command.to_dict(),
         "attachments": [],
         "id": str(command.id),
         "name": command.name,
