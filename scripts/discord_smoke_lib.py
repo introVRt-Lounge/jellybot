@@ -68,7 +68,17 @@ async def fire_autocomplete(
     query: str,
     preset_options: list[dict[str, Any]] | None = None,
 ) -> Any:
+    """Fire a slash autocomplete and wait for Discord's interaction_finish.
+
+    discord.py-self (>= components v2) made ``_wrapped_interaction`` return
+    ``None`` after the HTTP POST; the Interaction object only arrives on the
+    gateway as ``interaction_finish``. We restore the previous wait-for-
+    finish behaviour here so smoke can read ``interaction.id``.
+    """
+    import asyncio
+
     from discord.enums import InteractionType
+    from discord.errors import InvalidData
     from discord.interactions import _wrapped_interaction
     from discord.utils import _generate_nonce
 
@@ -97,15 +107,31 @@ async def fire_autocomplete(
         data["guild_id"] = str(channel.guild.id)
 
     nonce = _generate_nonce()
-    return await _wrapped_interaction(
-        client._connection,
-        nonce,
-        InteractionType.autocomplete,
-        command.name,
-        await channel._get_channel(),  # type: ignore[attr-defined]
-        data,
-        application_id=command.application_id,
+    # Arm the waiter before HTTP so a fast gateway reply cannot race past us.
+    waiter = asyncio.create_task(
+        client.wait_for(
+            "interaction_finish",
+            check=lambda interaction: str(getattr(interaction, "nonce", "")) == str(nonce),
+            timeout=12,
+        )
     )
+    try:
+        await _wrapped_interaction(
+            client._connection,
+            nonce,
+            InteractionType.autocomplete,
+            command.name,
+            await channel._get_channel(),  # type: ignore[attr-defined]
+            data,
+            application_id=command.application_id,
+        )
+        return await waiter
+    except (asyncio.TimeoutError, asyncio.CancelledError) as exc:
+        waiter.cancel()
+        raise InvalidData("Did not receive a response from Discord") from exc
+    except Exception:
+        waiter.cancel()
+        raise
 
 
 async def find_slash_command(channel: Any, app_id: int, name: str) -> Any:

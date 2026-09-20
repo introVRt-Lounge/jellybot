@@ -141,8 +141,8 @@ export class WebhookDispatcher {
         );
       }
 
-      const item = await this.pollForItem(kick, sleep);
-      if (!item) {
+      const items = await this.pollForItems(kick, sleep);
+      if (items.length === 0) {
         console.warn(
           JSON.stringify({
             event: "webhook.dispatch.item_not_found",
@@ -155,42 +155,44 @@ export class WebhookDispatcher {
         return;
       }
 
-      // Force-refresh just this item so Bazarr SRT drops bump dateLastRefreshed
-      // before we reach the indexer's incremental skip check.
-      try {
-        await this.deps.jellyfin.refreshItem(item.id);
-      } catch (error) {
-        console.warn(
+      for (const item of items) {
+        // Force-refresh just this item so Bazarr SRT drops bump dateLastRefreshed
+        // before we reach the indexer's incremental skip check.
+        try {
+          await this.deps.jellyfin.refreshItem(item.id);
+        } catch (error) {
+          console.warn(
+            JSON.stringify({
+              event: "webhook.dispatch.item_refresh_failed",
+              key,
+              itemId: item.id,
+              error: error instanceof Error ? error.message : "unknown error",
+            }),
+          );
+        }
+
+        await sleep(this.deps.config.postRefreshSettleMs);
+
+        const result: IndexSingleItemResult = await indexer(this.deps.jellyfin, {
+          dbPath: this.deps.config.subtitleDbPath,
+          itemId: item.id,
+          preferredLanguages: this.deps.config.preferredLanguages,
+        });
+
+        console.info(
           JSON.stringify({
-            event: "webhook.dispatch.item_refresh_failed",
+            event: result.ok ? "webhook.dispatch.indexed" : "webhook.dispatch.skipped",
             key,
+            source: kick.source,
+            eventType: kick.eventType,
             itemId: item.id,
-            error: error instanceof Error ? error.message : "unknown error",
+            cueCount: result.ok ? result.cueCount : 0,
+            reason: result.ok ? null : result.reason,
+            message: result.ok ? null : result.message ?? null,
+            elapsedMs: Date.now() - startedAt,
           }),
         );
       }
-
-      await sleep(this.deps.config.postRefreshSettleMs);
-
-      const result: IndexSingleItemResult = await indexer(this.deps.jellyfin, {
-        dbPath: this.deps.config.subtitleDbPath,
-        itemId: item.id,
-        preferredLanguages: this.deps.config.preferredLanguages,
-      });
-
-      console.info(
-        JSON.stringify({
-          event: result.ok ? "webhook.dispatch.indexed" : "webhook.dispatch.skipped",
-          key,
-          source: kick.source,
-          eventType: kick.eventType,
-          itemId: item.id,
-          cueCount: result.ok ? result.cueCount : 0,
-          reason: result.ok ? null : result.reason,
-          message: result.ok ? null : result.message ?? null,
-          elapsedMs: Date.now() - startedAt,
-        }),
-      );
     } catch (error) {
       console.error(
         JSON.stringify({
@@ -205,15 +207,15 @@ export class WebhookDispatcher {
     }
   }
 
-  private async pollForItem(
+  private async pollForItems(
     kick: WebhookKick,
     sleep: (ms: number) => Promise<void>,
-  ): Promise<JellyfinItem | null> {
+  ): Promise<JellyfinItem[]> {
     const { pollMaxAttempts, pollIntervalMs } = this.deps.config;
     for (let attempt = 0; attempt < pollMaxAttempts; attempt += 1) {
       try {
-        const found = await this.lookupItem(kick);
-        if (found) return found;
+        const found = await this.lookupItems(kick);
+        if (found.length > 0) return found;
       } catch (error) {
         console.warn(
           JSON.stringify({
@@ -228,22 +230,31 @@ export class WebhookDispatcher {
         await sleep(pollIntervalMs);
       }
     }
-    return null;
+    return [];
   }
 
-  private async lookupItem(kick: WebhookKick): Promise<JellyfinItem | null> {
+  private async lookupItems(kick: WebhookKick): Promise<JellyfinItem[]> {
+    if (kick.kind === "path") {
+      return this.deps.jellyfin.findItemsByPathPrefix(kick.mediaPath);
+    }
     if (kick.kind === "movie") {
       if (kick.tmdbId != null) {
-        return this.deps.jellyfin.findItemByTmdbId(kick.tmdbId, { title: kick.title });
+        const item = await this.deps.jellyfin.findItemByTmdbId(kick.tmdbId, { title: kick.title });
+        return item ? [item] : [];
       }
-      return null;
+      if (kick.imdbId) {
+        const item = await this.deps.jellyfin.findItemByImdbId(kick.imdbId, { title: kick.title });
+        return item ? [item] : [];
+      }
+      return [];
     }
-    return this.deps.jellyfin.findEpisodeByTvdb(
+    const item = await this.deps.jellyfin.findEpisodeByTvdb(
       kick.tvdbId,
       kick.seasonNumber,
       kick.episodeNumber,
       { seriesTitle: kick.title },
     );
+    return item ? [item] : [];
   }
 }
 

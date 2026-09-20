@@ -1,6 +1,11 @@
 import { parseTvMediaQuery } from "./tv-query.ts";
 import type { SubtitleStreamCandidate } from "./subtitles/track-select.ts";
 import { displayTitle, displayTitleWithYear } from "./display-title.ts";
+import {
+  extractProviderIdsFromPath,
+  itemPathMatchesPrefix,
+  pathSearchTerm,
+} from "./webhooks/path.ts";
 
 export type MediaKind = "movie" | "tv";
 
@@ -904,6 +909,86 @@ export class JellyfinClient {
     }
 
     return `${prefix}${displayTitleWithYear(item)}`;
+  }
+
+  /**
+   * Resolve Jellyfin Movie/Episode items under a filesystem prefix (Bazarr
+   * Autopulse `?path=`). Prefer *arr bracket tags (`[imdb-…]`, `[tmdb-…]`)
+   * when present; otherwise SearchTerm on the cleaned leaf folder and
+   * client-side Path prefix match.
+   */
+  async findItemsByPathPrefix(pathPrefix: string): Promise<JellyfinItem[]> {
+    const prefix = pathPrefix.replace(/\/+$/, "");
+    if (!prefix) return [];
+
+    const ids = extractProviderIdsFromPath(prefix);
+    if (ids.tmdbId != null) {
+      const item = await this.findItemByTmdbId(ids.tmdbId, {
+        title: pathSearchTerm(prefix) || undefined,
+      });
+      return item ? [item] : [];
+    }
+    if (ids.imdbId) {
+      const item = await this.findItemByImdbId(ids.imdbId, {
+        title: pathSearchTerm(prefix) || undefined,
+      });
+      return item ? [item] : [];
+    }
+
+    const term = pathSearchTerm(prefix);
+    if (term.length < 2) return [];
+
+    const { userId } = this.requireAuth();
+    const params = new URLSearchParams({
+      UserId: userId,
+      IncludeItemTypes: "Movie,Episode",
+      Recursive: "true",
+      Limit: "50",
+      SearchTerm: term,
+      Fields: `${ITEM_FIELDS},ProviderIds`,
+    });
+    const response = await this.fetchAuthed(`${this.baseUrl}/Items?${params}`);
+    if (!response.ok) {
+      throw new Error(`Jellyfin path-prefix lookup failed (${response.status}).`);
+    }
+    const data = (await response.json()) as JellyfinSearchResponse;
+    return this.mapItems(data).filter((item) => item.path && itemPathMatchesPrefix(item.path, prefix));
+  }
+
+  /**
+   * Look up a movie by IMDB id (tt…). Same strategy as TMDB: title search when
+   * hinted, then client-side ProviderIds filter (Jellyfin ignores provider
+   * query filters on /Items — see #126).
+   */
+  async findItemByImdbId(
+    imdbId: string,
+    hint?: { title?: string },
+  ): Promise<JellyfinItem | null> {
+    const want = imdbId.trim().toLowerCase();
+    if (!want) return null;
+
+    if (hint?.title && hint.title.trim().length >= 2) {
+      const { userId } = this.requireAuth();
+      const params = new URLSearchParams({
+        UserId: userId,
+        IncludeItemTypes: "Movie",
+        Recursive: "true",
+        Limit: "20",
+        SearchTerm: hint.title.trim(),
+        Fields: `${ITEM_FIELDS},ProviderIds`,
+      });
+      const response = await this.fetchAuthed(`${this.baseUrl}/Items?${params}`);
+      if (!response.ok) {
+        throw new Error(`Jellyfin IMDB lookup (title) failed (${response.status}).`);
+      }
+      const data = (await response.json()) as JellyfinSearchResponse;
+      const match = (data.Items ?? []).find(
+        (raw) => (raw.ProviderIds?.Imdb ?? "").toLowerCase() === want,
+      );
+      if (match) return this.mapItem(match);
+    }
+
+    return null;
   }
 
   private mapItems(data: JellyfinSearchResponse): JellyfinItem[] {

@@ -54,7 +54,7 @@ Radarr / Sonarr / Bazarr all sit on the same `traefik_net` network as jellybot, 
 |---|---|
 | Radarr | `http://jellybot:8080/hooks/radarr?token=<WEBHOOK_SHARED_SECRET>` |
 | Sonarr | `http://jellybot:8080/hooks/sonarr?token=<WEBHOOK_SHARED_SECRET>` |
-| Bazarr | `http://jellybot:8080/hooks/bazarr?token=<WEBHOOK_SHARED_SECRET>` |
+| Bazarr | `http://jellybot:8080/hooks/bazarr` + Basic auth (password = secret); see Bazarr setup — do **not** put `?token=` on this URL |
 
 Prod **does not publish** host 8080. Health/hooks are in-container; *arr Connect uses Docker DNS (`http://jellybot:8080/...`) on `traefik_net`. If a product is not on that network, join it — do not bind host 8080.
 
@@ -91,12 +91,26 @@ Test should return `status:"ignored"` for the same reason as Radarr.
 
 ## Bazarr setup
 
-Bazarr Settings → General → **use external webhook**:
+Bazarr's **use external webhook** is Autopulse-shaped: it **GET**s the URL and
+appends `?path=<parent-dir-of-media>`. It does **not** POST JSON with
+`tmdbId`/`tvdbId`. If the URL already contains `?token=…`, Bazarr concatenates
+a second `?path=…` and auth breaks — so keep the token out of the query string.
 
-- **URL:** `http://jellybot:8080/hooks/bazarr?token=<secret>`
-- Enable `use_external_webhook` (config keys `use_external_webhook` / `external_webhook_url`).
+Bazarr Settings → General:
 
-Restart Bazarr after editing. The parser routes to a movie kick if it sees `tmdbId`/`imdbId`, or an episode kick if it sees `tvdbId` + season + episode. Unrecognised payloads log `webhook.ignored` with the raw `eventType`.
+- **use_external_webhook:** enabled
+- **external_webhook_url:** `http://jellybot:8080/hooks/bazarr` (no `?token=`)
+- **external_webhook_username:** `jellybot` (or leave blank)
+- **external_webhook_password:** the same value as `WEBHOOK_SHARED_SECRET`
+
+jellybot accepts HTTP Basic (password or username = shared secret) and treats
+`GET /hooks/bazarr?path=…` as an index kick for every Movie/Episode under that
+filesystem prefix.
+
+`POST /hooks/bazarr` with a JSON body (tmdb/tvdb fields) still works for custom
+notifiers; Autopulse/external webhook is the GET path above.
+
+Restart Bazarr after editing.
 
 ## Verifying it works
 

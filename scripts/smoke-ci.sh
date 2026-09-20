@@ -59,8 +59,9 @@ for _ in $(seq 1 60); do
 done
 
 echo "smoke-ci: preflight (Jellyfin + subtitle index in container — not Discord smoke)"
-# Cap preflight: compose exec can hang after smoke-live exits; Discord remains the gate.
-if ! timeout 180 "${COMPOSE[@]}" --profile app exec -T jellybot bun run src/cli/smoke-live.ts; then
+# Use docker exec (not compose exec): compose exec has hung after smoke-live
+# PASSED, burning the full timeout before Discord smoke can run.
+if ! timeout 120 docker exec "${JELLYBOT_CONTAINER_NAME}" bun run src/cli/smoke-live.ts; then
   echo "smoke-ci: smoke-live timed out or failed — continuing to Discord autocomplete gate" >&2
 fi
 

@@ -184,4 +184,43 @@ describe("tryHandleWebhook", () => {
     );
     expect(result?.status).toBe(401);
   });
+
+  test("GET /hooks/bazarr?path= enqueues a path kick (Bazarr Autopulse)", async () => {
+    const { dispatcher, enqueued } = silentDispatcher();
+    const mediaPath = "/media/movies/Foo (2020) [imdb-tt123]";
+    const result = await tryHandleWebhook(
+      new Request(`http://x/hooks/bazarr?token=${SECRET}&path=${encodeURIComponent(mediaPath)}`, {
+        method: "GET",
+      }),
+      config,
+      dispatcher,
+    );
+    expect(result?.status).toBe(200);
+    const body = (await result!.json()) as { status: string };
+    expect(body.status).toBe("queued");
+    expect(enqueued).toEqual([
+      {
+        kind: "path",
+        source: "bazarr",
+        eventType: "subtitle",
+        mediaPath,
+      },
+    ]);
+  });
+
+  test("accepts HTTP Basic auth (password = shared secret) for Bazarr", async () => {
+    const { dispatcher, enqueued } = silentDispatcher();
+    const mediaPath = "/media/tv/Show/Season 01";
+    const basic = Buffer.from(`jellybot:${SECRET}`).toString("base64");
+    const result = await tryHandleWebhook(
+      new Request(`http://x/hooks/bazarr?path=${encodeURIComponent(mediaPath)}`, {
+        method: "GET",
+        headers: { Authorization: `Basic ${basic}` },
+      }),
+      config,
+      dispatcher,
+    );
+    expect(result?.status).toBe(200);
+    expect(enqueued).toHaveLength(1);
+  });
 });
