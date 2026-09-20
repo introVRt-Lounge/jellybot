@@ -1,8 +1,10 @@
 # Event-driven indexer kick (webhooks)
 
-Jellybot exposes three webhook endpoints that turn Radarr / Sonarr / Bazarr Connect events into a targeted, single-item subtitle index run within ~30 seconds of a file or sub drop. This replaces the "wait until next 09:00 cron" lag that the bulk incremental indexer imposes.
+Jellybot exposes three webhook endpoints that turn Radarr / Sonarr / Bazarr Connect events into a targeted, single-item subtitle index run within ~30 seconds of a file or sub drop. **This is the primary path** so `/quote` learns about new estate media without anyone remembering to run `make index-subtitles`.
 
-The cron stays as a safety net - webhooks are fire-and-forget, so if a delivery is missed the daily scan still picks the work up.
+Code alone is not enough: each *arr/Bazarr product must have a Connect (or external webhook) entry pointing at jellybot. If those are missing, prod logs stay at `webhook.received` count zero even while `webhook.server_ready` is true (see #206 / Spaced).
+
+The host 09:00 incremental cron stays as a **silent safety net** for missed deliveries — not the operator's memory. Log it somewhere the cron user can write (e.g. `~/docker/jellybot/logs/index-incremental.cron.log`); redirecting into `data/` fails when that directory is owned by the container user.
 
 ## How it fits together
 
@@ -54,7 +56,7 @@ Radarr / Sonarr / Bazarr all sit on the same `traefik_net` network as jellybot, 
 | Sonarr | `http://jellybot:8080/hooks/sonarr?token=<WEBHOOK_SHARED_SECRET>` |
 | Bazarr | `http://jellybot:8080/hooks/bazarr?token=<WEBHOOK_SHARED_SECRET>` |
 
-If a product doesn't share the network, swap the host to `http://<docker-host>:8080/...` - just be aware that port 8080 is bound to `0.0.0.0` for the health endpoint, and your shared secret is the only thing protecting the surface from anyone on that network.
+Prod **does not publish** host 8080. Health/hooks are in-container; *arr Connect uses Docker DNS (`http://jellybot:8080/...`) on `traefik_net`. If a product is not on that network, join it — do not bind host 8080.
 
 ## Radarr setup
 
@@ -89,9 +91,12 @@ Test should return `status:"ignored"` for the same reason as Radarr.
 
 ## Bazarr setup
 
-Bazarr's webhook surface is less standardised. Settings -> Notifications -> Custom -> add a new entry pointing to `http://jellybot:8080/hooks/bazarr?token=<secret>`. The Bazarr parser accepts whichever shape your install sends - it routes to a movie kick if it sees `tmdbId`/`imdbId`, or an episode kick if it sees `tvdbId` + season + episode.
+Bazarr Settings → General → **use external webhook**:
 
-If Bazarr is delivering a payload the bot doesn't recognise you'll see a `webhook.ignored` log line with the raw `eventType`. Capture that and we can add explicit support.
+- **URL:** `http://jellybot:8080/hooks/bazarr?token=<secret>`
+- Enable `use_external_webhook` (config keys `use_external_webhook` / `external_webhook_url`).
+
+Restart Bazarr after editing. The parser routes to a movie kick if it sees `tmdbId`/`imdbId`, or an episode kick if it sees `tvdbId` + season + episode. Unrecognised payloads log `webhook.ignored` with the raw `eventType`.
 
 ## Verifying it works
 
@@ -117,6 +122,8 @@ Then drop a real file (or use the Radarr "Search now" / "Manual Import" actions)
 |---|---|---|
 | `401 Unauthorized` | Token mismatch | Re-paste the secret; URL-encode special chars or use the `X-Webhook-Token` header instead. |
 | `404 Webhooks disabled (no shared secret configured)` | `WEBHOOK_SHARED_SECRET` is unset | Set it in `~/docker/jellybot/.env` and recreate the container. |
+| Connect **Test** returns `404 Not Found` but `curl` to the same URL works | A leftover `jellybot-smoke-*` container registered the DNS name `jellybot` on `traefik_net` | `docker rm -f $(docker ps -aq --filter name=jellybot-smoke)`; smoke-ci rebinds with a unique alias (#206). |
+| No `webhook.received` lines ever | Connect notification missing in Sonarr/Radarr/Bazarr | Add the Webhook entries below; Test should log `webhook.ignored` for `eventType: Test`. |
 | `webhook.dispatch.item_not_found` | Jellyfin hadn't scanned the new file before our poll window expired | Increase `WEBHOOK_POLL_MAX_ATTEMPTS` or check that Radarr's "Connect to Jellyfin" Connect entry is configured. |
 | `webhook.dispatch.skipped reason:no_cues` | Item exists but has only image-based subs (PGS / VobSub) | Run the pgs-to-srt OCR fallback or wait for Bazarr to fetch a text track, then the Bazarr webhook will retrigger. |
 | Repeated `webhook.received` events for the same item produce only one `webhook.dispatch.indexed` | Working as designed - the dispatcher coalesces inside a 30s window. |

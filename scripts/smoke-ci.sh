@@ -46,6 +46,17 @@ echo "smoke-ci: ephemeral ${JELLYBOT_CONTAINER_NAME} on host :${HEALTH_PORT} (pr
 docker compose --profile app build jellybot
 SUBTITLE_INDEX_ON_STARTUP=off docker compose --profile app up -d --force-recreate jellybot
 
+# Host override attaches the compose service name `jellybot` as a DNS alias on
+# traefik_net. That steals resolution from prod `jellybot` for Sonarr/Radarr/
+# Bazarr Connect (#206). Reconnect with a unique alias only.
+if docker network inspect traefik_net >/dev/null 2>&1; then
+  if docker inspect "${JELLYBOT_CONTAINER_NAME}" --format '{{json .NetworkSettings.Networks}}' | grep -q traefik_net; then
+    echo "smoke-ci: rebinding ${JELLYBOT_CONTAINER_NAME} on traefik_net as alias jellybot-smoke-${SMOKE_ID} (not jellybot)"
+    docker network disconnect traefik_net "${JELLYBOT_CONTAINER_NAME}" || true
+    docker network connect --alias "jellybot-smoke-${SMOKE_ID}" traefik_net "${JELLYBOT_CONTAINER_NAME}"
+  fi
+fi
+
 echo "smoke-ci: preflight (Jellyfin + subtitle index in container — not Discord smoke)"
 docker compose --profile app exec -T jellybot bun run src/cli/smoke-live.ts
 

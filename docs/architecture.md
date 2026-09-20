@@ -157,13 +157,13 @@ sequenceDiagram
 
 ### 4. Subtitle index triggers
 
-Four paths feed the same indexer. The webhook path is wired but currently a no-op until [#126](https://github.com/introVRt-Lounge/jellybot/issues/126) lands; safety nets cover it meanwhile.
+Four paths feed the same indexer. **Acquisition webhooks are the primary path** (Radarr / Sonarr / Bazarr Connect → `/hooks/*`); the daily cron and optional startup incremental pass are safety nets for missed deliveries (#206).
 
 ```mermaid
 flowchart TD
   A["Bot startup<br/>SUBTITLE_INDEX_ON_STARTUP=incremental"]
   B["Daily cron<br/>09:00 UTC"]
-  C["Webhook kick<br/>POST /hooks/{radarr,sonarr,bazarr}<br/>broken on prod data, see #126"]
+  C["Webhook kick<br/>POST /hooks/{radarr,sonarr,bazarr}<br/>requires Connect config in *arr/Bazarr"]
   D["Manual CLI<br/>bun run src/cli/index-subtitles.ts --incremental"]
 
   E["src/subtitles/indexer.ts"]
