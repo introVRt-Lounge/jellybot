@@ -61,8 +61,16 @@ done
 echo "smoke-ci: preflight (Jellyfin + subtitle index in container — not Discord smoke)"
 # Use docker exec (not compose exec): compose exec has hung after smoke-live
 # PASSED, burning the full timeout before Discord smoke can run.
-if ! timeout 120 docker exec "${JELLYBOT_CONTAINER_NAME}" bun run src/cli/smoke-live.ts; then
-  echo "smoke-ci: smoke-live timed out or failed — continuing to Discord autocomplete gate" >&2
+# Timeout (124) only: continue to Discord gate. Real smoke-live failures stay fatal.
+set +e
+timeout 120 docker exec "${JELLYBOT_CONTAINER_NAME}" bun run src/cli/smoke-live.ts
+smoke_live_rc=$?
+set -e
+if [ "$smoke_live_rc" -eq 124 ]; then
+  echo "smoke-ci: smoke-live timed out — continuing to Discord autocomplete gate" >&2
+elif [ "$smoke_live_rc" -ne 0 ]; then
+  echo "smoke-ci: smoke-live failed (exit ${smoke_live_rc})" >&2
+  exit "$smoke_live_rc"
 fi
 
 echo "smoke-ci: Discord smoke (user token → slash autocomplete in Bottitesto)"
