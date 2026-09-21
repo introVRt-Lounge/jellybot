@@ -86,7 +86,7 @@ export const quoteCommand = new SlashCommandBuilder()
   .addStringOption((option) =>
     option
       .setName("padding")
-      .setDescription("Seconds before the quote to include (default 2s)")
+      .setDescription("Lead-in before the quote in seconds (default 2; negative starts later)")
       .setRequired(false),
   )
   .addBooleanOption((option) =>

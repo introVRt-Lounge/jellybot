@@ -70,7 +70,7 @@ export function buildQuoteRetryModal(
       new ActionRowBuilder<TextInputBuilder>().addComponents(
         new TextInputBuilder()
           .setCustomId("padding")
-          .setLabel("Padding before quote")
+          .setLabel("Lead-in seconds (negative ok)")
           .setStyle(TextInputStyle.Short)
           .setRequired(true)
           .setValue(paddingRaw),

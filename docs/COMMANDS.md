@@ -76,7 +76,7 @@ Search indexed subtitles and clip the scene around a matched quote. Uses the sam
 | `match` | Yes | Autocomplete string | Quote text search, then pick a match. Needs 3+ characters globally, or 2+ when `from` is set. Discord requires this option before optional ones in the schema. |
 | `from` | No | Autocomplete string | Limits **match** autocomplete and submit to one **movie or TV series**. Set it (click the option) before typing match when you want to narrow. |
 | `duration` | No | String | Clip length from the quote (default `15s`) |
-| `padding` | No | String | Seconds before the quote (default `2s`) |
+| `padding` | No | String | Lead-in before the quote in seconds (default `2`). Negative values start later, when the matched cue begins too early (`padding:-1.5`). |
 | `subtitles` | No | Boolean | When `true`, burns the preferred Jellyfin subtitle track into the clip video |
 
 The subtitle index must exist first. Run `make index-subtitles` on the host/container before expecting matches.
@@ -90,6 +90,7 @@ When `from` is set, match autocomplete and FTS only return cues from that title.
 /quote from:"Movie · Heartwarming (2020)" match:heartwarming
 /quote match:love finds its way
 /quote match:does love happen duration:20 padding:3 subtitles:True
+/quote match:does love happen padding:-1.5
 ```
 
 ### Failure cases

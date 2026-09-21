@@ -43,7 +43,7 @@ export function planQuoteClip(input: QuoteClipInput): QuoteClipResult {
 
   try {
     if (input.paddingRaw?.trim()) {
-      paddingSeconds = parseTimestamp(input.paddingRaw);
+      paddingSeconds = parseTimestamp(input.paddingRaw, { allowNegative: true });
     }
     if (input.durationRaw?.trim()) {
       durationSeconds = parseTimestamp(input.durationRaw);
@@ -69,6 +69,13 @@ export function planQuoteClip(input: QuoteClipInput): QuoteClipResult {
   const cueStartSeconds = input.match.startMs / 1000;
   const cueEndSeconds = input.match.endMs / 1000;
   let startSeconds = Math.max(0, cueStartSeconds - paddingSeconds);
+
+  if (startSeconds >= cueEndSeconds) {
+    return {
+      ok: false,
+      message: "That lead-in skips past the quote. Use a smaller negative padding.",
+    };
+  }
 
   if (input.match.runtimeTicks) {
     const runtimeSeconds = input.match.runtimeTicks / 10_000_000;
