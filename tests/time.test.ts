@@ -12,6 +12,12 @@ describe("parseTimestamp", () => {
   test("rejects invalid input", () => {
     expect(() => parseTimestamp("nope")).toThrow(/Invalid timestamp/);
   });
+
+  test("rejects a leading minus unless negative lead-in is allowed", () => {
+    expect(() => parseTimestamp("-2")).toThrow(/Invalid timestamp/);
+    expect(parseTimestamp("-2", { allowNegative: true })).toBe(-2);
+    expect(parseTimestamp("-1.5s", { allowNegative: true })).toBe(-1.5);
+  });
 });
 
 describe("formatTimestamp", () => {

@@ -23,7 +23,17 @@ export async function fetchGitHubJson<T>(options: GitHubRequestOptions): Promise
   });
 
   if (!response.ok) {
-    throw new Error(`GitHub API failed (${options.path}): ${response.status} ${response.statusText}`);
+    let detail = "";
+    try {
+      const failureText = await response.text();
+      const parsed = JSON.parse(failureText) as { message?: string };
+      if (parsed.message) detail = `: ${parsed.message}`;
+    } catch {
+      // status line is enough when the body is not JSON
+    }
+    throw new Error(
+      `GitHub API failed (${options.path}): ${response.status} ${response.statusText}${detail}`,
+    );
   }
 
   const text = await response.text();

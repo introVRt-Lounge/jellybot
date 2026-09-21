@@ -1,9 +1,25 @@
-export function parseTimestamp(input: string): number {
+export function parseTimestamp(input: string, options?: { allowNegative?: boolean }): number {
   const trimmed = input.trim();
   if (!trimmed) {
     throw new Error("Timestamp cannot be empty.");
   }
 
+  const negative = trimmed.startsWith("-");
+  const body = negative ? trimmed.slice(1).trim() : trimmed;
+  if (negative && !options?.allowNegative) {
+    throw new Error(
+      `Invalid timestamp "${input}". Use formats like 90, 1:30, 01:02:03, or 90s.`,
+    );
+  }
+  if (negative && !body) {
+    throw new Error(`Invalid timestamp "${input}".`);
+  }
+
+  const magnitude = parseTimestampMagnitude(body, input);
+  return negative ? -magnitude : magnitude;
+}
+
+function parseTimestampMagnitude(trimmed: string, original: string): number {
   const hms = trimmed.match(/^(\d+):(\d{1,2}):(\d{2})(?:\.(\d{1,3}))?$/);
   if (hms) {
     const hours = Number(hms[1]);
@@ -27,7 +43,7 @@ export function parseTimestamp(input: string): number {
     const unit = (plain[2] ?? "s").toLowerCase();
 
     if (Number.isNaN(amount) || amount < 0) {
-      throw new Error(`Invalid timestamp "${input}".`);
+      throw new Error(`Invalid timestamp "${original}".`);
     }
 
     if (unit.startsWith("h")) return amount * 3600;
@@ -36,7 +52,7 @@ export function parseTimestamp(input: string): number {
   }
 
   throw new Error(
-    `Invalid timestamp "${input}". Use formats like 90, 1:30, 01:02:03, or 90s.`,
+    `Invalid timestamp "${original}". Use formats like 90, 1:30, 01:02:03, or 90s.`,
   );
 }
 

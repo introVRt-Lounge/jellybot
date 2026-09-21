@@ -29,6 +29,33 @@ describe("planQuoteClip", () => {
     expect(planned.plan.kind).toBe("movie");
   });
 
+  test("negative padding starts later than the cue (lead-in pulled in)", () => {
+    const planned = planQuoteClip({
+      match: baseMatch,
+      paddingRaw: "-2",
+      maxClipSeconds: 180,
+      defaultClipSeconds: 15,
+      defaultPaddingSeconds: 2,
+    });
+
+    expect(planned.ok).toBe(true);
+    if (!planned.ok) return;
+    expect(planned.plan.startSeconds).toBe(32);
+    expect(planned.plan.cueStartSeconds).toBe(30);
+  });
+
+  test("rejects a negative lead-in that skips past the quote", () => {
+    const planned = planQuoteClip({
+      match: baseMatch,
+      paddingRaw: "-10",
+      maxClipSeconds: 180,
+      defaultClipSeconds: 15,
+      defaultPaddingSeconds: 2,
+    });
+
+    expect(planned.ok).toBe(false);
+  });
+
   test("rejects clips longer than max", () => {
     const planned = planQuoteClip({
       match: baseMatch,

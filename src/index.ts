@@ -310,6 +310,14 @@ client.once(Events.ClientReady, async (readyClient) => {
  * `deferred` / `replied` flags let us tell, in the log, whether the handler
  * managed to ack the interaction at all before exiting.
  */
+function featureFailureMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : "unknown error";
+  if (message.includes("Resource not accessible by personal access token")) {
+    return "GitHub refused that call. The bot token cannot edit issue labels (fine-grained PAT is missing Issues write). `/feature choose` did not bless the issue.";
+  }
+  return `Couldn't finish that: ${message}`.slice(0, 1800);
+}
+
 function logCommandTiming(
   name: string,
   interaction: { createdTimestamp: number; deferred: boolean; replied: boolean },
@@ -615,11 +623,11 @@ client.on(Events.InteractionCreate, async (interaction) => {
       );
 
       if (interaction.deferred || interaction.replied) {
-        await interaction.editReply("Something went wrong while handling that command.").catch(() => undefined);
+        await interaction.editReply(featureFailureMessage(error)).catch(() => undefined);
       } else {
         await interaction
           .reply({
-            content: "Something went wrong while handling that command.",
+            content: featureFailureMessage(error),
             flags: MessageFlags.Ephemeral,
           })
           .catch(() => undefined);
