@@ -29,4 +29,29 @@ describe("pickSubtitleStream", () => {
 
     expect(picked?.index).toBe(2);
   });
+
+  test("prefers unlabeled English sidecar over Hindi when eng is preferred (#212)", () => {
+    const picked = pickSubtitleStream(
+      [
+        {
+          type: "Subtitle",
+          index: 0,
+          codec: "subrip",
+          language: "hin",
+          displayTitle: "Hindi - SUBRIP - External",
+          isTextSubtitleStream: true,
+        },
+        {
+          type: "Subtitle",
+          index: 1,
+          codec: "subrip",
+          displayTitle: "Undefined - SUBRIP - External",
+          isTextSubtitleStream: true,
+        },
+      ],
+      ["eng", "en"],
+    );
+
+    expect(picked?.index).toBe(1);
+  });
 });

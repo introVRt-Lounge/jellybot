@@ -77,7 +77,12 @@ export function pickSubtitleStream(
 
   const languageMatches = pool.filter((stream) => languageMatchesPreferred(stream.language, preferred));
 
-  const candidates = languageMatches.length > 0 ? languageMatches : pool;
+  // When nothing matches preferred (e.g. eng), do not let an explicitly foreign
+  // track (hin) beat an unlabeled external .srt — Jellyfin often leaves English
+  // sidecars as language=undefined. Issue #212 / Office Space.
+  const unlabeled = pool.filter((stream) => !stream.language?.trim());
+  const candidates =
+    languageMatches.length > 0 ? languageMatches : unlabeled.length > 0 ? unlabeled : pool;
   const sorted = [...candidates].sort((left, right) => scoreStream(right, preferred) - scoreStream(left, preferred));
   return sorted[0] ?? null;
 }
