@@ -6,6 +6,7 @@ import {
   extractDistinctiveTokens,
   extractQueryTokens,
   isLastTokenPrefixExtension,
+  rankQuoteAutocompleteResults,
   rememberQuoteMatchSearchCache,
   shapeQuoteAutocompleteQuery,
   tryQuoteMatchPrefixCache,
@@ -91,6 +92,50 @@ describe("cueTextMatchesQueryTokens", () => {
   test("matches hyphenated cues via de-hyphenated compound tokens", () => {
     expect(cueTextMatchesQueryTokens("No! It was heart-warming.", ["heartwarm"])).toBe(true);
     expect(cueTextMatchesQueryTokens("No! It was heart-warming.", ["heart", "warm"])).toBe(true);
+  });
+});
+
+describe("rankQuoteAutocompleteResults", () => {
+  const sample = (
+    text: string,
+    title: string,
+    rank: number,
+  ): QuoteSearchResult => ({
+    itemId: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    itemType: "Movie",
+    title,
+    startMs: 1000,
+    endMs: 2000,
+    text,
+    rank,
+  });
+
+  test("promotes exact Old School line over short TV gang-bang hits (#220)", () => {
+    // bm25 order after stop-word strip (#216): short fragments win; exact cue is last.
+    const bm25Order = [
+      sample("gang bang.", "Fleabag", -23.5),
+      sample("It's gang bang this and gang bang that.", "Eurotrash", -22.8),
+      sample("biggest gang bang.", "Eurotrash", -22.3),
+      sample("Gang bangs. And such.", "Sleeping with Other People", -21.2),
+      sample("I'm here for the gang bang.", "Old School", -18.5),
+    ];
+
+    const ranked = rankQuoteAutocompleteResults(
+      "I'm here for the gang bang",
+      bm25Order,
+    );
+
+    expect(ranked[0]?.title).toBe("Old School");
+    expect(ranked[0]?.text).toBe("I'm here for the gang bang.");
+  });
+
+  test("keeps bm25 order when raw-token overlap is tied", () => {
+    const tied = [
+      sample("gang bang.", "Fleabag", -23.5),
+      sample("biggest gang bang.", "Eurotrash", -22.3),
+    ];
+    const ranked = rankQuoteAutocompleteResults("gang bang", tied);
+    expect(ranked.map((r) => r.title)).toEqual(["Fleabag", "Eurotrash"]);
   });
 });
 

@@ -21,6 +21,7 @@ import { parseQuoteMatchToken } from "../subtitles/match-token.ts";
 import { openSubtitleIndex } from "../subtitles/index-db.ts";
 import {
   rememberQuoteMatchSearchCache,
+  rankQuoteAutocompleteResults,
   shapeQuoteAutocompleteQuery,
   tryQuoteMatchPrefixCache,
 } from "../subtitles/quote-query-shaping.ts";
@@ -47,6 +48,9 @@ export { QUOTE_REQUEST_AUTOCOMPLETE_TOKEN } from "../quote-requests/modal.ts";
 
 const quoteAutocompleteInFlight = new Map<string, Promise<void>>();
 const quoteMatchAutocompleteGuard = new AutocompleteSessionGuard();
+/** FTS oversample before raw-token re-rank (#220). Discord still gets 24 + request. */
+const QUOTE_MATCH_FTS_CANDIDATE_LIMIT = 64;
+const QUOTE_MATCH_CHOICE_LIMIT = 24;
 const quoteFromAutocompleteGuard = new AutocompleteSessionGuard();
 const QUOTE_MATCH_AUTOCOMPLETE_KEY = (interaction: AutocompleteInteraction) =>
   `${interaction.user.id}:${interaction.guildId ?? "dm"}:quote:match`;
@@ -320,10 +324,12 @@ async function handleQuoteAutocompleteOnce(
         interaction,
         QUOTE_MATCH_AUTOCOMPLETE_MAX_TOKEN_AGE_MS,
       );
+      // Oversample FTS (#220): stop-word strip (#216) can bury exact cues past the
+      // Discord 24-choice window; re-rank by raw-token overlap then take top 24.
       results = await searchQuotesOffThread(
         config.subtitleDbPath,
         searchQuery,
-        24,
+        QUOTE_MATCH_FTS_CANDIDATE_LIMIT,
         scope,
         ftsBudgetMs,
         { interactive: true, signal },
@@ -334,6 +340,7 @@ async function handleQuoteAutocompleteOnce(
       rememberQuoteMatchSearchCache(cacheKey, query, searchQuery, results, scopeKey);
     }
 
+    results = rankQuoteAutocompleteResults(query, results).slice(0, QUOTE_MATCH_CHOICE_LIMIT);
     const choices: ApplicationCommandOptionChoiceData[] = quoteSearchChoices(results);
     choices.push({
       name: QUOTE_REQUEST_AUTOCOMPLETE_LABEL,
