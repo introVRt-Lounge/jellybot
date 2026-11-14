@@ -9,6 +9,78 @@ export const FTS_QUERY_TOKEN_MIN_LENGTH = 2;
 const AUTOCOMPLETE_MAX_FULL_TOKENS = 5;
 const AUTOCOMPLETE_TAIL_DISTINCTIVE_COUNT = 5;
 
+/**
+ * Function words that make autocomplete FTS slow when AND-joined across the
+ * full cue index (issue #216). Applied only in {@link shapeQuoteAutocompleteQuery}
+ * so `/supercut` / submit search keep exact stop-word semantics.
+ */
+const AUTOCOMPLETE_FTS_STOP_WORDS = new Set([
+  "a",
+  "an",
+  "and",
+  "are",
+  "as",
+  "at",
+  "be",
+  "been",
+  "but",
+  "by",
+  "do",
+  "for",
+  "from",
+  "had",
+  "has",
+  "have",
+  "he",
+  "her",
+  "here",
+  "him",
+  "his",
+  "if",
+  "in",
+  "into",
+  "is",
+  "it",
+  "its",
+  "just",
+  "me",
+  "my",
+  "no",
+  "not",
+  "of",
+  "on",
+  "or",
+  "our",
+  "she",
+  "so",
+  "than",
+  "that",
+  "the",
+  "their",
+  "them",
+  "then",
+  "there",
+  "these",
+  "they",
+  "this",
+  "those",
+  "to",
+  "too",
+  "up",
+  "was",
+  "we",
+  "were",
+  "what",
+  "when",
+  "where",
+  "which",
+  "who",
+  "will",
+  "with",
+  "you",
+  "your",
+]);
+
 type QuoteMatchSearchCacheEntry = {
   rawQuery: string;
   searchQuery: string;
@@ -39,27 +111,30 @@ export function shapeQuoteAutocompleteQuery(rawQuery: string): string {
   const allTokens = tokenizeQuote(trimmed);
   const activeLastToken = allTokens[allTokens.length - 1] ?? "";
 
-  if (tokens.length <= AUTOCOMPLETE_MAX_FULL_TOKENS) {
-    return trimmed;
-  }
-
   let shaped: string;
-  const distinctive = extractDistinctiveTokens(trimmed);
-  if (distinctive.length === 0) {
-    shaped = tokens.slice(-AUTOCOMPLETE_MAX_FULL_TOKENS).join(" ");
-  } else if (distinctive.length <= AUTOCOMPLETE_TAIL_DISTINCTIVE_COUNT) {
-    shaped = distinctive.join(" ");
+  if (tokens.length <= AUTOCOMPLETE_MAX_FULL_TOKENS) {
+    shaped = dropAutocompleteStopWords(tokens).join(" ") || trimmed;
   } else {
-    shaped = distinctive.slice(-AUTOCOMPLETE_TAIL_DISTINCTIVE_COUNT).join(" ");
+    const distinctive = extractDistinctiveTokens(trimmed);
+    if (distinctive.length === 0) {
+      shaped = tokens.slice(-AUTOCOMPLETE_MAX_FULL_TOKENS).join(" ");
+    } else if (distinctive.length <= AUTOCOMPLETE_TAIL_DISTINCTIVE_COUNT) {
+      shaped = distinctive.join(" ");
+    } else {
+      shaped = distinctive.slice(-AUTOCOMPLETE_TAIL_DISTINCTIVE_COUNT).join(" ");
+    }
+    shaped = dropAutocompleteStopWords(extractQueryTokens(shaped)).join(" ") || shaped;
   }
 
   // Keep the in-progress final token so FTS can prefix-match while the user
   // pauses on a short trailing word (e.g. "fla" at the end of a long quote).
+  // Do not re-append stop words we just dropped (#216).
   const earlierTokens = allTokens.slice(0, -1);
   const lastTokenRepeatedEarlier = earlierTokens.includes(activeLastToken);
   if (
     activeLastToken.length >= FTS_QUERY_TOKEN_MIN_LENGTH &&
     activeLastToken.length < DISTINCTIVE_TOKEN_MIN_LENGTH &&
+    !AUTOCOMPLETE_FTS_STOP_WORDS.has(activeLastToken) &&
     !shapedIncludesActiveLastToken(shaped, activeLastToken) &&
     !lastTokenRepeatedEarlier
   ) {
@@ -67,6 +142,12 @@ export function shapeQuoteAutocompleteQuery(rawQuery: string): string {
   }
 
   return shaped;
+}
+
+/** Drop stop words when at least one content token remains (#216). */
+function dropAutocompleteStopWords(tokens: string[]): string[] {
+  const kept = tokens.filter((token) => !AUTOCOMPLETE_FTS_STOP_WORDS.has(token));
+  return kept.length > 0 ? kept : tokens;
 }
 
 export function cueTextMatchesQueryTokens(cueText: string, queryTokens: string[]): boolean {
