@@ -49,7 +49,11 @@ import { parsePreferredLanguages } from "./subtitles/track-select.ts";
 import { WebhookDispatcher } from "./webhooks/dispatch.ts";
 import { createReleaseAnnouncerFromConfig } from "./release/release-announcer.ts";
 import { looksLikeReleaseTag } from "./release/semver.ts";
-import { isBenignAutocompleteError } from "./autocomplete-guard.ts";
+import {
+  isBenignAutocompleteError,
+  isInteractionAcknowledgedError,
+  isUnknownInteractionError,
+} from "./autocomplete-guard.ts";
 import { handleRankSelect } from "./features/rank-handlers.ts";
 import { FeatureStore } from "./features/feature-store.ts";
 import { startFeaturePipelineReconcileLoop } from "./features/pipeline-reconcile.ts";
@@ -550,27 +554,54 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
   if (interaction.commandName === "quote") {
     const t0 = Date.now();
+    const tokenAgeAtEntry = t0 - interaction.createdTimestamp;
+    // Issue #214: Discord invalidates the token ~3s after create. If the
+    // gateway/event loop hands us the interaction late, deferReply fails with
+    // "Unknown interaction" and there is nothing useful to reply with.
+    if (tokenAgeAtEntry > 2_500) {
+      console.warn(
+        JSON.stringify({
+          event: "quote.late_dispatch",
+          userId: interaction.user.id,
+          tokenAgeAtEntry,
+        }),
+      );
+    }
     try {
       await handleQuoteCommand(interaction, jellyfin, config);
     } catch (error) {
-      console.error(
-        JSON.stringify({
-          event: "quote.error",
-          command: "quote",
-          userId: interaction.user.id,
-          error: error instanceof Error ? error.message : "unknown error",
-        }),
-      );
-
-      if (interaction.deferred || interaction.replied) {
-        await interaction.editReply("Something went wrong while handling that command.").catch(() => undefined);
+      if (isUnknownInteractionError(error) || isInteractionAcknowledgedError(error)) {
+        console.warn(
+          JSON.stringify({
+            event: "quote.ack_missed",
+            userId: interaction.user.id,
+            tokenAgeAtEntry,
+            tokenAgeMs: Date.now() - interaction.createdTimestamp,
+            deferred: interaction.deferred,
+            replied: interaction.replied,
+            error: error instanceof Error ? error.message : "unknown error",
+          }),
+        );
       } else {
-        await interaction
-          .reply({
-            content: "Something went wrong while handling that command.",
-            flags: MessageFlags.Ephemeral,
-          })
-          .catch(() => undefined);
+        console.error(
+          JSON.stringify({
+            event: "quote.error",
+            command: "quote",
+            userId: interaction.user.id,
+            error: error instanceof Error ? error.message : "unknown error",
+          }),
+        );
+
+        if (interaction.deferred || interaction.replied) {
+          await interaction.editReply("Something went wrong while handling that command.").catch(() => undefined);
+        } else {
+          await interaction
+            .reply({
+              content: "Something went wrong while handling that command.",
+              flags: MessageFlags.Ephemeral,
+            })
+            .catch(() => undefined);
+        }
       }
     } finally {
       logCommandTiming("quote", interaction, t0);

@@ -5,6 +5,7 @@ import {
   encodeQuoteFromSeriesToken,
   encodeQuoteFromToken,
   formatQuoteFromLabel,
+  quoteFromMatchRank,
   type QuoteFromChoice,
   type QuoteSearchScope,
 } from "./quote-scope.ts";
@@ -438,12 +439,15 @@ export class SubtitleIndex {
 
   /**
    * Movie titles + TV series names for `/quote from:` autocomplete (#202).
-   * Prefix/contains match; results sorted case-insensitively by title.
+   * Contains match; ranked so titles that **start with** the typed prefix beat
+   * substring hits (issue #214 — `old` was burying Old School under Goldfinger).
    */
   listQuoteFromTitles(prefix: string, limit: number): QuoteFromChoice[] {
     const trimmed = prefix.trim();
     const like = trimmed.length === 0 ? null : `%${trimmed}%`;
-    const fetchLimit = Math.max(limit * 2, limit);
+    // Fetch enough contains-hits that startswith rerank can still fill `limit`
+    // after Goldfinger-class noise sorts alphabetically first (#214).
+    const fetchLimit = Math.max(limit * 8, limit);
 
     type SeriesRow = { name: string; sampleItemId: string };
     type MovieRow = { itemId: string; title: string; productionYear: number | null };
@@ -496,26 +500,36 @@ export class SubtitleIndex {
             .all(like, fetchLimit) as MovieRow[])
     );
 
-    const choices: Array<QuoteFromChoice & { sortKey: string }> = [
+    const seenMovies = new Set<string>();
+    const choices: Array<QuoteFromChoice & { sortKey: string; rank: number }> = [
       ...seriesRows.map((row) => ({
         kind: "series" as const,
         label: formatQuoteFromLabel({ kind: "series", seriesName: row.name }),
         value: encodeQuoteFromSeriesToken(row.name, row.sampleItemId),
         sortKey: row.name.toLowerCase(),
+        rank: quoteFromMatchRank(row.name, trimmed),
       })),
-      ...movieRows.map((row) => ({
-        kind: "movie" as const,
-        label: formatQuoteFromLabel({
-          kind: "movie",
-          title: row.title,
-          productionYear: row.productionYear,
-        }),
-        value: encodeQuoteFromToken({ kind: "movie", itemId: row.itemId }),
-        sortKey: row.title.toLowerCase(),
-      })),
+      ...movieRows.flatMap((row) => {
+        const id = row.itemId.toLowerCase();
+        if (seenMovies.has(id)) return [];
+        seenMovies.add(id);
+        return [
+          {
+            kind: "movie" as const,
+            label: formatQuoteFromLabel({
+              kind: "movie",
+              title: row.title,
+              productionYear: row.productionYear,
+            }),
+            value: encodeQuoteFromToken({ kind: "movie", itemId: row.itemId }),
+            sortKey: row.title.toLowerCase(),
+            rank: quoteFromMatchRank(row.title, trimmed),
+          },
+        ];
+      }),
     ];
 
-    choices.sort((a, b) => a.sortKey.localeCompare(b.sortKey));
+    choices.sort((a, b) => a.rank - b.rank || a.sortKey.localeCompare(b.sortKey));
     return choices.slice(0, limit).map(({ kind, label, value }) => ({ kind, label, value }));
   }
 
