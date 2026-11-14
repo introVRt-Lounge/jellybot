@@ -632,6 +632,79 @@ export class SubtitleIndex {
   }
 }
 
+/**
+ * Common English function words. ANDing these across ~10M cue rows makes
+ * `/quote` autocomplete miss Discord's ~3s window (issue #216 — Old School
+ * "I'm here for the gang bang" became here∧for∧the∧gang∧bang* and took ~2.4s).
+ * Drop them when at least one distinctive token remains.
+ */
+const FTS_STOP_WORDS = new Set([
+  "a",
+  "an",
+  "and",
+  "are",
+  "as",
+  "at",
+  "be",
+  "been",
+  "but",
+  "by",
+  "do",
+  "for",
+  "from",
+  "had",
+  "has",
+  "have",
+  "he",
+  "her",
+  "here",
+  "him",
+  "his",
+  "if",
+  "in",
+  "into",
+  "is",
+  "it",
+  "its",
+  "just",
+  "me",
+  "my",
+  "no",
+  "not",
+  "of",
+  "on",
+  "or",
+  "our",
+  "she",
+  "so",
+  "than",
+  "that",
+  "the",
+  "their",
+  "them",
+  "then",
+  "there",
+  "these",
+  "they",
+  "this",
+  "those",
+  "to",
+  "too",
+  "up",
+  "was",
+  "we",
+  "were",
+  "what",
+  "when",
+  "where",
+  "which",
+  "who",
+  "will",
+  "with",
+  "you",
+  "your",
+]);
+
 export function prepareFtsQuery(query: string): string {
   const tokens = query
     .trim()
@@ -642,10 +715,13 @@ export function prepareFtsQuery(query: string): string {
 
   if (tokens.length === 0) return "";
 
-  return tokens
+  const distinctive = tokens.filter((token) => !FTS_STOP_WORDS.has(token));
+  const effective = distinctive.length > 0 ? distinctive : tokens;
+
+  return effective
     .map((token, index) => {
       const escaped = token.replace(/"/g, '""');
-      const prefix = index === tokens.length - 1 ? "*" : "";
+      const prefix = index === effective.length - 1 ? "*" : "";
       return `"${escaped}"${prefix}`;
     })
     .join(" AND ");

@@ -15,11 +15,20 @@ afterEach(() => {
 
 describe("prepareFtsQuery", () => {
   test("ANDs word tokens with prefix on the last token", () => {
-    expect(prepareFtsQuery("love finds its way")).toBe('"love" AND "finds" AND "its" AND "way"*');
+    // "its" is a stop word and is dropped when distinctive tokens remain (#216).
+    expect(prepareFtsQuery("love finds its way")).toBe('"love" AND "finds" AND "way"*');
   });
 
   test("prefixes a single token query", () => {
     expect(prepareFtsQuery("love")).toBe('"love"*');
+  });
+
+  test("drops stop words so long spoken lines stay fast for autocomplete (issue #216)", () => {
+    expect(prepareFtsQuery("i'm here for the gang bang")).toBe('"gang" AND "bang"*');
+  });
+
+  test("keeps stop words when they are the only tokens", () => {
+    expect(prepareFtsQuery("for the")).toBe('"for" AND "the"*');
   });
 });
 
