@@ -93,3 +93,16 @@ export function displayNameForScope(scope: QuoteSearchScope): string {
   if (scope.kind === "seriesByItem") return scope.itemId;
   return scope.itemId;
 }
+
+/**
+ * Lower is better for `/quote from:` ranking (#214).
+ * Starts-with beats mid-title contains so `old` surfaces Old School over Goldfinger.
+ */
+export function quoteFromMatchRank(title: string, prefix: string): number {
+  const trimmed = prefix.trim().toLowerCase();
+  if (!trimmed) return 1;
+  const lower = title.toLowerCase();
+  if (lower.startsWith(trimmed)) return 0;
+  if (lower.includes(` ${trimmed}`)) return 1;
+  return 2;
+}

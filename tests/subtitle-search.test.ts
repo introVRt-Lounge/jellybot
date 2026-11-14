@@ -128,6 +128,53 @@ describe("SubtitleIndex", () => {
     }
   });
 
+  test("listQuoteFromTitles prefers titles that start with the prefix (issue #214)", () => {
+    const index = openSubtitleIndex(dbPath);
+    try {
+      // Contains-only noise that sorts alphabetically BEFORE "Old School"
+      index.replaceItem(
+        {
+          itemId: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          itemType: "Movie",
+          title: "Goldfinger",
+          productionYear: 1964,
+          mediaSourceId: "src-gold",
+          subtitleIndex: 0,
+        },
+        [{ startMs: 1000, endMs: 2000, text: "Hello." }],
+      );
+      index.replaceItem(
+        {
+          itemId: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          itemType: "Movie",
+          title: "A Very Harold & Kumar Christmas",
+          productionYear: 2011,
+          mediaSourceId: "src-harold",
+          subtitleIndex: 0,
+        },
+        [{ startMs: 1000, endMs: 2000, text: "Hello." }],
+      );
+      index.replaceItem(
+        {
+          itemId: "cccccccccccccccccccccccccccccccc",
+          itemType: "Movie",
+          title: "Old School",
+          productionYear: 2003,
+          mediaSourceId: "src-old",
+          subtitleIndex: 0,
+        },
+        [{ startMs: 1000, endMs: 2000, text: "I'm here for the gang bang." }],
+      );
+
+      const hits = index.listQuoteFromTitles("old", 2);
+      expect(hits.some((h) => h.label.includes("Old School"))).toBe(true);
+      expect(hits[0]?.label).toContain("Old School");
+      expect(hits.every((h) => !h.label.includes("Goldfinger"))).toBe(true);
+    } finally {
+      index.close();
+    }
+  });
+
   test("listQuoteFromTitles returns series and movies for from autocomplete (issue #202)", () => {
     const index = openSubtitleIndex(dbPath);
     try {
