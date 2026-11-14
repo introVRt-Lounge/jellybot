@@ -166,6 +166,42 @@ export function cueTextMatchesQueryTokens(cueText: string, queryTokens: string[]
   return true;
 }
 
+/**
+ * After stop-word-stripped FTS (#216), short fragments can outrank the exact cue.
+ * Re-score candidates by how many **raw** query tokens appear in the cue text
+ * (including stop words), then fall back to bm25 (`rank`, lower is better) (#220).
+ */
+export function rankQuoteAutocompleteResults(
+  rawQuery: string,
+  results: QuoteSearchResult[],
+): QuoteSearchResult[] {
+  if (results.length <= 1) return results;
+
+  const queryTokens = extractQueryTokens(rawQuery);
+  if (queryTokens.length === 0) return results;
+
+  return [...results].sort((left, right) => {
+    const leftOverlap = rawCueTokenOverlap(queryTokens, left.text);
+    const rightOverlap = rawCueTokenOverlap(queryTokens, right.text);
+    if (rightOverlap !== leftOverlap) return rightOverlap - leftOverlap;
+    return left.rank - right.rank;
+  });
+}
+
+function rawCueTokenOverlap(queryTokens: string[], cueText: string): number {
+  const cueTokens = expandCueTokensForFtsMatch(cueText);
+  let matched = 0;
+  for (let index = 0; index < queryTokens.length; index += 1) {
+    const queryToken = queryTokens[index]!;
+    const isLastToken = index === queryTokens.length - 1;
+    const hit = cueTokens.some((cueToken) =>
+      isLastToken ? cueToken.startsWith(queryToken) : cueToken === queryToken,
+    );
+    if (hit) matched += 1;
+  }
+  return matched;
+}
+
 /** True when `nextRaw` only lengthens the final token of `previousRaw`. */
 export function isLastTokenPrefixExtension(previousRaw: string, nextRaw: string): boolean {
   const previousTokens = tokenizeQuote(previousRaw);
