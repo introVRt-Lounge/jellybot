@@ -12,33 +12,39 @@ import {
 } from "../src/subtitles/quote-query-shaping.ts";
 
 describe("shapeQuoteAutocompleteQuery", () => {
-  test("passes through short queries unchanged", () => {
-    expect(shapeQuoteAutocompleteQuery("flaunt it")).toBe("flaunt it");
+  test("drops stop words from short spoken lines (issue #216)", () => {
+    expect(shapeQuoteAutocompleteQuery("flaunt it")).toBe("flaunt");
+    expect(shapeQuoteAutocompleteQuery("i'm here for the gang bang")).toBe("gang bang");
   });
 
-  test("passes through queries with at most five tokens", () => {
-    expect(shapeQuoteAutocompleteQuery("that is it baby flaunt")).toBe("that is it baby flaunt");
+  test("keeps stop words when they are the only tokens", () => {
+    expect(shapeQuoteAutocompleteQuery("for the")).toBe("for the");
+  });
+
+  test("drops stop words from queries with at most five tokens", () => {
+    expect(shapeQuoteAutocompleteQuery("that is it baby flaunt")).toBe("baby flaunt");
   });
 
   test("uses trailing distinctive tokens for long quotes (issue #171 repro)", () => {
     const long =
       "that's it baby, if you've got it, flaunt it!";
-    expect(shapeQuoteAutocompleteQuery(long)).toBe("that baby flaunt");
+    expect(shapeQuoteAutocompleteQuery(long)).toBe("baby flaunt");
   });
 
   test("preserves an in-progress short final token while shaping long quotes", () => {
     const long = "that's it baby if you've got it fla";
-    expect(shapeQuoteAutocompleteQuery(long)).toBe("that baby fla");
+    expect(shapeQuoteAutocompleteQuery(long)).toBe("baby fla");
   });
 
   test("does not drop a short final token that is only a suffix of the last shaped word", () => {
-    const long = "alpha bravo charlie delta bathe he";
-    expect(shapeQuoteAutocompleteQuery(long)).toBe("alpha bravo charlie delta bathe he");
+    // "ha" is not a stop word; still preserve in-progress short finals (#171 / #216).
+    const long = "alpha bravo charlie delta bathe ha";
+    expect(shapeQuoteAutocompleteQuery(long)).toBe("alpha bravo charlie delta bathe ha");
   });
 
   test("keeps a short final token that only prefixes the last shaped word", () => {
-    const long = "alpha bravo charlie delta echo foxtrot heart he";
-    expect(shapeQuoteAutocompleteQuery(long)).toBe("charlie delta echo foxtrot heart he");
+    const long = "alpha bravo charlie delta echo foxtrot heart ha";
+    expect(shapeQuoteAutocompleteQuery(long)).toBe("charlie delta echo foxtrot heart ha");
   });
 
   test("keeps the last five distinctive tokens when many are present", () => {
