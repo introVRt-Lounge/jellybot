@@ -5,6 +5,8 @@ import {
   encodeQuoteFromSeriesToken,
   encodeQuoteFromToken,
   formatQuoteFromLabel,
+  parseQuoteFromDisplayLabel,
+  parseQuoteFromToken,
   quoteFromMatchRank,
   type QuoteFromChoice,
   type QuoteSearchScope,
@@ -444,6 +446,11 @@ export class SubtitleIndex {
    */
   listQuoteFromTitles(prefix: string, limit: number): QuoteFromChoice[] {
     const trimmed = prefix.trim();
+    // Discord re-sends the choice *name* after pick; LIKE on that string finds
+    // nothing and an empty respond clears the selection (#222).
+    const sticky = this.choicesForFromDisplayLabel(trimmed, limit);
+    if (sticky) return sticky;
+
     const like = trimmed.length === 0 ? null : `%${trimmed}%`;
     // Fetch enough contains-hits that startswith rerank can still fill `limit`
     // after Goldfinger-class noise sorts alphabetically first (#214).
@@ -531,6 +538,124 @@ export class SubtitleIndex {
 
     choices.sort((a, b) => a.rank - b.rank || a.sortKey.localeCompare(b.sortKey));
     return choices.slice(0, limit).map(({ kind, label, value }) => ({ kind, label, value }));
+  }
+
+  /**
+   * When `from:` autocomplete receives a previously shown Discord label, return
+   * the matching movie/series as sticky choices with correct opaque values.
+   */
+  choicesForFromDisplayLabel(prefix: string, limit: number): QuoteFromChoice[] | null {
+    const display = parseQuoteFromDisplayLabel(prefix);
+    if (!display) return null;
+
+    if (display.kind === "series") {
+      const row = (
+        display.truncated
+          ? (this.db
+              .query(
+                `SELECT series_name AS name, MIN(item_id) AS sampleItemId
+                 FROM media_items
+                 WHERE series_name IS NOT NULL AND series_name <> ''
+                   AND LOWER(series_name) LIKE LOWER(?)
+                 GROUP BY series_name
+                 ORDER BY series_name COLLATE NOCASE
+                 LIMIT 1`,
+              )
+              .get(`${display.seriesName}%`) as { name: string; sampleItemId: string } | null)
+          : (this.db
+              .query(
+                `SELECT series_name AS name, MIN(item_id) AS sampleItemId
+                 FROM media_items
+                 WHERE series_name IS NOT NULL AND series_name <> ''
+                   AND LOWER(series_name) = LOWER(?)
+                 GROUP BY series_name
+                 LIMIT 1`,
+              )
+              .get(display.seriesName) as { name: string; sampleItemId: string } | null)
+      );
+      if (!row) return [];
+      const choice: QuoteFromChoice = {
+        kind: "series",
+        label: formatQuoteFromLabel({ kind: "series", seriesName: row.name }),
+        value: encodeQuoteFromSeriesToken(row.name, row.sampleItemId),
+      };
+      return [choice].slice(0, limit);
+    }
+
+    type MovieRow = { itemId: string; title: string; productionYear: number | null };
+    const rows = (
+      display.truncated
+        ? (this.db
+            .query(
+              `SELECT item_id AS itemId, title, production_year AS productionYear
+               FROM media_items
+               WHERE item_type = 'Movie' AND LOWER(title) LIKE LOWER(?)
+               ORDER BY title COLLATE NOCASE
+               LIMIT ?`,
+            )
+            .all(`${display.title}%`, limit) as MovieRow[])
+        : display.productionYear != null
+          ? (this.db
+              .query(
+                `SELECT item_id AS itemId, title, production_year AS productionYear
+                 FROM media_items
+                 WHERE item_type = 'Movie' AND LOWER(title) = LOWER(?)
+                   AND production_year = ?
+                 ORDER BY title COLLATE NOCASE
+                 LIMIT ?`,
+              )
+              .all(display.title, display.productionYear, limit) as MovieRow[])
+          : (this.db
+              .query(
+                `SELECT item_id AS itemId, title, production_year AS productionYear
+                 FROM media_items
+                 WHERE item_type = 'Movie' AND LOWER(title) = LOWER(?)
+                 ORDER BY title COLLATE NOCASE
+                 LIMIT ?`,
+              )
+              .all(display.title, limit) as MovieRow[])
+    );
+
+    return rows.map((row) => ({
+      kind: "movie" as const,
+      label: formatQuoteFromLabel({
+        kind: "movie",
+        title: row.title,
+        productionYear: row.productionYear,
+      }),
+      value: encodeQuoteFromToken({ kind: "movie", itemId: row.itemId }),
+    }));
+  }
+
+  getMovieTitle(itemId: string): string | null {
+    return this.getMovieIdentity(itemId)?.title ?? null;
+  }
+
+  getMovieIdentity(
+    itemId: string,
+  ): { title: string; productionYear: number | null } | null {
+    const row = this.db
+      .query(
+        `SELECT title, production_year AS productionYear FROM media_items
+         WHERE item_type = 'Movie' AND LOWER(item_id) = LOWER(?)
+         LIMIT 1`,
+      )
+      .get(itemId) as { title: string | null; productionYear: number | null } | null;
+    const title = row?.title?.trim();
+    if (!title) return null;
+    return { title, productionYear: row?.productionYear ?? null };
+  }
+
+  /** Resolve opaque token or Discord display label to a search scope (#222). */
+  resolveQuoteFromOption(raw: string): QuoteSearchScope | null {
+    const tokenScope = parseQuoteFromToken(raw);
+    if (tokenScope) return tokenScope;
+
+    if (!parseQuoteFromDisplayLabel(raw)) return null;
+
+    const sticky = this.choicesForFromDisplayLabel(raw.trim(), 1);
+    if (!sticky || sticky.length === 0) return null;
+    return parseQuoteFromToken(sticky[0]!.value);
   }
 
   getSeriesNameForItem(itemId: string): string | null {

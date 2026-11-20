@@ -3,6 +3,7 @@ import {
   encodeQuoteFromToken,
   encodeQuoteFromSeriesToken,
   formatQuoteFromLabel,
+  parseQuoteFromDisplayLabel,
   parseQuoteFromToken,
   quoteFromScopeCacheKey,
   type QuoteSearchScope,
@@ -35,6 +36,40 @@ describe("quote from scope tokens", () => {
     expect(parseQuoteFromToken("s:")).toBeNull();
     expect(parseQuoteFromToken("m:not-an-id")).toBeNull();
     expect(parseQuoteFromToken("m:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbff")).toBeNull();
+  });
+
+  test("parses Discord display labels Discord re-sends after a from pick (#222)", () => {
+    expect(parseQuoteFromDisplayLabel("Movie · Jurassic Park (1993)")).toEqual({
+      kind: "movie",
+      title: "Jurassic Park",
+      productionYear: 1993,
+      truncated: false,
+    });
+    expect(parseQuoteFromDisplayLabel("Movie · Heartwarming")).toEqual({
+      kind: "movie",
+      title: "Heartwarming",
+      productionYear: null,
+      truncated: false,
+    });
+    expect(parseQuoteFromDisplayLabel("TV · The IT Crowd")).toEqual({
+      kind: "series",
+      seriesName: "The IT Crowd",
+      truncated: false,
+    });
+    expect(parseQuoteFromDisplayLabel("Movie · Very Long Title That Got Cut…")).toEqual({
+      kind: "movie",
+      title: "Very Long Title That Got Cut",
+      productionYear: null,
+      truncated: true,
+    });
+    expect(parseQuoteFromDisplayLabel("Movie · Almost Long Enough Title Here (199…")).toEqual({
+      kind: "movie",
+      title: "Almost Long Enough Title Here",
+      productionYear: null,
+      truncated: true,
+    });
+    expect(parseQuoteFromDisplayLabel("jurassic park")).toBeNull();
+    expect(parseQuoteFromDisplayLabel("m:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")).toBeNull();
   });
 
   test("formats Discord labels under 100 chars", () => {

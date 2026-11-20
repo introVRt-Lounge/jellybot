@@ -113,7 +113,8 @@ export function shapeQuoteAutocompleteQuery(rawQuery: string): string {
 
   let shaped: string;
   if (tokens.length <= AUTOCOMPLETE_MAX_FULL_TOKENS) {
-    shaped = dropAutocompleteStopWords(tokens).join(" ") || trimmed;
+    // Short spoken lines: only strip stops when ≥2 content tokens remain (#222).
+    shaped = dropAutocompleteStopWords(tokens, 2).join(" ") || trimmed;
   } else {
     const distinctive = extractDistinctiveTokens(trimmed);
     if (distinctive.length === 0) {
@@ -123,7 +124,9 @@ export function shapeQuoteAutocompleteQuery(rawQuery: string): string {
     } else {
       shaped = distinctive.slice(-AUTOCOMPLETE_TAIL_DISTINCTIVE_COUNT).join(" ");
     }
-    shaped = dropAutocompleteStopWords(extractQueryTokens(shaped)).join(" ") || shaped;
+    // Long-quote distinctive window already picked content-ish tokens; drop
+    // leftover stops even if a single content token remains (#171 / #216).
+    shaped = dropAutocompleteStopWords(extractQueryTokens(shaped), 1).join(" ") || shaped;
   }
 
   // Keep the in-progress final token so FTS can prefix-match while the user
@@ -144,10 +147,15 @@ export function shapeQuoteAutocompleteQuery(rawQuery: string): string {
   return shaped;
 }
 
-/** Drop stop words when at least one content token remains (#216). */
-function dropAutocompleteStopWords(tokens: string[]): string[] {
+/**
+ * Drop stop words when at least `minContent` content tokens remain.
+ * Short lines use minContent=2 so "are they heavy" does not collapse to "heavy" (#222).
+ * Long distinctive tails use minContent=1 (prior #216 behaviour on the trimmed window).
+ */
+function dropAutocompleteStopWords(tokens: string[], minContent: number): string[] {
   const kept = tokens.filter((token) => !AUTOCOMPLETE_FTS_STOP_WORDS.has(token));
-  return kept.length > 0 ? kept : tokens;
+  if (kept.length >= minContent) return kept;
+  return tokens;
 }
 
 export function cueTextMatchesQueryTokens(cueText: string, queryTokens: string[]): boolean {
@@ -179,13 +187,27 @@ export function rankQuoteAutocompleteResults(
 
   const queryTokens = extractQueryTokens(rawQuery);
   if (queryTokens.length === 0) return results;
+  const normalizedQuery = normalizeQuotePhrase(rawQuery);
 
   return [...results].sort((left, right) => {
+    // Exact / near-exact phrase beats bag-of-token ties (#222 Jurassic Park).
+    const leftPhrase = Number(normalizeQuotePhrase(left.text).includes(normalizedQuery));
+    const rightPhrase = Number(normalizeQuotePhrase(right.text).includes(normalizedQuery));
+    if (rightPhrase !== leftPhrase) return rightPhrase - leftPhrase;
+
     const leftOverlap = rawCueTokenOverlap(queryTokens, left.text);
     const rightOverlap = rawCueTokenOverlap(queryTokens, right.text);
     if (rightOverlap !== leftOverlap) return rightOverlap - leftOverlap;
     return left.rank - right.rank;
   });
+}
+
+function normalizeQuotePhrase(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function rawCueTokenOverlap(queryTokens: string[], cueText: string): number {

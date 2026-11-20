@@ -65,6 +65,52 @@ export function parseQuoteFromToken(raw: string): QuoteSearchScope | null {
   return null;
 }
 
+/** Discord often re-fires `from:` autocomplete with the choice *name* after pick (#222). */
+export type QuoteFromDisplayLabel =
+  | {
+      kind: "movie";
+      title: string;
+      productionYear: number | null;
+      /** True when Discord label was truncated with … (#222 Codex). */
+      truncated: boolean;
+    }
+  | { kind: "series"; seriesName: string; truncated: boolean };
+
+function stripLabelTruncation(value: string): { text: string; truncated: boolean } {
+  const trimmed = value.trim();
+  if (trimmed.endsWith("…")) return { text: trimmed.slice(0, -1).trimEnd(), truncated: true };
+  if (trimmed.endsWith("...")) return { text: trimmed.slice(0, -3).trimEnd(), truncated: true };
+  return { text: trimmed, truncated: false };
+}
+
+export function parseQuoteFromDisplayLabel(raw: string): QuoteFromDisplayLabel | null {
+  const { text: trimmed, truncated } = stripLabelTruncation(raw.trim());
+  const movie = /^Movie\s*·\s*(.+?)(?:\s*\((\d{4})\))?\s*$/u.exec(trimmed);
+  if (movie) {
+    let title = movie[1]!.trim();
+    // Truncation can land inside `(1993)` → title ends with ` (199` / ` (` (#222).
+    if (truncated) {
+      title = title.replace(/\s*\(\d{0,3}$/u, "").trimEnd();
+    }
+    if (!title) return null;
+    const yearRaw = movie[2];
+    return {
+      kind: "movie",
+      title,
+      // Truncated labels may cut the year; only trust a full (YYYY) when intact.
+      productionYear: !truncated && yearRaw ? Number(yearRaw) : null,
+      truncated,
+    };
+  }
+  const series = /^TV\s*·\s*(.+?)\s*$/u.exec(trimmed);
+  if (series) {
+    const seriesName = series[1]!.trim();
+    if (!seriesName) return null;
+    return { kind: "series", seriesName, truncated };
+  }
+  return null;
+}
+
 export function formatQuoteFromLabel(
   input:
     | { kind: "series"; seriesName: string }

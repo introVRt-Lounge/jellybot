@@ -128,6 +128,74 @@ describe("SubtitleIndex", () => {
     }
   });
 
+  test("listQuoteFromTitles sticks when Discord re-sends the display label (#222)", () => {
+    const index = openSubtitleIndex(dbPath);
+    try {
+      index.replaceItem(
+        {
+          itemId: "dddddddddddddddddddddddddddddddd",
+          itemType: "Movie",
+          title: "Jurassic Park",
+          productionYear: 1993,
+          mediaSourceId: "src-jp",
+          subtitleIndex: 0,
+        },
+        [{ startMs: 1000, endMs: 2000, text: "Are they heavy?" }],
+      );
+      index.replaceItem(
+        {
+          itemId: "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          itemType: "Episode",
+          title: "Pilot",
+          seriesName: "The IT Crowd",
+          seasonNumber: 1,
+          episodeNumber: 1,
+          mediaSourceId: "src-it",
+          subtitleIndex: 0,
+        },
+        [{ startMs: 1000, endMs: 2000, text: "Hello." }],
+      );
+
+      const movieHits = index.listQuoteFromTitles("Movie · Jurassic Park (1993)", 5);
+      expect(movieHits).toHaveLength(1);
+      expect(movieHits[0]?.value).toBe("m:dddddddddddddddddddddddddddddddd");
+      expect(movieHits[0]?.label).toContain("Jurassic Park");
+
+      const seriesHits = index.listQuoteFromTitles("TV · The IT Crowd", 5);
+      expect(seriesHits).toHaveLength(1);
+      expect(seriesHits[0]?.value).toBe("s:The IT Crowd");
+
+      expect(index.resolveQuoteFromOption("Movie · Jurassic Park (1993)")).toEqual({
+        kind: "movie",
+        itemId: "dddddddddddddddddddddddddddddddd",
+      });
+
+      const longTitle = `Jurassic ${"Park ".repeat(40)}Finale`;
+      index.replaceItem(
+        {
+          itemId: "ffffffffffffffffffffffffffffffff",
+          itemType: "Movie",
+          title: longTitle,
+          productionYear: 1993,
+          mediaSourceId: "src-long-jp",
+          subtitleIndex: 0,
+        },
+        [{ startMs: 1000, endMs: 2000, text: "Are they heavy?" }],
+      );
+      const longLabel = index.listQuoteFromTitles(longTitle.slice(0, 12), 5).find((h) =>
+        h.label.includes("Jurassic"),
+      )?.label;
+      expect(longLabel).toBeTruthy();
+      expect(longLabel!.endsWith("…") || longLabel!.length <= 100).toBe(true);
+      if (longLabel?.endsWith("…")) {
+        const stickyLong = index.listQuoteFromTitles(longLabel, 5);
+        expect(stickyLong.some((h) => h.value === "m:ffffffffffffffffffffffffffffffff")).toBe(true);
+      }
+    } finally {
+      index.close();
+    }
+  });
+
   test("listQuoteFromTitles prefers titles that start with the prefix (issue #214)", () => {
     const index = openSubtitleIndex(dbPath);
     try {
