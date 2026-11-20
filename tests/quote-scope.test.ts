@@ -3,6 +3,7 @@ import {
   encodeQuoteFromToken,
   encodeQuoteFromSeriesToken,
   formatQuoteFromLabel,
+  parseQuoteFromDisplayLabel,
   parseQuoteFromToken,
   quoteFromScopeCacheKey,
   type QuoteSearchScope,
@@ -35,6 +36,25 @@ describe("quote from scope tokens", () => {
     expect(parseQuoteFromToken("s:")).toBeNull();
     expect(parseQuoteFromToken("m:not-an-id")).toBeNull();
     expect(parseQuoteFromToken("m:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbff")).toBeNull();
+  });
+
+  test("parses Discord display labels Discord re-sends after a from pick (#222)", () => {
+    expect(parseQuoteFromDisplayLabel("Movie · Jurassic Park (1993)")).toEqual({
+      kind: "movie",
+      title: "Jurassic Park",
+      productionYear: 1993,
+    });
+    expect(parseQuoteFromDisplayLabel("Movie · Heartwarming")).toEqual({
+      kind: "movie",
+      title: "Heartwarming",
+      productionYear: null,
+    });
+    expect(parseQuoteFromDisplayLabel("TV · The IT Crowd")).toEqual({
+      kind: "series",
+      seriesName: "The IT Crowd",
+    });
+    expect(parseQuoteFromDisplayLabel("jurassic park")).toBeNull();
+    expect(parseQuoteFromDisplayLabel("m:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")).toBeNull();
   });
 
   test("formats Discord labels under 100 chars", () => {

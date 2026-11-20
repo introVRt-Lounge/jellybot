@@ -13,8 +13,13 @@ import {
 } from "../src/subtitles/quote-query-shaping.ts";
 
 describe("shapeQuoteAutocompleteQuery", () => {
-  test("drops stop words from short spoken lines (issue #216)", () => {
-    expect(shapeQuoteAutocompleteQuery("flaunt it")).toBe("flaunt");
+  test("drops stop words only when at least two content tokens remain (#216 / #222)", () => {
+    // One content token left → keep the spoken line so FTS stays precise
+    // ("are they heavy" must not collapse to "heavy" and bury Jurassic Park).
+    expect(shapeQuoteAutocompleteQuery("flaunt it")).toBe("flaunt it");
+    expect(shapeQuoteAutocompleteQuery("are they heavy")).toBe("are they heavy");
+    expect(shapeQuoteAutocompleteQuery("are they heavy?")).toBe("are they heavy");
+    // Two+ content tokens → strip stops (gang-bang latency class).
     expect(shapeQuoteAutocompleteQuery("i'm here for the gang bang")).toBe("gang bang");
   });
 
@@ -22,7 +27,7 @@ describe("shapeQuoteAutocompleteQuery", () => {
     expect(shapeQuoteAutocompleteQuery("for the")).toBe("for the");
   });
 
-  test("drops stop words from queries with at most five tokens", () => {
+  test("drops stop words from queries with at most five tokens when 2+ content remain", () => {
     expect(shapeQuoteAutocompleteQuery("that is it baby flaunt")).toBe("baby flaunt");
   });
 
@@ -108,6 +113,16 @@ describe("rankQuoteAutocompleteResults", () => {
     endMs: 2000,
     text,
     rank,
+  });
+
+  test("promotes Jurassic Park when short stop-word line stays intact (#222)", () => {
+    const bm25Order = [
+      sample("They are all heavy-hitters.", "Predators", -19.9),
+      sample("Are they heavy?", "Jurassic Park", -19.5),
+      sample("They are heavy.", "Lynch (one)", -19.5),
+    ];
+    const ranked = rankQuoteAutocompleteResults("are they heavy", bm25Order);
+    expect(ranked[0]?.title).toBe("Jurassic Park");
   });
 
   test("promotes exact Old School line over short TV gang-bang hits (#220)", () => {

@@ -65,6 +65,33 @@ export function parseQuoteFromToken(raw: string): QuoteSearchScope | null {
   return null;
 }
 
+/** Discord often re-fires `from:` autocomplete with the choice *name* after pick (#222). */
+export type QuoteFromDisplayLabel =
+  | { kind: "movie"; title: string; productionYear: number | null }
+  | { kind: "series"; seriesName: string };
+
+export function parseQuoteFromDisplayLabel(raw: string): QuoteFromDisplayLabel | null {
+  const trimmed = raw.trim();
+  const movie = /^Movie\s*·\s*(.+?)(?:\s*\((\d{4})\))?\s*$/u.exec(trimmed);
+  if (movie) {
+    const title = movie[1]!.trim();
+    if (!title) return null;
+    const yearRaw = movie[2];
+    return {
+      kind: "movie",
+      title,
+      productionYear: yearRaw ? Number(yearRaw) : null,
+    };
+  }
+  const series = /^TV\s*·\s*(.+?)\s*$/u.exec(trimmed);
+  if (series) {
+    const seriesName = series[1]!.trim();
+    if (!seriesName) return null;
+    return { kind: "series", seriesName };
+  }
+  return null;
+}
+
 export function formatQuoteFromLabel(
   input:
     | { kind: "series"; seriesName: string }

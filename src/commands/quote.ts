@@ -272,11 +272,20 @@ async function handleQuoteAutocompleteOnce(
 
   // Pick up the optional from filter alongside the focused `match` value
   // so cue autocomplete narrows to the chosen title before bm25 ranks it.
+  // Discord may hold the display label instead of `m:`/`s:` token (#222).
   const fromRaw = interaction.options.getString("from");
-  const scope: QuoteSearchScope | undefined =
+  let scope: QuoteSearchScope | undefined =
     fromRaw && fromRaw.trim().length > 0
       ? (parseQuoteFromToken(fromRaw.trim()) ?? undefined)
       : undefined;
+  if (fromRaw && fromRaw.trim().length > 0 && !scope) {
+    const indexForFrom = openSubtitleIndex(config.subtitleDbPath);
+    try {
+      scope = indexForFrom.resolveQuoteFromOption(fromRaw.trim()) ?? undefined;
+    } finally {
+      indexForFrom.close();
+    }
+  }
   const scopeKey = quoteFromScopeCacheKey(scope);
 
   // Issue #154 / #202: with a from filter active, the FTS search space is
@@ -460,14 +469,6 @@ export async function handleQuoteCommand(
 
   const matchRaw = interaction.options.getString("match", true);
   const fromRaw = interaction.options.getString("from");
-  const scope: QuoteSearchScope | undefined =
-    fromRaw && fromRaw.trim().length > 0 ? parseQuoteFromToken(fromRaw.trim()) ?? undefined : undefined;
-  if (fromRaw && fromRaw.trim().length > 0 && !scope) {
-    await interaction.editReply(
-      "Pick a title from the `from` autocomplete list (movie or series), or clear that option.",
-    );
-    return;
-  }
   const durationRaw = interaction.options.getString("duration");
   const paddingRaw = interaction.options.getString("padding");
   const burnInSubtitles = interaction.options.getBoolean("subtitles") ?? false;
@@ -493,52 +494,69 @@ export async function handleQuoteCommand(
   const index = openSubtitleIndex(config.subtitleDbPath);
   let match;
   let seriesByItemName: string | null = null;
+  let scope: QuoteSearchScope | undefined =
+    fromRaw && fromRaw.trim().length > 0 ? parseQuoteFromToken(fromRaw.trim()) ?? undefined : undefined;
   try {
+    // Discord may submit the display label instead of the opaque token (#222).
+    if (fromRaw && fromRaw.trim().length > 0 && !scope) {
+      scope = index.resolveQuoteFromOption(fromRaw.trim()) ?? undefined;
+    }
+    if (fromRaw && fromRaw.trim().length > 0 && !scope) {
+      await interaction.editReply(
+        "Pick a title from the `from` autocomplete list (movie or series), or clear that option.",
+      );
+      return;
+    }
+
     match = index.getCueMatch(token.itemId, token.startMs, token.endMs);
     if (scope?.kind === "seriesByItem") {
       seriesByItemName = index.getSeriesNameForItem(scope.itemId);
     }
+
+    if (!match) {
+      await interaction.editReply(
+        "That quote match is no longer in the subtitle index. Run `make index-subtitles` and try again.",
+      );
+      return;
+    }
+
+    // Defence against autocomplete-then-change-from: if the user picked a
+    // cue, then narrowed `from:` to a different title before submitting,
+    // refuse rather than fetching a clip from the wrong work.
+    if (scope?.kind === "series") {
+      const matchSeries = match.seriesName ?? null;
+      if (!matchSeries || matchSeries.toLowerCase() !== scope.seriesName.toLowerCase()) {
+        await interaction.editReply(
+          `That quote isn't from **${displayNameForScope(scope)}**. Re-run \`/quote\` with the matching title, or clear the \`from\` option.`,
+        );
+        return;
+      }
+    } else if (scope?.kind === "seriesByItem") {
+      const matchSeries = match.seriesName ?? null;
+      if (
+        !seriesByItemName ||
+        !matchSeries ||
+        matchSeries.toLowerCase() !== seriesByItemName.toLowerCase()
+      ) {
+        await interaction.editReply(
+          `That quote isn't from the selected series. Re-run \`/quote\` with the matching title, or clear the \`from\` option.`,
+        );
+        return;
+      }
+    } else if (scope?.kind === "movie") {
+      if (match.itemId.toLowerCase() !== scope.itemId.toLowerCase()) {
+        // Duplicate library copies share a title but different item ids (#222).
+        const scopedTitle = index.getMovieTitle(scope.itemId);
+        if (!scopedTitle || match.title.toLowerCase() !== scopedTitle.toLowerCase()) {
+          await interaction.editReply(
+            `That quote isn't from the selected movie. Re-run \`/quote\` with the matching title, or clear the \`from\` option.`,
+          );
+          return;
+        }
+      }
+    }
   } finally {
     index.close();
-  }
-
-  if (!match) {
-    await interaction.editReply(
-      "That quote match is no longer in the subtitle index. Run `make index-subtitles` and try again.",
-    );
-    return;
-  }
-
-  // Defence against autocomplete-then-change-from: if the user picked a
-  // cue, then narrowed `from:` to a different title before submitting,
-  // refuse rather than fetching a clip from the wrong work.
-  if (scope?.kind === "series") {
-    const matchSeries = match.seriesName ?? null;
-    if (!matchSeries || matchSeries.toLowerCase() !== scope.seriesName.toLowerCase()) {
-      await interaction.editReply(
-        `That quote isn't from **${displayNameForScope(scope)}**. Re-run \`/quote\` with the matching title, or clear the \`from\` option.`,
-      );
-      return;
-    }
-  } else if (scope?.kind === "seriesByItem") {
-    const matchSeries = match.seriesName ?? null;
-    if (
-      !seriesByItemName ||
-      !matchSeries ||
-      matchSeries.toLowerCase() !== seriesByItemName.toLowerCase()
-    ) {
-      await interaction.editReply(
-        `That quote isn't from the selected series. Re-run \`/quote\` with the matching title, or clear the \`from\` option.`,
-      );
-      return;
-    }
-  } else if (scope?.kind === "movie") {
-    if (match.itemId.toLowerCase() !== scope.itemId.toLowerCase()) {
-      await interaction.editReply(
-        `That quote isn't from the selected movie. Re-run \`/quote\` with the matching title, or clear the \`from\` option.`,
-      );
-      return;
-    }
   }
 
   const planned = planQuoteClip({
