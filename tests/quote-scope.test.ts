@@ -43,15 +43,24 @@ describe("quote from scope tokens", () => {
       kind: "movie",
       title: "Jurassic Park",
       productionYear: 1993,
+      truncated: false,
     });
     expect(parseQuoteFromDisplayLabel("Movie · Heartwarming")).toEqual({
       kind: "movie",
       title: "Heartwarming",
       productionYear: null,
+      truncated: false,
     });
     expect(parseQuoteFromDisplayLabel("TV · The IT Crowd")).toEqual({
       kind: "series",
       seriesName: "The IT Crowd",
+      truncated: false,
+    });
+    expect(parseQuoteFromDisplayLabel("Movie · Very Long Title That Got Cut…")).toEqual({
+      kind: "movie",
+      title: "Very Long Title That Got Cut",
+      productionYear: null,
+      truncated: true,
     });
     expect(parseQuoteFromDisplayLabel("jurassic park")).toBeNull();
     expect(parseQuoteFromDisplayLabel("m:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")).toBeNull();

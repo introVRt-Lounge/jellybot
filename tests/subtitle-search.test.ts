@@ -169,6 +169,28 @@ describe("SubtitleIndex", () => {
         kind: "movie",
         itemId: "dddddddddddddddddddddddddddddddd",
       });
+
+      const longTitle = `Jurassic ${"Park ".repeat(40)}Finale`;
+      index.replaceItem(
+        {
+          itemId: "ffffffffffffffffffffffffffffffff",
+          itemType: "Movie",
+          title: longTitle,
+          productionYear: 1993,
+          mediaSourceId: "src-long-jp",
+          subtitleIndex: 0,
+        },
+        [{ startMs: 1000, endMs: 2000, text: "Are they heavy?" }],
+      );
+      const longLabel = index.listQuoteFromTitles(longTitle.slice(0, 12), 5).find((h) =>
+        h.label.includes("Jurassic"),
+      )?.label;
+      expect(longLabel).toBeTruthy();
+      expect(longLabel!.endsWith("…") || longLabel!.length <= 100).toBe(true);
+      if (longLabel?.endsWith("…")) {
+        const stickyLong = index.listQuoteFromTitles(longLabel, 5);
+        expect(stickyLong.some((h) => h.value === "m:ffffffffffffffffffffffffffffffff")).toBe(true);
+      }
     } finally {
       index.close();
     }

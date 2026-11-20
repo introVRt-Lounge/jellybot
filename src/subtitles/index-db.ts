@@ -549,16 +549,30 @@ export class SubtitleIndex {
     if (!display) return null;
 
     if (display.kind === "series") {
-      const row = this.db
-        .query(
-          `SELECT series_name AS name, MIN(item_id) AS sampleItemId
-           FROM media_items
-           WHERE series_name IS NOT NULL AND series_name <> ''
-             AND LOWER(series_name) = LOWER(?)
-           GROUP BY series_name
-           LIMIT 1`,
-        )
-        .get(display.seriesName) as { name: string; sampleItemId: string } | null;
+      const row = (
+        display.truncated
+          ? (this.db
+              .query(
+                `SELECT series_name AS name, MIN(item_id) AS sampleItemId
+                 FROM media_items
+                 WHERE series_name IS NOT NULL AND series_name <> ''
+                   AND LOWER(series_name) LIKE LOWER(?)
+                 GROUP BY series_name
+                 ORDER BY series_name COLLATE NOCASE
+                 LIMIT 1`,
+              )
+              .get(`${display.seriesName}%`) as { name: string; sampleItemId: string } | null)
+          : (this.db
+              .query(
+                `SELECT series_name AS name, MIN(item_id) AS sampleItemId
+                 FROM media_items
+                 WHERE series_name IS NOT NULL AND series_name <> ''
+                   AND LOWER(series_name) = LOWER(?)
+                 GROUP BY series_name
+                 LIMIT 1`,
+              )
+              .get(display.seriesName) as { name: string; sampleItemId: string } | null)
+      );
       if (!row) return [];
       const choice: QuoteFromChoice = {
         kind: "series",
@@ -568,35 +582,38 @@ export class SubtitleIndex {
       return [choice].slice(0, limit);
     }
 
+    type MovieRow = { itemId: string; title: string; productionYear: number | null };
     const rows = (
-      display.productionYear != null
+      display.truncated
         ? (this.db
             .query(
               `SELECT item_id AS itemId, title, production_year AS productionYear
                FROM media_items
-               WHERE item_type = 'Movie' AND LOWER(title) = LOWER(?)
-                 AND production_year = ?
+               WHERE item_type = 'Movie' AND LOWER(title) LIKE LOWER(?)
                ORDER BY title COLLATE NOCASE
                LIMIT ?`,
             )
-            .all(display.title, display.productionYear, limit) as Array<{
-              itemId: string;
-              title: string;
-              productionYear: number | null;
-            }>)
-        : (this.db
-            .query(
-              `SELECT item_id AS itemId, title, production_year AS productionYear
-               FROM media_items
-               WHERE item_type = 'Movie' AND LOWER(title) = LOWER(?)
-               ORDER BY title COLLATE NOCASE
-               LIMIT ?`,
-            )
-            .all(display.title, limit) as Array<{
-              itemId: string;
-              title: string;
-              productionYear: number | null;
-            }>)
+            .all(`${display.title}%`, limit) as MovieRow[])
+        : display.productionYear != null
+          ? (this.db
+              .query(
+                `SELECT item_id AS itemId, title, production_year AS productionYear
+                 FROM media_items
+                 WHERE item_type = 'Movie' AND LOWER(title) = LOWER(?)
+                   AND production_year = ?
+                 ORDER BY title COLLATE NOCASE
+                 LIMIT ?`,
+              )
+              .all(display.title, display.productionYear, limit) as MovieRow[])
+          : (this.db
+              .query(
+                `SELECT item_id AS itemId, title, production_year AS productionYear
+                 FROM media_items
+                 WHERE item_type = 'Movie' AND LOWER(title) = LOWER(?)
+                 ORDER BY title COLLATE NOCASE
+                 LIMIT ?`,
+              )
+              .all(display.title, limit) as MovieRow[])
     );
 
     return rows.map((row) => ({
