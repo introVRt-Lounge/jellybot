@@ -545,9 +545,17 @@ export async function handleQuoteCommand(
       }
     } else if (scope?.kind === "movie") {
       if (match.itemId.toLowerCase() !== scope.itemId.toLowerCase()) {
-        // Duplicate library copies share a title but different item ids (#222).
-        const scopedTitle = index.getMovieTitle(scope.itemId);
-        if (!scopedTitle || match.title.toLowerCase() !== scopedTitle.toLowerCase()) {
+        // Duplicate library copies: same title + year, movie cues only (#222).
+        const scoped = index.getMovieIdentity(scope.itemId);
+        const sameTitle =
+          !!scoped &&
+          match.itemType === "Movie" &&
+          match.title.toLowerCase() === scoped.title.toLowerCase();
+        const sameYear =
+          scoped?.productionYear == null ||
+          match.productionYear == null ||
+          match.productionYear === scoped.productionYear;
+        if (!sameTitle || !sameYear) {
           await interaction.editReply(
             `That quote isn't from the selected movie. Re-run \`/quote\` with the matching title, or clear the \`from\` option.`,
           );

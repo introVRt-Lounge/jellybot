@@ -611,15 +611,22 @@ export class SubtitleIndex {
   }
 
   getMovieTitle(itemId: string): string | null {
+    return this.getMovieIdentity(itemId)?.title ?? null;
+  }
+
+  getMovieIdentity(
+    itemId: string,
+  ): { title: string; productionYear: number | null } | null {
     const row = this.db
       .query(
-        `SELECT title FROM media_items
+        `SELECT title, production_year AS productionYear FROM media_items
          WHERE item_type = 'Movie' AND LOWER(item_id) = LOWER(?)
          LIMIT 1`,
       )
-      .get(itemId) as { title: string | null } | null;
+      .get(itemId) as { title: string | null; productionYear: number | null } | null;
     const title = row?.title?.trim();
-    return title ? title : null;
+    if (!title) return null;
+    return { title, productionYear: row?.productionYear ?? null };
   }
 
   /** Resolve opaque token or Discord display label to a search scope (#222). */
