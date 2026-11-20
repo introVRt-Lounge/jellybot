@@ -62,6 +62,12 @@ describe("quote from scope tokens", () => {
       productionYear: null,
       truncated: true,
     });
+    expect(parseQuoteFromDisplayLabel("Movie · Almost Long Enough Title Here (199…")).toEqual({
+      kind: "movie",
+      title: "Almost Long Enough Title Here",
+      productionYear: null,
+      truncated: true,
+    });
     expect(parseQuoteFromDisplayLabel("jurassic park")).toBeNull();
     expect(parseQuoteFromDisplayLabel("m:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")).toBeNull();
   });

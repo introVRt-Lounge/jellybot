@@ -87,7 +87,11 @@ export function parseQuoteFromDisplayLabel(raw: string): QuoteFromDisplayLabel |
   const { text: trimmed, truncated } = stripLabelTruncation(raw.trim());
   const movie = /^Movie\s*·\s*(.+?)(?:\s*\((\d{4})\))?\s*$/u.exec(trimmed);
   if (movie) {
-    const title = movie[1]!.trim();
+    let title = movie[1]!.trim();
+    // Truncation can land inside `(1993)` → title ends with ` (199` / ` (` (#222).
+    if (truncated) {
+      title = title.replace(/\s*\(\d{0,3}$/u, "").trimEnd();
+    }
     if (!title) return null;
     const yearRaw = movie[2];
     return {
