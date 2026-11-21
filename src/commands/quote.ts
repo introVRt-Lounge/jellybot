@@ -335,9 +335,11 @@ async function handleQuoteAutocompleteOnce(
       return;
     }
 
-    const searchQuery = shapeQuoteAutocompleteQuery(query);
-    // Short spoken lines: FTS5 phrase (positions) not AND of stop words (#228).
+    // Phrase path needs the contiguous spoken line (stops + "I"); shaping for
+    // AND/long distinctive windows may drop intervening tokens (#228 Codex).
     const ftsMode = quoteAutocompleteFtsMode(query);
+    const searchQuery =
+      ftsMode === "phrase" ? query.trim() : shapeQuoteAutocompleteQuery(query);
 
     let results = tryQuoteMatchPrefixCache(cacheKey, query, searchQuery, scopeKey);
     let usedPrefixCache = results !== null;
@@ -357,7 +359,13 @@ async function handleQuoteAutocompleteOnce(
         ftsLimit,
         scope,
         ftsBudgetMs,
-        { interactive: true, signal, mode: ftsMode },
+        {
+          interactive: true,
+          signal,
+          mode: ftsMode,
+          // bm25 on common phrases was multi-second; JS re-rank follows.
+          orderBy: ftsMode === "phrase" ? "none" : "bm25",
+        },
       );
       if (signal.aborted) {
         throw signal.reason ?? new DOMException("The operation was aborted.", "AbortError");

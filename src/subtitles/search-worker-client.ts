@@ -3,6 +3,7 @@ import type {
   QuoteFromChoice,
   QuoteSearchResult,
   QuoteSearchScope,
+  SearchQuotesOptions,
 } from "./index-db.ts";
 import { getSubtitleSearchIndex } from "./search-index.ts";
 
@@ -15,6 +16,7 @@ type SearchWorkerRequest =
       limit: number;
       scope?: QuoteSearchScope;
       mode?: FtsMatchMode;
+      orderBy?: SearchQuotesOptions["orderBy"];
     }
   | {
       id: number;
@@ -224,6 +226,8 @@ export type OffThreadSearchOptions = {
   signal?: AbortSignal;
   /** FTS match mode — phrase for short `/quote` autocomplete lines (#228). */
   mode?: FtsMatchMode;
+  /** Skip SQLite bm25 sort for autocomplete; JS re-ranks (#228). */
+  orderBy?: SearchQuotesOptions["orderBy"];
 };
 
 export async function searchQuotesOffThread(
@@ -235,8 +239,11 @@ export async function searchQuotesOffThread(
   options: OffThreadSearchOptions = {},
 ): Promise<QuoteSearchResult[]> {
   const interactive = options.interactive ?? false;
-  const { signal, mode } = options;
-  const ftsOptions = mode ? { mode } : {};
+  const { signal, mode, orderBy } = options;
+  const ftsOptions: SearchQuotesOptions = {
+    ...(mode ? { mode } : {}),
+    ...(orderBy ? { orderBy } : {}),
+  };
 
   if (signal?.aborted) {
     return [];
@@ -259,6 +266,7 @@ export async function searchQuotesOffThread(
         limit,
         scope,
         mode,
+        orderBy,
       },
       timeoutMs,
       { interactive, signal },

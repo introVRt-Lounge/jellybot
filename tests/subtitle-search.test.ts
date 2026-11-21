@@ -22,12 +22,20 @@ describe("prepareFtsQuery", () => {
     expect(prepareFtsQuery("love")).toBe('"love"*');
   });
 
-  test("phrase mode joins tokens into one FTS5 phrase with prefix on the last (#228)", () => {
-    expect(prepareFtsQuery("are they heavy", { mode: "phrase" })).toBe('"are they heavy"*');
+  test("phrase mode joins tokens into one contiguous FTS5 phrase (#228)", () => {
+    // Completed last token (≥3 chars): exact phrase — no expensive prefix scan.
+    expect(prepareFtsQuery("are they heavy", { mode: "phrase" })).toBe('"are they heavy"');
   });
 
-  test("phrase mode still prefixes a single in-progress token", () => {
-    expect(prepareFtsQuery("heav", { mode: "phrase" })).toBe('"heav"*');
+  test("phrase mode keeps stop words and single-letter tokens for adjacency", () => {
+    expect(prepareFtsQuery("love finds its way", { mode: "phrase" })).toBe('"love finds its way"');
+    expect(prepareFtsQuery("Do I know you", { mode: "phrase" })).toBe('"do i know you"');
+  });
+
+  test("phrase mode prefixes only when the last token is still short", () => {
+    expect(prepareFtsQuery("he", { mode: "phrase" })).toBe('"he"*');
+    expect(prepareFtsQuery("are they he", { mode: "phrase" })).toBe('"are they he"*');
+    expect(prepareFtsQuery("heavy", { mode: "phrase" })).toBe('"heavy"');
   });
 });
 
@@ -81,9 +89,65 @@ describe("SubtitleIndex", () => {
         "They are all heavy-hitters.",
       ]);
 
-      const phraseHits = index.searchQuotes("are they heavy", 5, undefined, { mode: "phrase" });
+      const phraseHits = index.searchQuotes("are they heavy", 5, undefined, {
+        mode: "phrase",
+        orderBy: "none",
+      });
       expect(phraseHits).toHaveLength(1);
       expect(phraseHits[0]?.text).toBe("Are they heavy?");
+    } finally {
+      index.close();
+    }
+  });
+
+  test("phrase mode matches cues when stop words sit between content tokens (#228)", () => {
+    const index = openSubtitleIndex(dbPath);
+    try {
+      index.replaceItem(
+        {
+          itemId: "cccccccccccccccccccccccccccccccc",
+          itemType: "Movie",
+          title: "Semantic Error",
+          productionYear: 2022,
+          mediaSourceId: "source",
+          subtitleIndex: 0,
+        },
+        [{ startMs: 1000, endMs: 2000, text: "love finds its way toward us", kind: "single" }],
+      );
+
+      // Shaped AND path would search "love finds way" and miss under phrase rules.
+      const hits = index.searchQuotes("love finds its way", 5, undefined, {
+        mode: "phrase",
+        orderBy: "none",
+      });
+      expect(hits).toHaveLength(1);
+      expect(hits[0]?.text).toContain("love finds its way");
+    } finally {
+      index.close();
+    }
+  });
+
+  test("phrase mode keeps single-letter tokens like I (#228)", () => {
+    const index = openSubtitleIndex(dbPath);
+    try {
+      index.replaceItem(
+        {
+          itemId: "dddddddddddddddddddddddddddddddd",
+          itemType: "Movie",
+          title: "Know You",
+          productionYear: 2000,
+          mediaSourceId: "source",
+          subtitleIndex: 0,
+        },
+        [{ startMs: 1000, endMs: 2000, text: "Do I know you?", kind: "single" }],
+      );
+
+      const hits = index.searchQuotes("Do I know you", 5, undefined, {
+        mode: "phrase",
+        orderBy: "none",
+      });
+      expect(hits).toHaveLength(1);
+      expect(hits[0]?.text).toBe("Do I know you?");
     } finally {
       index.close();
     }

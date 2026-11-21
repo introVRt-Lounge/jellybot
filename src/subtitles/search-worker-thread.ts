@@ -8,6 +8,7 @@ import {
   type QuoteFromChoice,
   type QuoteSearchResult,
   type QuoteSearchScope,
+  type SearchQuotesOptions,
 } from "./index-db.ts";
 
 type SearchWorkerRequest =
@@ -19,6 +20,7 @@ type SearchWorkerRequest =
       limit: number;
       scope?: QuoteSearchScope;
       mode?: FtsMatchMode;
+      orderBy?: SearchQuotesOptions["orderBy"];
     }
   | {
       id: number;
@@ -59,6 +61,7 @@ addEventListener("message", (event: MessageEvent<SearchWorkerRequest>) => {
     if (msg.op === "search") {
       const results = index.searchQuotes(msg.query, msg.limit, msg.scope, {
         mode: msg.mode,
+        orderBy: msg.orderBy,
       });
       postMessage({ id: msg.id, ok: true, op: "search", results } satisfies SearchWorkerResponse);
       return;

@@ -300,7 +300,7 @@ export class SubtitleIndex {
     query: string,
     limit = 25,
     scope?: QuoteSearchScope,
-    options: PrepareFtsQueryOptions = {},
+    options: SearchQuotesOptions = {},
   ): QuoteSearchResult[] {
     const ftsQuery = prepareFtsQuery(query, options);
     if (!ftsQuery) return [];
@@ -323,6 +323,10 @@ export class SubtitleIndex {
 
     params.push(limit);
 
+    const orderBy = options.orderBy ?? "bm25";
+    const rankExpr = orderBy === "bm25" ? "bm25(subtitle_cues_fts)" : "0";
+    const orderClause = orderBy === "bm25" ? "ORDER BY rank" : "";
+
     return this.db
       .query(
         `SELECT
@@ -337,12 +341,12 @@ export class SubtitleIndex {
           c.start_ms AS startMs,
           c.end_ms AS endMs,
           c.text AS text,
-          bm25(subtitle_cues_fts) AS rank
+          ${rankExpr} AS rank
         FROM subtitle_cues_fts
         JOIN subtitle_cues c ON c.id = subtitle_cues_fts.rowid
         JOIN media_items m ON m.item_id = c.item_id
         WHERE ${where.join(" AND ")}
-        ORDER BY rank
+        ${orderClause}
         LIMIT ?`,
       )
       .all(...params) as QuoteSearchResult[];
@@ -764,30 +768,44 @@ export class SubtitleIndex {
 
 export type FtsMatchMode = "and" | "phrase";
 
+/** Last-token length below this keeps a trailing `*` (still typing). */
+const PHRASE_PREFIX_MAX_LAST_LEN = 2;
+
 export type PrepareFtsQueryOptions = {
   /**
    * `and` (default): independent tokens, prefix on the last — submit / supercut /
-   * quote-request. `phrase`: one FTS5 phrase with prefix on the last token —
-   * `/quote` autocomplete for short spoken lines (#228). Phrase match uses
-   * token positions so common function words do not explode the scan.
+   * quote-request. `phrase`: one contiguous FTS5 phrase — `/quote` autocomplete
+   * for short spoken lines (#228). Keeps stop words and single-letter tokens so
+   * adjacency matches the indexed cue.
    */
   mode?: FtsMatchMode;
 };
 
+export type SearchQuotesOptions = PrepareFtsQueryOptions & {
+  /**
+   * `bm25` (default) ranks in SQLite. `none` skips ORDER BY — autocomplete
+   * re-ranks in JS (#228); bm25 on common phrases was multi-second on prod.
+   */
+  orderBy?: "bm25" | "none";
+};
+
 export function prepareFtsQuery(query: string, options: PrepareFtsQueryOptions = {}): string {
+  const mode = options.mode ?? "and";
+  const minLen = mode === "phrase" ? 1 : 2;
   const tokens = query
     .trim()
     .toLowerCase()
     .replace(/[^\p{L}\p{N}\s]+/gu, " ")
     .split(/\s+/)
-    .filter((token) => token.length >= 2);
+    .filter((token) => token.length >= minLen);
 
   if (tokens.length === 0) return "";
 
-  const mode = options.mode ?? "and";
   if (mode === "phrase") {
     const escaped = tokens.map((token) => token.replace(/"/g, '""'));
-    return `"${escaped.join(" ")}"*`;
+    const last = tokens[tokens.length - 1]!;
+    const prefix = last.length <= PHRASE_PREFIX_MAX_LAST_LEN ? "*" : "";
+    return `"${escaped.join(" ")}"${prefix}`;
   }
 
   return tokens
