@@ -202,13 +202,19 @@ export function rankQuoteAutocompleteResults(
 
   return [...results].sort((left, right) => {
     // Exact / near-exact phrase beats bag-of-token ties (#222 Jurassic Park).
-    const leftPhrase = Number(normalizeQuotePhrase(left.text).includes(normalizedQuery));
-    const rightPhrase = Number(normalizeQuotePhrase(right.text).includes(normalizedQuery));
+    // Word-boundary check: "are they heavy" must not match "are they heavyweights" (#228).
+    const leftPhrase = Number(cueContainsQueryPhrase(left.text, normalizedQuery));
+    const rightPhrase = Number(cueContainsQueryPhrase(right.text, normalizedQuery));
     if (rightPhrase !== leftPhrase) return rightPhrase - leftPhrase;
 
     const leftOverlap = rawCueTokenOverlap(queryTokens, left.text);
     const rightOverlap = rawCueTokenOverlap(queryTokens, right.text);
     if (rightOverlap !== leftOverlap) return rightOverlap - leftOverlap;
+
+    // Prefer shorter cues when overlap ties and bm25 ranks are absent (orderBy none).
+    const lengthDelta = left.text.length - right.text.length;
+    if (lengthDelta !== 0 && left.rank === right.rank) return lengthDelta;
+
     return left.rank - right.rank;
   });
 }
@@ -219,6 +225,18 @@ function normalizeQuotePhrase(value: string): string {
     .replace(/[^\p{L}\p{N}\s]+/gu, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+/** True when `cueText` contains `normalizedQuery` as a whole-word phrase. */
+function cueContainsQueryPhrase(cueText: string, normalizedQuery: string): boolean {
+  if (!normalizedQuery) return false;
+  const cue = normalizeQuotePhrase(cueText);
+  if (cue === normalizedQuery) return true;
+  return (
+    cue.startsWith(`${normalizedQuery} `) ||
+    cue.includes(` ${normalizedQuery} `) ||
+    cue.endsWith(` ${normalizedQuery}`)
+  );
 }
 
 function rawCueTokenOverlap(queryTokens: string[], cueText: string): number {

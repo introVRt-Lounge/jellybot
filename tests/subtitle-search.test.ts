@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { unlinkSync } from "node:fs";
 import { Database } from "bun:sqlite";
 import { openSubtitleIndex, prepareFtsQuery } from "../src/subtitles/index-db.ts";
+import { rankQuoteAutocompleteResults } from "../src/subtitles/quote-query-shaping.ts";
 
 const dbPath = `/tmp/jellybot-test-${crypto.randomUUID()}.db`;
 
@@ -55,6 +56,46 @@ describe("SubtitleIndex", () => {
       expect(results).toHaveLength(1);
       expect(results[0]?.text).toContain("love finds its way");
       expect(results[0]?.startMs).toBe(30000);
+    } finally {
+      index.close();
+    }
+  });
+
+  test("phrase oversample + JS re-rank recovers exact cue among many longer matches (#228)", () => {
+    const index = openSubtitleIndex(dbPath);
+    try {
+      const cues = Array.from({ length: 30 }, (_, i) => ({
+        startMs: i * 1000,
+        endMs: i * 1000 + 500,
+        text: `Are they heavyweights in the championship tournament again today? ${i}`,
+        kind: "single" as const,
+      }));
+      cues.push({ startMs: 40_000, endMs: 41_000, text: "Are they heavy?", kind: "single" });
+
+      index.replaceItem(
+        {
+          itemId: "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          itemType: "Movie",
+          title: "Heavyweights",
+          productionYear: 1995,
+          mediaSourceId: "source",
+          subtitleIndex: 0,
+        },
+        cues,
+      );
+
+      const tight = index.searchQuotes("are they heavy", 24, undefined, {
+        mode: "phrase",
+        orderBy: "none",
+      });
+      expect(tight.some((row) => row.text === "Are they heavy?")).toBe(false);
+
+      const wide = index.searchQuotes("are they heavy", 64, undefined, {
+        mode: "phrase",
+        orderBy: "none",
+      });
+      expect(wide.some((row) => row.text === "Are they heavy?")).toBe(true);
+      expect(rankQuoteAutocompleteResults("are they heavy", wide)[0]?.text).toBe("Are they heavy?");
     } finally {
       index.close();
     }

@@ -353,14 +353,13 @@ async function handleQuoteAutocompleteOnce(
         interaction,
         QUOTE_MATCH_AUTOCOMPLETE_MAX_TOKEN_AGE_MS,
       );
-      // Oversample FTS (#220) on AND/long path: stop-word strip can bury exact
-      // cues past the Discord window. Phrase hits are already contiguous — 24.
-      const ftsLimit =
-        ftsMode === "phrase" ? QUOTE_MATCH_CHOICE_LIMIT : QUOTE_MATCH_FTS_CANDIDATE_LIMIT;
+      // Oversample before Discord's 24-choice window (#220 / #228 Codex): without
+      // SQLite bm25, unordered phrase LIMIT 24 can drop the exact cue when many
+      // longer phrases share the same prefix. JS re-rank recovers relevance.
       results = await searchQuotesOffThread(
         config.subtitleDbPath,
         searchQuery,
-        ftsLimit,
+        QUOTE_MATCH_FTS_CANDIDATE_LIMIT,
         scope,
         ftsBudgetMs,
         {
