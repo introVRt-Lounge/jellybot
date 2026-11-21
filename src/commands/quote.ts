@@ -22,6 +22,7 @@ import { openSubtitleIndex } from "../subtitles/index-db.ts";
 import {
   rememberQuoteMatchSearchCache,
   rankQuoteAutocompleteResults,
+  quoteAutocompleteFtsMode,
   shapeQuoteAutocompleteQuery,
   tryQuoteMatchPrefixCache,
 } from "../subtitles/quote-query-shaping.ts";
@@ -334,9 +335,17 @@ async function handleQuoteAutocompleteOnce(
       return;
     }
 
-    const searchQuery = shapeQuoteAutocompleteQuery(query);
+    // Phrase path needs the contiguous spoken line (stops + "I"); shaping for
+    // AND/long distinctive windows may drop intervening tokens (#228 Codex).
+    const ftsMode = quoteAutocompleteFtsMode(query);
+    const searchQuery =
+      ftsMode === "phrase" ? query.trim() : shapeQuoteAutocompleteQuery(query);
 
-    let results = tryQuoteMatchPrefixCache(cacheKey, query, searchQuery, scopeKey);
+    // Prefix-cache is bag-of-words; phrase mode needs contiguous adjacency (#228).
+    let results =
+      ftsMode === "phrase"
+        ? null
+        : tryQuoteMatchPrefixCache(cacheKey, query, searchQuery, scopeKey);
     let usedPrefixCache = results !== null;
 
     if (!results) {
@@ -344,20 +353,29 @@ async function handleQuoteAutocompleteOnce(
         interaction,
         QUOTE_MATCH_AUTOCOMPLETE_MAX_TOKEN_AGE_MS,
       );
-      // Oversample FTS (#220): stop-word strip (#216) can bury exact cues past the
-      // Discord 24-choice window; re-rank by raw-token overlap then take top 24.
+      // Oversample before Discord's 24-choice window (#220 / #228 Codex): without
+      // SQLite bm25, unordered phrase LIMIT 24 can drop the exact cue when many
+      // longer phrases share the same prefix. JS re-rank recovers relevance.
       results = await searchQuotesOffThread(
         config.subtitleDbPath,
         searchQuery,
         QUOTE_MATCH_FTS_CANDIDATE_LIMIT,
         scope,
         ftsBudgetMs,
-        { interactive: true, signal },
+        {
+          interactive: true,
+          signal,
+          mode: ftsMode,
+          // bm25 on common phrases was multi-second; JS re-rank follows.
+          orderBy: ftsMode === "phrase" ? "none" : "bm25",
+        },
       );
       if (signal.aborted) {
         throw signal.reason ?? new DOMException("The operation was aborted.", "AbortError");
       }
-      rememberQuoteMatchSearchCache(cacheKey, query, searchQuery, results, scopeKey);
+      if (ftsMode !== "phrase") {
+        rememberQuoteMatchSearchCache(cacheKey, query, searchQuery, results, scopeKey);
+      }
     }
 
     results = rankQuoteAutocompleteResults(query, results).slice(0, QUOTE_MATCH_CHOICE_LIMIT);

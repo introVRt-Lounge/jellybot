@@ -152,12 +152,13 @@ async def run_discord_smokes() -> list[str]:
         except Exception as exc:  # noqa: BLE001
             await check("quote.match_autocomplete", False, f"{type(exc).__name__}: {exc}")
 
-        # Stop-word-heavy Old School cue (#216/#218): without autocomplete stop-word
-        # strip, FTS AND of common tokens ~10s and misses Discord's 3s window.
-        # Shapes to "gang bang". Override with JELLYBOT_SMOKE_LONG_QUOTE_QUERY.
+        # Truly long spoken line (>5 query tokens) so AND + distinctive shaping
+        # still runs (#216/#228). Short stop-word lines now use FTS5 phrase match
+        # on the contiguous raw query and would not exercise this gate.
+        # Shapes to "baby flaunt". Override with JELLYBOT_SMOKE_LONG_QUOTE_QUERY.
         long_quote_query = env(
             "JELLYBOT_SMOKE_LONG_QUOTE_QUERY",
-            "I'm here for the gang bang",
+            "that's it baby, if you've got it, flaunt it!",
         )
         # Debounce/min-length supersede needs overlapping autocomplete HTTP posts.
         # discord.py-self's _wrapped_interaction awaits the full round-trip and

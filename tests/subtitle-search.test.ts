@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { unlinkSync } from "node:fs";
 import { Database } from "bun:sqlite";
 import { openSubtitleIndex, prepareFtsQuery } from "../src/subtitles/index-db.ts";
+import { rankQuoteAutocompleteResults } from "../src/subtitles/quote-query-shaping.ts";
 
 const dbPath = `/tmp/jellybot-test-${crypto.randomUUID()}.db`;
 
@@ -20,6 +21,18 @@ describe("prepareFtsQuery", () => {
 
   test("prefixes a single token query", () => {
     expect(prepareFtsQuery("love")).toBe('"love"*');
+  });
+
+  test("phrase mode joins tokens into one contiguous FTS5 phrase with last-token prefix (#228)", () => {
+    expect(prepareFtsQuery("are they heavy", { mode: "phrase" })).toBe('"are they heavy"*');
+    expect(prepareFtsQuery("are they heav", { mode: "phrase" })).toBe('"are they heav"*');
+  });
+
+  test("phrase mode keeps stop words and single-letter tokens for adjacency", () => {
+    expect(prepareFtsQuery("love finds its way", { mode: "phrase" })).toBe(
+      '"love finds its way"*',
+    );
+    expect(prepareFtsQuery("Do I know you", { mode: "phrase" })).toBe('"do i know you"*');
   });
 });
 
@@ -43,6 +56,135 @@ describe("SubtitleIndex", () => {
       expect(results).toHaveLength(1);
       expect(results[0]?.text).toContain("love finds its way");
       expect(results[0]?.startMs).toBe(30000);
+    } finally {
+      index.close();
+    }
+  });
+
+  test("phrase oversample + JS re-rank recovers exact cue among many longer matches (#228)", () => {
+    const index = openSubtitleIndex(dbPath);
+    try {
+      const cues = Array.from({ length: 30 }, (_, i) => ({
+        startMs: i * 1000,
+        endMs: i * 1000 + 500,
+        text: `Are they heavyweights in the championship tournament again today? ${i}`,
+        kind: "single" as const,
+      }));
+      cues.push({ startMs: 40_000, endMs: 41_000, text: "Are they heavy?", kind: "single" });
+
+      index.replaceItem(
+        {
+          itemId: "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          itemType: "Movie",
+          title: "Heavyweights",
+          productionYear: 1995,
+          mediaSourceId: "source",
+          subtitleIndex: 0,
+        },
+        cues,
+      );
+
+      const tight = index.searchQuotes("are they heavy", 24, undefined, {
+        mode: "phrase",
+        orderBy: "none",
+      });
+      expect(tight.some((row) => row.text === "Are they heavy?")).toBe(false);
+
+      const wide = index.searchQuotes("are they heavy", 64, undefined, {
+        mode: "phrase",
+        orderBy: "none",
+      });
+      expect(wide.some((row) => row.text === "Are they heavy?")).toBe(true);
+      expect(rankQuoteAutocompleteResults("are they heavy", wide)[0]?.text).toBe("Are they heavy?");
+    } finally {
+      index.close();
+    }
+  });
+
+  test("phrase mode prefers the contiguous spoken line over bag-of-words hits (#228)", () => {
+    const index = openSubtitleIndex(dbPath);
+    try {
+      index.replaceItem(
+        {
+          itemId: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          itemType: "Movie",
+          title: "Office Space",
+          productionYear: 1999,
+          mediaSourceId: "source",
+          subtitleIndex: 0,
+        },
+        [
+          { startMs: 1000, endMs: 2000, text: "Are they heavy?", kind: "single" },
+          { startMs: 3000, endMs: 4000, text: "They are all heavy-hitters.", kind: "single" },
+        ],
+      );
+
+      const andHits = index.searchQuotes("are they heavy", 5);
+      // Bag-of-words AND matches both cues (tokens appear, not necessarily contiguous).
+      expect(andHits.map((row) => row.text).sort()).toEqual([
+        "Are they heavy?",
+        "They are all heavy-hitters.",
+      ]);
+
+      const phraseHits = index.searchQuotes("are they heavy", 5, undefined, {
+        mode: "phrase",
+        orderBy: "none",
+      });
+      expect(phraseHits).toHaveLength(1);
+      expect(phraseHits[0]?.text).toBe("Are they heavy?");
+    } finally {
+      index.close();
+    }
+  });
+
+  test("phrase mode matches cues when stop words sit between content tokens (#228)", () => {
+    const index = openSubtitleIndex(dbPath);
+    try {
+      index.replaceItem(
+        {
+          itemId: "cccccccccccccccccccccccccccccccc",
+          itemType: "Movie",
+          title: "Semantic Error",
+          productionYear: 2022,
+          mediaSourceId: "source",
+          subtitleIndex: 0,
+        },
+        [{ startMs: 1000, endMs: 2000, text: "love finds its way toward us", kind: "single" }],
+      );
+
+      // Shaped AND path would search "love finds way" and miss under phrase rules.
+      const hits = index.searchQuotes("love finds its way", 5, undefined, {
+        mode: "phrase",
+        orderBy: "none",
+      });
+      expect(hits).toHaveLength(1);
+      expect(hits[0]?.text).toContain("love finds its way");
+    } finally {
+      index.close();
+    }
+  });
+
+  test("phrase mode keeps single-letter tokens like I (#228)", () => {
+    const index = openSubtitleIndex(dbPath);
+    try {
+      index.replaceItem(
+        {
+          itemId: "dddddddddddddddddddddddddddddddd",
+          itemType: "Movie",
+          title: "Know You",
+          productionYear: 2000,
+          mediaSourceId: "source",
+          subtitleIndex: 0,
+        },
+        [{ startMs: 1000, endMs: 2000, text: "Do I know you?", kind: "single" }],
+      );
+
+      const hits = index.searchQuotes("Do I know you", 5, undefined, {
+        mode: "phrase",
+        orderBy: "none",
+      });
+      expect(hits).toHaveLength(1);
+      expect(hits[0]?.text).toBe("Do I know you?");
     } finally {
       index.close();
     }

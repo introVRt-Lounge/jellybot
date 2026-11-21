@@ -1,4 +1,4 @@
-import type { QuoteSearchResult } from "./index-db.ts";
+import type { FtsMatchMode, QuoteSearchResult } from "./index-db.ts";
 
 /** Minimum token length for "distinctive" quote tokens (shared with quote-request matcher). */
 export const DISTINCTIVE_TOKEN_MIN_LENGTH = 4;
@@ -6,7 +6,8 @@ export const DISTINCTIVE_TOKEN_MIN_LENGTH = 4;
 /** FTS AND-query minimum token length (matches prepareFtsQuery in index-db). */
 export const FTS_QUERY_TOKEN_MIN_LENGTH = 2;
 
-const AUTOCOMPLETE_MAX_FULL_TOKENS = 5;
+/** Short spoken lines stay contiguous — use FTS5 phrase match (#228). */
+export const AUTOCOMPLETE_MAX_FULL_TOKENS = 5;
 const AUTOCOMPLETE_TAIL_DISTINCTIVE_COUNT = 5;
 
 /**
@@ -96,6 +97,16 @@ export function extractDistinctiveTokens(quote: string): string[] {
 
 export function extractQueryTokens(quote: string): string[] {
   return tokenizeQuote(quote).filter((token) => token.length >= FTS_QUERY_TOKEN_MIN_LENGTH);
+}
+
+/**
+ * Short spoken lines (≤ {@link AUTOCOMPLETE_MAX_FULL_TOKENS}) are contiguous —
+ * phrase FTS. Longer input is shaped to non-adjacent distinctive tokens — AND.
+ */
+export function quoteAutocompleteFtsMode(rawQuery: string): FtsMatchMode {
+  const tokens = extractQueryTokens(rawQuery);
+  if (tokens.length === 0) return "and";
+  return tokens.length <= AUTOCOMPLETE_MAX_FULL_TOKENS ? "phrase" : "and";
 }
 
 /**
@@ -191,13 +202,19 @@ export function rankQuoteAutocompleteResults(
 
   return [...results].sort((left, right) => {
     // Exact / near-exact phrase beats bag-of-token ties (#222 Jurassic Park).
-    const leftPhrase = Number(normalizeQuotePhrase(left.text).includes(normalizedQuery));
-    const rightPhrase = Number(normalizeQuotePhrase(right.text).includes(normalizedQuery));
+    // Word-boundary check: "are they heavy" must not match "are they heavyweights" (#228).
+    const leftPhrase = Number(cueContainsQueryPhrase(left.text, normalizedQuery));
+    const rightPhrase = Number(cueContainsQueryPhrase(right.text, normalizedQuery));
     if (rightPhrase !== leftPhrase) return rightPhrase - leftPhrase;
 
     const leftOverlap = rawCueTokenOverlap(queryTokens, left.text);
     const rightOverlap = rawCueTokenOverlap(queryTokens, right.text);
     if (rightOverlap !== leftOverlap) return rightOverlap - leftOverlap;
+
+    // Prefer shorter cues when overlap ties and bm25 ranks are absent (orderBy none).
+    const lengthDelta = left.text.length - right.text.length;
+    if (lengthDelta !== 0 && left.rank === right.rank) return lengthDelta;
+
     return left.rank - right.rank;
   });
 }
@@ -208,6 +225,18 @@ function normalizeQuotePhrase(value: string): string {
     .replace(/[^\p{L}\p{N}\s]+/gu, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+/** True when `cueText` contains `normalizedQuery` as a whole-word phrase. */
+function cueContainsQueryPhrase(cueText: string, normalizedQuery: string): boolean {
+  if (!normalizedQuery) return false;
+  const cue = normalizeQuotePhrase(cueText);
+  if (cue === normalizedQuery) return true;
+  return (
+    cue.startsWith(`${normalizedQuery} `) ||
+    cue.includes(` ${normalizedQuery} `) ||
+    cue.endsWith(` ${normalizedQuery}`)
+  );
 }
 
 function rawCueTokenOverlap(queryTokens: string[], cueText: string): number {

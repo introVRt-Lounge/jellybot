@@ -296,8 +296,13 @@ export class SubtitleIndex {
    * or one movie (`item_id`). Used by `/quote from:` so common-noun queries
    * aren't drowned out by the rest of the catalogue.
    */
-  searchQuotes(query: string, limit = 25, scope?: QuoteSearchScope): QuoteSearchResult[] {
-    const ftsQuery = prepareFtsQuery(query);
+  searchQuotes(
+    query: string,
+    limit = 25,
+    scope?: QuoteSearchScope,
+    options: SearchQuotesOptions = {},
+  ): QuoteSearchResult[] {
+    const ftsQuery = prepareFtsQuery(query, options);
     if (!ftsQuery) return [];
 
     const where: string[] = ["subtitle_cues_fts MATCH ?"];
@@ -318,6 +323,10 @@ export class SubtitleIndex {
 
     params.push(limit);
 
+    const orderBy = options.orderBy ?? "bm25";
+    const rankExpr = orderBy === "bm25" ? "bm25(subtitle_cues_fts)" : "0";
+    const orderClause = orderBy === "bm25" ? "ORDER BY rank" : "";
+
     return this.db
       .query(
         `SELECT
@@ -332,12 +341,12 @@ export class SubtitleIndex {
           c.start_ms AS startMs,
           c.end_ms AS endMs,
           c.text AS text,
-          bm25(subtitle_cues_fts) AS rank
+          ${rankExpr} AS rank
         FROM subtitle_cues_fts
         JOIN subtitle_cues c ON c.id = subtitle_cues_fts.rowid
         JOIN media_items m ON m.item_id = c.item_id
         WHERE ${where.join(" AND ")}
-        ORDER BY rank
+        ${orderClause}
         LIMIT ?`,
       )
       .all(...params) as QuoteSearchResult[];
@@ -757,15 +766,43 @@ export class SubtitleIndex {
   }
 }
 
-export function prepareFtsQuery(query: string): string {
+export type FtsMatchMode = "and" | "phrase";
+
+export type PrepareFtsQueryOptions = {
+  /**
+   * `and` (default): independent tokens, prefix on the last — submit / supercut /
+   * quote-request. `phrase`: one contiguous FTS5 phrase — `/quote` autocomplete
+   * for short spoken lines (#228). Keeps stop words and single-letter tokens so
+   * adjacency matches the indexed cue. Always prefixes the last token so mid-word
+   * typing (hea → heav → heavy) keeps matching.
+   */
+  mode?: FtsMatchMode;
+};
+
+export type SearchQuotesOptions = PrepareFtsQueryOptions & {
+  /**
+   * `bm25` (default) ranks in SQLite. `none` skips ORDER BY — autocomplete
+   * re-ranks in JS (#228); bm25 on common phrases was multi-second on prod.
+   */
+  orderBy?: "bm25" | "none";
+};
+
+export function prepareFtsQuery(query: string, options: PrepareFtsQueryOptions = {}): string {
+  const mode = options.mode ?? "and";
+  const minLen = mode === "phrase" ? 1 : 2;
   const tokens = query
     .trim()
     .toLowerCase()
     .replace(/[^\p{L}\p{N}\s]+/gu, " ")
     .split(/\s+/)
-    .filter((token) => token.length >= 2);
+    .filter((token) => token.length >= minLen);
 
   if (tokens.length === 0) return "";
+
+  if (mode === "phrase") {
+    const escaped = tokens.map((token) => token.replace(/"/g, '""'));
+    return `"${escaped.join(" ")}"*`;
+  }
 
   return tokens
     .map((token, index) => {
