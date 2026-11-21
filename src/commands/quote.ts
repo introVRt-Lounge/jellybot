@@ -258,6 +258,17 @@ async function handleQuoteAutocompleteOnce(
 ): Promise<void> {
   const focused = interaction.options.getFocused(true);
 
+  // Early breadcrumb: ageMs here is pure gateway/event-loop lag before FTS (#224).
+  console.info(
+    JSON.stringify({
+      event: "quote.autocomplete.received",
+      interactionId: interaction.id,
+      focused: focused.name,
+      query: typeof focused.value === "string" ? focused.value : "",
+      ageMs: autocompleteInteractionAgeMs(interaction),
+    }),
+  );
+
   if (focused.name === "from") {
     await respondFromAutocomplete(interaction, config);
     return;

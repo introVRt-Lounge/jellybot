@@ -165,11 +165,12 @@ function callWorker(
     }, timeoutMs);
 
     const onAbort = () => {
+      // Drop this request only. Do NOT terminateWorker() on keystroke supersede
+      // (#224): killing the shared worker forces a cold reopen of the multi-GB
+      // subtitle DB on the next keystroke and surfaces as Discord
+      // "Loading options failed" under typing storms.
       clearTimeout(timer);
       pending.delete(id);
-      if (interactive) {
-        terminateWorker();
-      }
       finish(() =>
         reject(signal?.reason ?? new DOMException("The operation was aborted.", "AbortError")),
       );
