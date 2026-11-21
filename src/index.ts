@@ -45,6 +45,7 @@ import { startHealthServer, type HealthState } from "./health.ts";
 import { JellyfinClient } from "./jellyfin.ts";
 import { startJellyfinConnectionLoop } from "./jellyfin-startup.ts";
 import { openSubtitleIndex } from "./subtitles/index-db.ts";
+import { searchQuotesOffThread } from "./subtitles/search-worker-client.ts";
 import { parsePreferredLanguages } from "./subtitles/track-select.ts";
 import { WebhookDispatcher } from "./webhooks/dispatch.ts";
 import { createReleaseAnnouncerFromConfig } from "./release/release-announcer.ts";
@@ -270,6 +271,28 @@ client.once(Events.ClientReady, async (readyClient) => {
     console.error(
       JSON.stringify({
         event: "discord.commands.sync_failed",
+        error: error instanceof Error ? error.message : "unknown error",
+      }),
+    );
+  }
+
+  // Cold-open the subtitle search worker + SQLite pages before users type (#226).
+  // Without this, the first /quote after Watchtower soft-expires Discord's budget.
+  // Use interactive:false so open/timeout failures reject into worker_warm_failed
+  // instead of being swallowed as [] (Codex review on #227).
+  try {
+    const warmStarted = Date.now();
+    await searchQuotesOffThread(config.subtitleDbPath, "warmup", 1, undefined, 20_000);
+    console.info(
+      JSON.stringify({
+        event: "subtitle_search.worker_warmed",
+        ms: Date.now() - warmStarted,
+      }),
+    );
+  } catch (error) {
+    console.warn(
+      JSON.stringify({
+        event: "subtitle_search.worker_warm_failed",
         error: error instanceof Error ? error.message : "unknown error",
       }),
     );

@@ -148,6 +148,42 @@ describe.serial("searchQuotesOffThread (#192)", () => {
     expect(ms).toBeLessThan(2_000);
   });
 
+  test("interactive budget timeout does not kill the shared worker (#226)", async () => {
+    previousWorkerEnv = process.env.JELLYBOT_SUBTITLE_SEARCH_WORKER;
+    delete process.env.JELLYBOT_SUBTITLE_SEARCH_WORKER;
+
+    const dbPath = tempDb();
+    const index = openSubtitleIndex(dbPath);
+    try {
+      index.replaceItem(
+        {
+          itemId: "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          itemType: "Movie",
+          title: "Timeout Warm",
+          productionYear: 2002,
+          mediaSourceId: "src",
+          subtitleIndex: 0,
+        },
+        [{ startMs: 0, endMs: 1000, text: "budget timeout must leave worker alive", kind: "single" }],
+      );
+    } finally {
+      index.close();
+    }
+
+    await searchQuotesOffThread(dbPath, "budget", 5, undefined, 5_000, { interactive: true });
+
+    // Tiny DB may beat a 0ms timer; property under test is worker survival either way.
+    await searchQuotesOffThread(dbPath, "budget", 5, undefined, 0, { interactive: true });
+
+    const t0 = performance.now();
+    const warm = await searchQuotesOffThread(dbPath, "timeout", 5, undefined, 5_000, {
+      interactive: true,
+    });
+    const ms = performance.now() - t0;
+    expect(warm.length).toBeGreaterThan(0);
+    expect(ms).toBeLessThan(2_000);
+  });
+
   test("sync fallback when worker disabled and not interactive", async () => {
     previousWorkerEnv = process.env.JELLYBOT_SUBTITLE_SEARCH_WORKER;
     process.env.JELLYBOT_SUBTITLE_SEARCH_WORKER = "0";

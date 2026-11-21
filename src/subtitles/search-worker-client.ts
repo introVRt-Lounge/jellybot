@@ -135,7 +135,9 @@ function callWorker(
   timeoutMs: number,
   options: CallWorkerOptions = {},
 ): Promise<unknown> {
-  const { interactive = false, signal } = options;
+  // `interactive` is intentional at the OffThreadSearchOptions layer (empty on
+  // failure); callWorker never kills the shared worker for timeout/abort (#224/#226).
+  const { signal } = options;
 
   if (signal?.aborted) {
     return Promise.reject(
@@ -157,10 +159,12 @@ function callWorker(
     };
 
     const timer = setTimeout(() => {
+      // Drop this request only. Do NOT terminateWorker() on budget timeout
+      // (#224 / #226): killing the shared worker forces a cold reopen of the
+      // multi-GB subtitle DB on the next keystroke and surfaces as Discord
+      // "Loading options failed". Let the in-flight FTS finish; ignore the late
+      // result (pending entry already removed).
       pending.delete(id);
-      if (interactive) {
-        terminateWorker();
-      }
       finish(() => reject(new Error("Subtitle search timed out")));
     }, timeoutMs);
 
