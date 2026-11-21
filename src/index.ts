@@ -278,11 +278,11 @@ client.once(Events.ClientReady, async (readyClient) => {
 
   // Cold-open the subtitle search worker + SQLite pages before users type (#226).
   // Without this, the first /quote after Watchtower soft-expires Discord's budget.
+  // Use interactive:false so open/timeout failures reject into worker_warm_failed
+  // instead of being swallowed as [] (Codex review on #227).
   try {
     const warmStarted = Date.now();
-    await searchQuotesOffThread(config.subtitleDbPath, "warmup", 1, undefined, 20_000, {
-      interactive: true,
-    });
+    await searchQuotesOffThread(config.subtitleDbPath, "warmup", 1, undefined, 20_000);
     console.info(
       JSON.stringify({
         event: "subtitle_search.worker_warmed",
