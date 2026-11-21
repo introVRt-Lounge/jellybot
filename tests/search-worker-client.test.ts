@@ -105,6 +105,49 @@ describe.serial("searchQuotesOffThread (#192)", () => {
     expect(results).toEqual([]);
   });
 
+  test("mid-flight abort does not kill the shared worker for the next search (#224)", async () => {
+    previousWorkerEnv = process.env.JELLYBOT_SUBTITLE_SEARCH_WORKER;
+    delete process.env.JELLYBOT_SUBTITLE_SEARCH_WORKER;
+
+    const dbPath = tempDb();
+    const index = openSubtitleIndex(dbPath);
+    try {
+      index.replaceItem(
+        {
+          itemId: "dddddddddddddddddddddddddddddddd",
+          itemType: "Movie",
+          title: "Warm",
+          productionYear: 2001,
+          mediaSourceId: "src",
+          subtitleIndex: 0,
+        },
+        [{ startMs: 0, endMs: 1000, text: "keep the worker warm please", kind: "single" }],
+      );
+    } finally {
+      index.close();
+    }
+
+    // Prime the worker.
+    await searchQuotesOffThread(dbPath, "keep", 5, undefined, 5_000, { interactive: true });
+
+    const controller = new AbortController();
+    const aborted = searchQuotesOffThread(dbPath, "keep", 5, undefined, 5_000, {
+      interactive: true,
+      signal: controller.signal,
+    });
+    controller.abort();
+    await expect(aborted).resolves.toEqual([]);
+
+    const t0 = performance.now();
+    const warm = await searchQuotesOffThread(dbPath, "worker", 5, undefined, 5_000, {
+      interactive: true,
+    });
+    const ms = performance.now() - t0;
+    expect(warm.length).toBeGreaterThan(0);
+    // Cold reopen of a large DB was multi-second; a surviving warm worker is ms-scale.
+    expect(ms).toBeLessThan(2_000);
+  });
+
   test("sync fallback when worker disabled and not interactive", async () => {
     previousWorkerEnv = process.env.JELLYBOT_SUBTITLE_SEARCH_WORKER;
     process.env.JELLYBOT_SUBTITLE_SEARCH_WORKER = "0";
