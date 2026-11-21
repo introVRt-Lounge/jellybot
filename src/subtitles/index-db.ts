@@ -768,15 +768,13 @@ export class SubtitleIndex {
 
 export type FtsMatchMode = "and" | "phrase";
 
-/** Last-token length below this keeps a trailing `*` (still typing). */
-const PHRASE_PREFIX_MAX_LAST_LEN = 2;
-
 export type PrepareFtsQueryOptions = {
   /**
    * `and` (default): independent tokens, prefix on the last — submit / supercut /
    * quote-request. `phrase`: one contiguous FTS5 phrase — `/quote` autocomplete
    * for short spoken lines (#228). Keeps stop words and single-letter tokens so
-   * adjacency matches the indexed cue.
+   * adjacency matches the indexed cue. Always prefixes the last token so mid-word
+   * typing (hea → heav → heavy) keeps matching.
    */
   mode?: FtsMatchMode;
 };
@@ -803,9 +801,7 @@ export function prepareFtsQuery(query: string, options: PrepareFtsQueryOptions =
 
   if (mode === "phrase") {
     const escaped = tokens.map((token) => token.replace(/"/g, '""'));
-    const last = tokens[tokens.length - 1]!;
-    const prefix = last.length <= PHRASE_PREFIX_MAX_LAST_LEN ? "*" : "";
-    return `"${escaped.join(" ")}"${prefix}`;
+    return `"${escaped.join(" ")}"*`;
   }
 
   return tokens

@@ -22,20 +22,16 @@ describe("prepareFtsQuery", () => {
     expect(prepareFtsQuery("love")).toBe('"love"*');
   });
 
-  test("phrase mode joins tokens into one contiguous FTS5 phrase (#228)", () => {
-    // Completed last token (≥3 chars): exact phrase — no expensive prefix scan.
-    expect(prepareFtsQuery("are they heavy", { mode: "phrase" })).toBe('"are they heavy"');
+  test("phrase mode joins tokens into one contiguous FTS5 phrase with last-token prefix (#228)", () => {
+    expect(prepareFtsQuery("are they heavy", { mode: "phrase" })).toBe('"are they heavy"*');
+    expect(prepareFtsQuery("are they heav", { mode: "phrase" })).toBe('"are they heav"*');
   });
 
   test("phrase mode keeps stop words and single-letter tokens for adjacency", () => {
-    expect(prepareFtsQuery("love finds its way", { mode: "phrase" })).toBe('"love finds its way"');
-    expect(prepareFtsQuery("Do I know you", { mode: "phrase" })).toBe('"do i know you"');
-  });
-
-  test("phrase mode prefixes only when the last token is still short", () => {
-    expect(prepareFtsQuery("he", { mode: "phrase" })).toBe('"he"*');
-    expect(prepareFtsQuery("are they he", { mode: "phrase" })).toBe('"are they he"*');
-    expect(prepareFtsQuery("heavy", { mode: "phrase" })).toBe('"heavy"');
+    expect(prepareFtsQuery("love finds its way", { mode: "phrase" })).toBe(
+      '"love finds its way"*',
+    );
+    expect(prepareFtsQuery("Do I know you", { mode: "phrase" })).toBe('"do i know you"*');
   });
 });
 

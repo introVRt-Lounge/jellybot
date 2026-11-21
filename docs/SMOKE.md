@@ -19,7 +19,7 @@ You should see activity in that channel when extended smoke is on; **required ga
 
 - **`/quote` `match` autocomplete** — log must show `quote.autocomplete` then `quote.autocomplete.responded` with `resultCount > 0`
 - **`/quote` `from` autocomplete** — same for `quote.from_autocomplete` (movie or series titles)
-- **`/quote` long-query shaping** — default `I'm here for the gang bang` must log `searchQuery` ≠ `query` (shapes to `gang bang`) and still respond in time (issues #171 / #216 / #218). Keep a stop-word-heavy fixture in CI; short distinctive queries alone do not prove the #216 class.
+- **`/quote` long-query shaping** — default `that's it baby, if you've got it, flaunt it!` must log `searchQuery` ≠ `query` (shapes to `baby flaunt`) and still respond in time (issues #171 / #216 / #218 / #228). Must stay **>5 query tokens** so the AND/distinctive path runs; short spoken lines use FTS5 phrase match on the raw line (#228).
 
 Fail messages call out **Unknown interaction** explicitly (Discord 3s autocomplete window).
 
@@ -45,7 +45,7 @@ If smoke passes on the selfbot path, you have a reproducible pre-prod gate that 
 ## Smoke harness gotchas (fixed)
 
 - **Log correlation** uses `docker logs --since` (not line counts) so buffered container output is not missed.
-- **Default queries** are `arrested` / `Simp` / long `I'm here for the gang bang`. Match/from stay short so FTS stays under 3s; the long fixture deliberately includes stop words and relies on autocomplete shaping (#216).
+- **Default queries** are `arrested` / `Simp` / long `that's it baby, if you've got it, flaunt it!`. Match/from stay short so FTS stays under 3s; the long fixture must exceed five query tokens so distinctive shaping (#216) still runs under phrase-mode short lines (#228).
 - **CI recreates** an ephemeral `jellybot-smoke-<run>` on **8094** with `SUBTITLE_INDEX_ON_STARTUP=off` — leaves long-lived `jellybot-dev` on **8093** alone.
 - **Health must answer in &lt;2s** before each attempt; if not, check the ephemeral container logs (`docker logs jellybot-smoke-<run>`).
 

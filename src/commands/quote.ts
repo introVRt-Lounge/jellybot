@@ -341,7 +341,11 @@ async function handleQuoteAutocompleteOnce(
     const searchQuery =
       ftsMode === "phrase" ? query.trim() : shapeQuoteAutocompleteQuery(query);
 
-    let results = tryQuoteMatchPrefixCache(cacheKey, query, searchQuery, scopeKey);
+    // Prefix-cache is bag-of-words; phrase mode needs contiguous adjacency (#228).
+    let results =
+      ftsMode === "phrase"
+        ? null
+        : tryQuoteMatchPrefixCache(cacheKey, query, searchQuery, scopeKey);
     let usedPrefixCache = results !== null;
 
     if (!results) {
@@ -370,7 +374,9 @@ async function handleQuoteAutocompleteOnce(
       if (signal.aborted) {
         throw signal.reason ?? new DOMException("The operation was aborted.", "AbortError");
       }
-      rememberQuoteMatchSearchCache(cacheKey, query, searchQuery, results, scopeKey);
+      if (ftsMode !== "phrase") {
+        rememberQuoteMatchSearchCache(cacheKey, query, searchQuery, results, scopeKey);
+      }
     }
 
     results = rankQuoteAutocompleteResults(query, results).slice(0, QUOTE_MATCH_CHOICE_LIMIT);
