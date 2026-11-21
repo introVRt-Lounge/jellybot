@@ -1,4 +1,9 @@
-import type { QuoteFromChoice, QuoteSearchResult, QuoteSearchScope } from "./index-db.ts";
+import type {
+  FtsMatchMode,
+  QuoteFromChoice,
+  QuoteSearchResult,
+  QuoteSearchScope,
+} from "./index-db.ts";
 import { getSubtitleSearchIndex } from "./search-index.ts";
 
 type SearchWorkerRequest =
@@ -9,6 +14,7 @@ type SearchWorkerRequest =
       query: string;
       limit: number;
       scope?: QuoteSearchScope;
+      mode?: FtsMatchMode;
     }
   | {
       id: number;
@@ -216,6 +222,8 @@ export type OffThreadSearchOptions = {
   interactive?: boolean;
   /** When aborted (superseded keystroke), drop the worker request immediately. */
   signal?: AbortSignal;
+  /** FTS match mode — phrase for short `/quote` autocomplete lines (#228). */
+  mode?: FtsMatchMode;
 };
 
 export async function searchQuotesOffThread(
@@ -227,7 +235,8 @@ export async function searchQuotesOffThread(
   options: OffThreadSearchOptions = {},
 ): Promise<QuoteSearchResult[]> {
   const interactive = options.interactive ?? false;
-  const { signal } = options;
+  const { signal, mode } = options;
+  const ftsOptions = mode ? { mode } : {};
 
   if (signal?.aborted) {
     return [];
@@ -238,7 +247,7 @@ export async function searchQuotesOffThread(
       logInteractiveWorkerUnavailable("search");
       return [];
     }
-    return getSubtitleSearchIndex(dbPath).searchQuotes(query, limit, scope);
+    return getSubtitleSearchIndex(dbPath).searchQuotes(query, limit, scope, ftsOptions);
   }
 
   try {
@@ -249,6 +258,7 @@ export async function searchQuotesOffThread(
         query,
         limit,
         scope,
+        mode,
       },
       timeoutMs,
       { interactive, signal },
@@ -270,7 +280,7 @@ export async function searchQuotesOffThread(
     if (interactive) {
       return [];
     }
-    return getSubtitleSearchIndex(dbPath).searchQuotes(query, limit, scope);
+    return getSubtitleSearchIndex(dbPath).searchQuotes(query, limit, scope, ftsOptions);
   }
 }
 

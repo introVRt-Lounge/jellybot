@@ -296,8 +296,13 @@ export class SubtitleIndex {
    * or one movie (`item_id`). Used by `/quote from:` so common-noun queries
    * aren't drowned out by the rest of the catalogue.
    */
-  searchQuotes(query: string, limit = 25, scope?: QuoteSearchScope): QuoteSearchResult[] {
-    const ftsQuery = prepareFtsQuery(query);
+  searchQuotes(
+    query: string,
+    limit = 25,
+    scope?: QuoteSearchScope,
+    options: PrepareFtsQueryOptions = {},
+  ): QuoteSearchResult[] {
+    const ftsQuery = prepareFtsQuery(query, options);
     if (!ftsQuery) return [];
 
     const where: string[] = ["subtitle_cues_fts MATCH ?"];
@@ -757,7 +762,19 @@ export class SubtitleIndex {
   }
 }
 
-export function prepareFtsQuery(query: string): string {
+export type FtsMatchMode = "and" | "phrase";
+
+export type PrepareFtsQueryOptions = {
+  /**
+   * `and` (default): independent tokens, prefix on the last — submit / supercut /
+   * quote-request. `phrase`: one FTS5 phrase with prefix on the last token —
+   * `/quote` autocomplete for short spoken lines (#228). Phrase match uses
+   * token positions so common function words do not explode the scan.
+   */
+  mode?: FtsMatchMode;
+};
+
+export function prepareFtsQuery(query: string, options: PrepareFtsQueryOptions = {}): string {
   const tokens = query
     .trim()
     .toLowerCase()
@@ -766,6 +783,12 @@ export function prepareFtsQuery(query: string): string {
     .filter((token) => token.length >= 2);
 
   if (tokens.length === 0) return "";
+
+  const mode = options.mode ?? "and";
+  if (mode === "phrase") {
+    const escaped = tokens.map((token) => token.replace(/"/g, '""'));
+    return `"${escaped.join(" ")}"*`;
+  }
 
   return tokens
     .map((token, index) => {

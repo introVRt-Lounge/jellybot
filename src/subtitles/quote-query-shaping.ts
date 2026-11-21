@@ -1,4 +1,4 @@
-import type { QuoteSearchResult } from "./index-db.ts";
+import type { FtsMatchMode, QuoteSearchResult } from "./index-db.ts";
 
 /** Minimum token length for "distinctive" quote tokens (shared with quote-request matcher). */
 export const DISTINCTIVE_TOKEN_MIN_LENGTH = 4;
@@ -6,7 +6,8 @@ export const DISTINCTIVE_TOKEN_MIN_LENGTH = 4;
 /** FTS AND-query minimum token length (matches prepareFtsQuery in index-db). */
 export const FTS_QUERY_TOKEN_MIN_LENGTH = 2;
 
-const AUTOCOMPLETE_MAX_FULL_TOKENS = 5;
+/** Short spoken lines stay contiguous — use FTS5 phrase match (#228). */
+export const AUTOCOMPLETE_MAX_FULL_TOKENS = 5;
 const AUTOCOMPLETE_TAIL_DISTINCTIVE_COUNT = 5;
 
 /**
@@ -96,6 +97,16 @@ export function extractDistinctiveTokens(quote: string): string[] {
 
 export function extractQueryTokens(quote: string): string[] {
   return tokenizeQuote(quote).filter((token) => token.length >= FTS_QUERY_TOKEN_MIN_LENGTH);
+}
+
+/**
+ * Short spoken lines (≤ {@link AUTOCOMPLETE_MAX_FULL_TOKENS}) are contiguous —
+ * phrase FTS. Longer input is shaped to non-adjacent distinctive tokens — AND.
+ */
+export function quoteAutocompleteFtsMode(rawQuery: string): FtsMatchMode {
+  const tokens = extractQueryTokens(rawQuery);
+  if (tokens.length === 0) return "and";
+  return tokens.length <= AUTOCOMPLETE_MAX_FULL_TOKENS ? "phrase" : "and";
 }
 
 /**

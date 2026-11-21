@@ -22,6 +22,7 @@ import { openSubtitleIndex } from "../subtitles/index-db.ts";
 import {
   rememberQuoteMatchSearchCache,
   rankQuoteAutocompleteResults,
+  quoteAutocompleteFtsMode,
   shapeQuoteAutocompleteQuery,
   tryQuoteMatchPrefixCache,
 } from "../subtitles/quote-query-shaping.ts";
@@ -335,6 +336,8 @@ async function handleQuoteAutocompleteOnce(
     }
 
     const searchQuery = shapeQuoteAutocompleteQuery(query);
+    // Short spoken lines: FTS5 phrase (positions) not AND of stop words (#228).
+    const ftsMode = quoteAutocompleteFtsMode(query);
 
     let results = tryQuoteMatchPrefixCache(cacheKey, query, searchQuery, scopeKey);
     let usedPrefixCache = results !== null;
@@ -344,15 +347,17 @@ async function handleQuoteAutocompleteOnce(
         interaction,
         QUOTE_MATCH_AUTOCOMPLETE_MAX_TOKEN_AGE_MS,
       );
-      // Oversample FTS (#220): stop-word strip (#216) can bury exact cues past the
-      // Discord 24-choice window; re-rank by raw-token overlap then take top 24.
+      // Oversample FTS (#220) on AND/long path: stop-word strip can bury exact
+      // cues past the Discord window. Phrase hits are already contiguous — 24.
+      const ftsLimit =
+        ftsMode === "phrase" ? QUOTE_MATCH_CHOICE_LIMIT : QUOTE_MATCH_FTS_CANDIDATE_LIMIT;
       results = await searchQuotesOffThread(
         config.subtitleDbPath,
         searchQuery,
-        QUOTE_MATCH_FTS_CANDIDATE_LIMIT,
+        ftsLimit,
         scope,
         ftsBudgetMs,
-        { interactive: true, signal },
+        { interactive: true, signal, mode: ftsMode },
       );
       if (signal.aborted) {
         throw signal.reason ?? new DOMException("The operation was aborted.", "AbortError");

@@ -6,11 +6,24 @@ import {
   extractDistinctiveTokens,
   extractQueryTokens,
   isLastTokenPrefixExtension,
+  quoteAutocompleteFtsMode,
   rankQuoteAutocompleteResults,
   rememberQuoteMatchSearchCache,
   shapeQuoteAutocompleteQuery,
   tryQuoteMatchPrefixCache,
 } from "../src/subtitles/quote-query-shaping.ts";
+
+describe("quoteAutocompleteFtsMode (#228)", () => {
+  test("uses phrase for short spoken lines and AND for long distinctive windows", () => {
+    expect(quoteAutocompleteFtsMode("are they heavy")).toBe("phrase");
+    expect(quoteAutocompleteFtsMode("gang bang")).toBe("phrase");
+    // Smoke fixture is ≤5 query tokens after tokenize — still phrase on shaped tail.
+    expect(quoteAutocompleteFtsMode("i'm here for the gang bang")).toBe("phrase");
+    expect(
+      quoteAutocompleteFtsMode("that's it baby, if you've got it, flaunt it!"),
+    ).toBe("and");
+  });
+});
 
 describe("shapeQuoteAutocompleteQuery", () => {
   test("drops stop words only when at least two content tokens remain (#216 / #222)", () => {

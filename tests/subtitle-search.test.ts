@@ -21,6 +21,14 @@ describe("prepareFtsQuery", () => {
   test("prefixes a single token query", () => {
     expect(prepareFtsQuery("love")).toBe('"love"*');
   });
+
+  test("phrase mode joins tokens into one FTS5 phrase with prefix on the last (#228)", () => {
+    expect(prepareFtsQuery("are they heavy", { mode: "phrase" })).toBe('"are they heavy"*');
+  });
+
+  test("phrase mode still prefixes a single in-progress token", () => {
+    expect(prepareFtsQuery("heav", { mode: "phrase" })).toBe('"heav"*');
+  });
 });
 
 describe("SubtitleIndex", () => {
@@ -43,6 +51,39 @@ describe("SubtitleIndex", () => {
       expect(results).toHaveLength(1);
       expect(results[0]?.text).toContain("love finds its way");
       expect(results[0]?.startMs).toBe(30000);
+    } finally {
+      index.close();
+    }
+  });
+
+  test("phrase mode prefers the contiguous spoken line over bag-of-words hits (#228)", () => {
+    const index = openSubtitleIndex(dbPath);
+    try {
+      index.replaceItem(
+        {
+          itemId: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          itemType: "Movie",
+          title: "Office Space",
+          productionYear: 1999,
+          mediaSourceId: "source",
+          subtitleIndex: 0,
+        },
+        [
+          { startMs: 1000, endMs: 2000, text: "Are they heavy?", kind: "single" },
+          { startMs: 3000, endMs: 4000, text: "They are all heavy-hitters.", kind: "single" },
+        ],
+      );
+
+      const andHits = index.searchQuotes("are they heavy", 5);
+      // Bag-of-words AND matches both cues (tokens appear, not necessarily contiguous).
+      expect(andHits.map((row) => row.text).sort()).toEqual([
+        "Are they heavy?",
+        "They are all heavy-hitters.",
+      ]);
+
+      const phraseHits = index.searchQuotes("are they heavy", 5, undefined, { mode: "phrase" });
+      expect(phraseHits).toHaveLength(1);
+      expect(phraseHits[0]?.text).toBe("Are they heavy?");
     } finally {
       index.close();
     }
