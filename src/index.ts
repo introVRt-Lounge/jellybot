@@ -203,8 +203,9 @@ client.on(Events.Invalidated, () => {
   console.error(JSON.stringify({ event: "discord.session_invalidated" }));
 });
 
+// Log reconnect attempts but do NOT clear discordReady: brief reconnect flaps
+ // would 503 /healthz and Docker would kill a recovering bot mid-flight (#230 smoke).
 client.on(Events.ShardReconnecting, (shardId) => {
-  healthState.discordReady = false;
   console.warn(JSON.stringify({ event: "discord.shard_reconnecting", shardId }));
 });
 
