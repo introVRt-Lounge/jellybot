@@ -70,6 +70,7 @@ const jellyfin = new JellyfinClient(
 
 const healthState: HealthState = {
   discordReady: false,
+  lastDiscordInteractionAt: null,
   jellyfinUser: undefined,
   subtitleIndex: null,
   releaseTag: looksLikeReleaseTag(config.appVersion) ? config.appVersion : null,
@@ -183,6 +184,40 @@ const client = new Client({
 });
 
 const gatewayInstanceId = randomUUID().slice(0, 8);
+
+client.on(Events.ShardDisconnect, (event, shardId) => {
+  healthState.discordReady = false;
+  console.warn(
+    JSON.stringify({
+      event: "discord.shard_disconnect",
+      shardId,
+      code: event.code,
+      reason: event.reason,
+      wasClean: event.wasClean,
+    }),
+  );
+});
+
+client.on(Events.Invalidated, () => {
+  healthState.discordReady = false;
+  console.error(JSON.stringify({ event: "discord.session_invalidated" }));
+});
+
+client.on(Events.ShardReconnecting, (shardId) => {
+  healthState.discordReady = false;
+  console.warn(JSON.stringify({ event: "discord.shard_reconnecting", shardId }));
+});
+
+client.on(Events.ShardResume, (shardId, replayedEvents) => {
+  healthState.discordReady = true;
+  console.info(
+    JSON.stringify({
+      event: "discord.shard_resume",
+      shardId,
+      replayedEvents,
+    }),
+  );
+});
 
 client.once(Events.ClientReady, async (readyClient) => {
   healthState.discordReady = true;
@@ -364,6 +399,8 @@ function logCommandTiming(
 }
 
 client.on(Events.InteractionCreate, async (interaction) => {
+  healthState.lastDiscordInteractionAt = new Date().toISOString();
+
   if (interaction.isAutocomplete()) {
     if (interaction.commandName === "clip") {
       try {

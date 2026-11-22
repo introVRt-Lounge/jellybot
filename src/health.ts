@@ -3,6 +3,8 @@ import { tryHandleWebhook, type WebhookRouterConfig } from "./webhooks/router.ts
 
 export type HealthState = {
   discordReady: boolean;
+  /** ISO timestamp of last Discord interaction (slash / autocomplete / component). */
+  lastDiscordInteractionAt?: string | null;
   jellyfinUser?: string;
   subtitleIndex?: {
     itemCount: number;
@@ -53,7 +55,8 @@ export function startHealthServer(
         version: state.releaseTag ?? appVersion,
         appVersion,
         releaseTag: state.releaseTag ?? null,
-        discord: state.discordReady ? "connected" : "starting",
+        discord: state.discordReady ? "connected" : "disconnected",
+        lastDiscordInteractionAt: state.lastDiscordInteractionAt ?? null,
         jellyfinUser: state.jellyfinUser ?? null,
         subtitleIndex: state.subtitleIndex ?? null,
       };
