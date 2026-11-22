@@ -219,6 +219,12 @@ client.on(Events.ShardResume, (shardId, replayedEvents) => {
   );
 });
 
+// Fresh identify after an unresumable disconnect emits ShardReady, not Resume (#230).
+client.on(Events.ShardReady, (shardId) => {
+  healthState.discordReady = true;
+  console.info(JSON.stringify({ event: "discord.shard_ready", shardId }));
+});
+
 client.once(Events.ClientReady, async (readyClient) => {
   healthState.discordReady = true;
   console.info(
